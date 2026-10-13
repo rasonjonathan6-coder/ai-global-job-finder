@@ -1,0 +1,366 @@
+package com.aiglobal.jobfinder
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.os.Looper
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.test.core.app.ApplicationProvider
+import com.aiglobal.jobfinder.data.model.ApplicationStatus
+import com.aiglobal.jobfinder.data.model.CandidateField
+import com.aiglobal.jobfinder.data.model.CandidateProfile
+import com.aiglobal.jobfinder.data.model.CertificationEntry
+import com.aiglobal.jobfinder.data.model.CvFileType
+import com.aiglobal.jobfinder.data.model.CvRecord
+import com.aiglobal.jobfinder.data.model.CvStatus
+import com.aiglobal.jobfinder.data.model.EducationEntry
+import com.aiglobal.jobfinder.data.model.LanguageLevel
+import com.aiglobal.jobfinder.data.model.LetterLanguage
+import com.aiglobal.jobfinder.data.model.LanguageSkill
+import com.aiglobal.jobfinder.data.model.ProfileCompleteness
+import com.aiglobal.jobfinder.data.model.CompletenessHint
+import com.aiglobal.jobfinder.data.model.CoverLetter
+import com.aiglobal.jobfinder.data.expat.ExpatBenefitsCatalog
+import com.aiglobal.jobfinder.data.repository.SampleData
+import com.aiglobal.jobfinder.data.repository.SampleJobRepository
+import com.aiglobal.jobfinder.ui.components.JobCard
+import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
+import com.aiglobal.jobfinder.ui.navigation.Destination
+import com.aiglobal.jobfinder.ui.screens.ai.AiScreen
+import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailContent
+import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
+import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterContent
+import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
+import com.aiglobal.jobfinder.ui.screens.expat.ExpatContent
+import com.aiglobal.jobfinder.ui.screens.home.HomeContent
+import com.aiglobal.jobfinder.ui.screens.jobs.JobsContent
+import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
+import com.aiglobal.jobfinder.ui.theme.AiJobFinderTheme
+import com.aiglobal.jobfinder.ui.theme.ThemeMode
+import com.aiglobal.jobfinder.viewmodel.AppViewModel
+import com.aiglobal.jobfinder.viewmodel.ApplicationDetailUiState
+import com.aiglobal.jobfinder.viewmodel.ApplicationsViewModel
+import com.aiglobal.jobfinder.viewmodel.CoverLetterUiState
+import com.aiglobal.jobfinder.viewmodel.CvUiState
+import com.aiglobal.jobfinder.viewmodel.ExpatUiState
+import com.aiglobal.jobfinder.viewmodel.HomeUiState
+import com.aiglobal.jobfinder.viewmodel.JobsUiState
+import com.aiglobal.jobfinder.viewmodel.ProfileViewModel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
+
+/**
+ * Renders every Stage 1 screen at a real phone size on the JVM and writes PNGs to
+ * app/build/screenshots. This is the layout verification path; no emulator needed.
+ *
+ * The Compose test rule owns the frame clock, advanced by hand so the infinite shimmer
+ * animations cannot stall the run while finite entry animations still finish before
+ * the frame is captured.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [33], qualifiers = "w411dp-h891dp-xhdpi")
+class ScreenshotTest {
+
+    @get:Rule
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
+
+    private val repository = SampleJobRepository(refreshDelayMillis = 0)
+
+    /** The real container, used for the Stage 4 screens that need the application pipeline. */
+    private val container by lazy { AppContainer(ApplicationProvider.getApplicationContext()) }
+
+    private val homeState: HomeUiState by lazy {
+        val jobs = runBlocking { repository.jobs.first() }
+        HomeUiState(
+            isLoading = false,
+            profile = runBlocking { repository.profile.first() },
+            stats = runBlocking { repository.stats.first() },
+            bestMatches = jobs.sortedByDescending { it.matchScore }.take(4),
+            newOpportunities = jobs.filter { it.isNew },
+        )
+    }
+
+    private val jobsState: JobsUiState by lazy {
+        JobsUiState(isLoading = false, jobs = runBlocking { repository.jobs.first() })
+    }
+
+    /** A realistic analysed CV so the result sections are exercised in the screenshot run. */
+    private val sampleCvRecord = CvRecord(
+        fileName = "Jonathan_Rakoto_CV.pdf",
+        storedFileName = "sample.pdf",
+        fileType = CvFileType.PDF,
+        sizeBytes = 248_320,
+        importedAtEpochMillis = 1_760_000_000_000,
+        analyzedAtEpochMillis = 1_760_000_120_000,
+        status = CvStatus.ANALYZED,
+        pageCount = 2,
+        extractedCharacters = 4_812,
+        engineId = "on-device-heuristic",
+        engineLabel = "On-device analysis",
+        userEditedFields = setOf(CandidateField.CURRENT_TITLE),
+        profile = CandidateProfile(
+            fullName = "Jonathan Rakoto",
+            email = "jonathan.rakoto@example.mg",
+            phone = "+261 34 12 345 67",
+            location = "Antananarivo, Madagascar",
+            currentTitle = "Maintenance Technician",
+            previousTitles = listOf("Electromechanical Technician"),
+            yearsOfExperience = 6,
+            skills = listOf("Preventive maintenance", "Hydraulics", "PLC", "Electrical wiring", "Welding", "Team leadership"),
+            languages = listOf(
+                LanguageSkill("French", LanguageLevel.FLUENT),
+                LanguageSkill("English", LanguageLevel.INTERMEDIATE),
+                LanguageSkill("Malagasy", LanguageLevel.NATIVE),
+            ),
+            education = listOf(EducationEntry("BTS Electrotechnics", "IST Antananarivo", "Madagascar", 2018)),
+            certifications = listOf(CertificationEntry("Industrial Safety Level 2", year = 2021)),
+            summary = "Maintenance technician with six years in food-processing plants.",
+        ),
+    )
+
+    @Test
+    fun homeScreen() = renderBothModes("home") {
+        HomeContent(state = homeState, onOpenJobs = {}, onOpenJob = {}, onApply = {})
+    }
+
+    @Test
+    fun jobCard() {
+        val job = runBlocking { repository.jobs.first() }.first { it.matchScore == 95 }
+        renderBothModes("job-card") {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                JobCard(job = job, onViewJob = {}, onApply = {}, onToggleSave = {})
+            }
+        }
+    }
+
+    @Test
+    fun jobsList() = renderBothModes("jobs") {
+        JobsContent(
+            state = jobsState,
+            onQueryChange = {},
+            onToggleSaved = {},
+            onToggleEligible = {},
+            onToggleSponsored = {},
+            onCountryChange = {},
+            onSourceChange = {},
+            onSortChange = {},
+            onClearFilters = {},
+            onRefresh = {},
+            onOpenAi = {},
+            onToggleSaveJob = {},
+        )
+    }
+
+    @Test
+    fun jobsEmptyState() = renderBothModes("jobs-empty") {
+        JobsContent(
+            state = JobsUiState(isLoading = false, jobs = emptyList(), query = "zzz"),
+            onQueryChange = {},
+            onToggleSaved = {},
+            onToggleEligible = {},
+            onToggleSponsored = {},
+            onCountryChange = {},
+            onSourceChange = {},
+            onSortChange = {},
+            onClearFilters = {},
+            onRefresh = {},
+            onOpenAi = {},
+            onToggleSaveJob = {},
+        )
+    }
+
+    @Test
+    fun aiScreen() = renderBothModes("ai") { AiScreen(onBrowseJobs = {}, onOpenCv = {}, autoRun = false) }
+
+    @Test
+    fun cvImportEmpty() = renderBothModes("cv-empty") {
+        CvScreen(
+            state = CvUiState(isLoading = false),
+            onBack = {},
+            onPickFile = {},
+            onAnalyze = {},
+            onRemove = {},
+            onEditField = { _, _ -> },
+            onDismissMessage = {},
+        )
+    }
+
+    @Test
+    fun cvAnalysisResult() = renderBothModes("cv-analysis") {
+        CvScreen(
+            state = CvUiState(
+                isLoading = false,
+                record = sampleCvRecord,
+                completeness = ProfileCompleteness(
+                    percent = 82,
+                    missing = listOf(CompletenessHint("Preferred countries", CandidateField.PREFERRED_COUNTRIES)),
+                ),
+            ),
+            onBack = {},
+            onPickFile = {},
+            onAnalyze = {},
+            onRemove = {},
+            onEditField = { _, _ -> },
+            onDismissMessage = {},
+        )
+    }
+
+    @Test
+    fun applicationsScreen() = renderBothModes("applications") {
+        ApplicationsScreen(
+            viewModel = ApplicationsViewModel(repository, container.applicationCenter),
+            onBrowseJobs = {},
+        )
+    }
+
+    @Test
+    fun applicationDetail() {
+        val record = runBlocking { SampleData.applications(System.currentTimeMillis()) }
+            .first { it.status == ApplicationStatus.INTERVIEW }
+        renderBothModes("application-detail") {
+            ApplicationDetailContent(
+                state = ApplicationDetailUiState(
+                    isLoading = false,
+                    record = record,
+                    nextAction = "Prepare for the interview and confirm the time zone.",
+                ),
+                onBack = {},
+                onOpenCoverLetter = {},
+                onOpenExpat = {},
+                onSetStatus = {},
+                onSetFollowUpAt = {},
+                onArchive = {},
+                onDelete = {},
+            )
+        }
+    }
+
+    @Test
+    fun coverLetter() = renderBothModes("cover-letter") {
+        CoverLetterContent(
+            state = CoverLetterUiState(
+                isLoading = false,
+                job = runBlocking { repository.jobs.first() }.first(),
+                language = LetterLanguage.FRENCH,
+                letter = CoverLetter(
+                    id = "letter-1",
+                    jobId = "ca-mtc-001",
+                    language = LetterLanguage.FRENCH,
+                    subject = "Candidature — Maintenance Technician",
+                    salutation = "Madame, Monsieur,",
+                    paragraphs = listOf(
+                        "Je vous adresse ma candidature au poste de Maintenance Technician.",
+                        "Technicien de maintenance avec six ans d'expérience en industrie agroalimentaire.",
+                    ),
+                    closing = "Je vous prie d'agréer mes salutations distinguées.",
+                    signature = "Jonathan Rakoto",
+                    usedFacts = listOf("6 ans d'expérience", "Compétences : hydraulique, PLC"),
+                    missingFacts = listOf("Certification linguistique"),
+                    generatedAtEpochMillis = System.currentTimeMillis(),
+                ),
+            ),
+            onBack = {},
+            onSelectLanguage = {},
+            onGenerate = {},
+        )
+    }
+
+    @Test
+    fun expatGuide() = renderBothModes("expat") {
+        ExpatContent(
+            state = ExpatUiState(
+                isLoading = false,
+                guide = ExpatBenefitsCatalog.forCountry("Canada"),
+            ),
+            country = "Canada",
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun profileScreen() {
+        renderBothModes("profile") {
+            ProfileScreen(
+                viewModel = ProfileViewModel(repository),
+                appViewModel = AppViewModel(container),
+                onOpenAi = {},
+            )
+        }
+    }
+
+    @Test
+    fun bottomNavigation() = renderBothModes("bottom-nav") {
+        Column(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
+            BottomNavBar(current = Destination.Jobs, onSelect = {})
+        }
+    }
+
+    /**
+     * One setContent per test (the rule forbids more), then the theme is flipped through
+     * state so both colour schemes are captured from the same, already-settled tree.
+     */
+    private fun renderBothModes(name: String, content: @Composable () -> Unit) {
+        val mode = mutableStateOf(ThemeMode.Light)
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            AiJobFinderTheme(themeMode = mode.value) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    content()
+                }
+            }
+        }
+
+        settle()
+        capture("$name-light")
+
+        mode.value = ThemeMode.Dark
+        settle()
+        capture("$name-dark")
+    }
+
+    /** Advance virtual time in steps, interleaved with looper work so frames are produced. */
+    private fun settle() {
+        val mainLooper = shadowOf(Looper.getMainLooper())
+        repeat(30) {
+            composeRule.mainClock.advanceTimeByFrame()
+            composeRule.mainClock.advanceTimeBy(60)
+            mainLooper.idle()
+        }
+    }
+
+    private fun capture(name: String) {
+        val view = composeRule.activity.window.decorView
+        val width = view.width
+        val height = view.height
+        require(width > 0 && height > 0) { "$name laid out at ${width}x$height" }
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bitmap))
+
+        val dir = File("build/screenshots").apply { mkdirs() }
+        File(dir, "$name.png").outputStream().use { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+    }
+}

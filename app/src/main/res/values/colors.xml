@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand palette mirrored from the Compose theme for platform surfaces (splash, system bars). -->
+    <color name="brand_navy">#0B1B33</color>
+    <color name="brand_navy_deep">#060F1F</color>
+    <color name="brand_primary">#1E4FD8</color>
+    <color name="brand_accent">#00B39F</color>
+    <color name="splash_background">#FFFFFF</color>
+    <color name="splash_background_dark">#060F1F</color>
+    <color name="surface_light">#F6F7FB</color>
+    <color name="surface_dark">#0B1424</color>
+</resources>
