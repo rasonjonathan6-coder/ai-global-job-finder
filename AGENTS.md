@@ -322,9 +322,43 @@ returns genuine overseas maintenance vacancies.
   isolation and salary/remote mapping. `JobSourcesScreenTest` asserts the stored key is never
   rendered and that "Replace" appears. Suite: 142 tests, 0 failures.
 
+### Application eligibility and expat shortlist (Stage 11)
+
+Stage 11 answers a different question from the match score: not "does my CV fit?" but "can I
+actually apply from Madagascar, and what is standing in the way?".
+
+- **Readiness is a band, not a number.** `ApplicationReadiness` (PRIORITY / READY /
+  PREPARE_FIRST / NEEDS_REVIEW / BLOCKED) is derived by `ShortlistEngine` from four inputs:
+  the match score, the official route (a documented visa/relocation path), the candidate's
+  profile completeness, and the documented benefits. `ReadinessBlocker` names what holds a
+  posting back and how many points it costs, so the UI can explain a lower band rather than
+  just assert it.
+- **`ShortlistEntry.hasOfficialRoute` matches labels case-insensitively.** The engine accepts
+  an official route when a reason label contains a known phrase (`visa sponsor`, `work
+  permit`, `relocation`, …) ignoring case, so a real posting that says "Visa Sponsorship
+  offered" is recognised. The entry-level helper must use the same rule; a case-sensitive
+  `contains` there silently disagreed with the engine and dropped roles out of the top band.
+- **Shortlist layout on a narrow phone.** The screen header ("Expat shortlist") is rendered
+  outside the scrolling list, so layout tests must assert it directly rather than trying to
+  scroll to it. Everything below — the readiness band, the blocker summary, the job card and
+  both actions — is inside the `LazyColumn` and reachable with `performScrollToNode`.
+- **Entry points.** Home carries a premium `ShortlistEntryCard` banner and the AI screen has a
+  capability card; both navigate to the shortlist route. `SecondaryRoutes` also registers
+  EXPAT, INTERVIEW, SCAM, ALERTS, AUTO_APPLY and DIAGNOSTICS.
+- Tests: `Stage11PipelineTest` covers the band/blocker maths and `ShortlistState` counts;
+  `Stage11ScreenTest` verifies the ready role, its actions and the empty state render and
+  scroll at 320×640dp; `ScreenshotTest.shortlist` captures light and dark. Suite: 159 tests,
+  0 failures.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
   `navBarClearance` as bottom content padding so the floating nav bar never covers content.
 - Dark mode is a hand-tuned palette in `Theme.kt`, not an inversion. Check both modes.
+- The bottom-nav active pill hugs its content (`AnimatedVisibility` + `expandHorizontally`),
+  not a fixed width, so a long label such as "Applications" expands the gradient instead of
+  being clipped by it. The label still only exists on the selected item.
+- Premium design guidance comes from the workspace `frontend-design` skill
+  (`.agents/skills/frontend-design`), installed from `OpenHands/extensions`. Keep Kotlin +
+  Compose + Material 3; apply its principles to typography, cards, motion and loading states.
 - No hardcoded user-visible strings worth extracting yet; copy lives inline in Stage 1.

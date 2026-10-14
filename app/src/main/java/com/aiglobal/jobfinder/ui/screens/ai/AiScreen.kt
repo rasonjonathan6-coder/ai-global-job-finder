@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
@@ -73,6 +74,7 @@ fun AiScreen(
     onOpenScamShield: () -> Unit = {},
     onOpenAlerts: () -> Unit = {},
     onOpenAutoApply: () -> Unit = {},
+    onOpenShortlist: () -> Unit = {},
     autoRun: Boolean = true,
 ) {
     val spacing = LocalSpacing.current
@@ -150,6 +152,14 @@ fun AiScreen(
                     title = "CV analysis",
                     body = "Reads your CV, extracts skills and experience, then scores every posting against it.",
                     accent = MaterialTheme.colorScheme.primary,
+                )
+                CapabilityCard(
+                    icon = Icons.Filled.Public,
+                    title = "Expat shortlist",
+                    body = "Ranks the postings you can actually apply for from Madagascar, and says what is in the way.",
+                    accent = extendedColors.success,
+                    actionLabel = "Open shortlist",
+                    onClick = onOpenShortlist,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.Translate,

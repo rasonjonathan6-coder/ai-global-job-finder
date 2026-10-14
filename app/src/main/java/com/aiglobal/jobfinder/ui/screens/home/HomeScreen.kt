@@ -5,6 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,8 +30,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Icon
@@ -76,6 +80,7 @@ fun HomeScreen(
     onOpenJobs: () -> Unit,
     onOpenJob: (String) -> Unit,
     onOpenLink: (String) -> Unit = {},
+    onOpenShortlist: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -94,6 +99,7 @@ fun HomeScreen(
                 onOpenJobs = onOpenJobs,
                 onOpenJob = onOpenJob,
                 onOpenLink = onOpenLink,
+                onOpenShortlist = onOpenShortlist,
             )
         }
     }
@@ -105,6 +111,7 @@ internal fun HomeContent(
     onOpenJobs: () -> Unit,
     onOpenJob: (String) -> Unit,
     onOpenLink: (String) -> Unit = {},
+    onOpenShortlist: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     val profile = state.profile
@@ -133,6 +140,13 @@ internal fun HomeContent(
         item {
             Spacer(Modifier.height(spacing.lg))
             StatsRow(state = state)
+        }
+
+        item {
+            Spacer(Modifier.height(spacing.lg))
+            Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
+                ShortlistEntryCard(onOpenShortlist = onOpenShortlist)
+            }
         }
 
         item {
@@ -569,6 +583,65 @@ private fun AiInsightCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * Home entry point into the Stage 11 expat shortlist. Kept as a slim banner so it invites a
+ * tap without competing with the job cards below it.
+ */
+@Composable
+private fun ShortlistEntryCard(onOpenShortlist: () -> Unit) {
+    val spacing = LocalSpacing.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(140), label = "shortlistPress")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .clickable(interactionSource = interaction, indication = null, onClick = onOpenShortlist)
+            .padding(spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(extendedColors.success.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Public,
+                contentDescription = null,
+                tint = extendedColors.success,
+                modifier = Modifier.size(21.dp),
+            )
+        }
+        Spacer(Modifier.width(spacing.sm))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Expat shortlist",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Roles you can actually apply for from Madagascar, ranked and explained.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(spacing.xs))
+        Icon(
+            Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 

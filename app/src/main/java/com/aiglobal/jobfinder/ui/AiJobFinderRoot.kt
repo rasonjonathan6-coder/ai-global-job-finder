@@ -42,6 +42,7 @@ import com.aiglobal.jobfinder.ui.screens.interview.InterviewScreen
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsScreen
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
 import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldScreen
+import com.aiglobal.jobfinder.ui.screens.shortlist.ShortlistScreen
 import com.aiglobal.jobfinder.viewmodel.AppViewModel
 import com.aiglobal.jobfinder.viewmodel.ApplicationDetailViewModel
 import com.aiglobal.jobfinder.viewmodel.ApplicationDetailViewModelFactory
@@ -67,6 +68,8 @@ import com.aiglobal.jobfinder.viewmodel.ProfileViewModel
 import com.aiglobal.jobfinder.viewmodel.ProfileViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ScamShieldViewModel
 import com.aiglobal.jobfinder.viewmodel.ScamShieldViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.ShortlistViewModel
+import com.aiglobal.jobfinder.viewmodel.ShortlistViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.SourceDiagnosticsViewModel
 import com.aiglobal.jobfinder.viewmodel.SourceDiagnosticsViewModelFactory
 
@@ -83,6 +86,7 @@ object SecondaryRoutes {
     const val ALERTS = "alerts"
     const val AUTO_APPLY = "autoapply"
     const val DIAGNOSTICS = "diagnostics"
+    const val SHORTLIST = "shortlist"
 
     fun applicationDetail(applicationId: String) = "application/$applicationId"
     fun coverLetter(jobId: String) = "coverletter/$jobId"
@@ -147,6 +151,7 @@ fun AiJobFinderRoot(
                     onOpenJobs = { navController.navigateToTab(Destination.Jobs) },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                     onOpenLink = { url -> context.openExternally(url) },
+                    onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
                 )
             }
             composable(Destination.Jobs.route) {
@@ -181,6 +186,7 @@ fun AiJobFinderRoot(
                     onOpenScamShield = { navController.navigate(SecondaryRoutes.scam("")) },
                     onOpenAlerts = { navController.navigate(SecondaryRoutes.ALERTS) },
                     onOpenAutoApply = { navController.navigate(SecondaryRoutes.AUTO_APPLY) },
+                    onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
                 )
             }
             composable(SecondaryRoutes.CV) {
@@ -311,6 +317,22 @@ fun AiJobFinderRoot(
                 LiveSearchValidationScreen(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
+                )
+            }
+            composable(SecondaryRoutes.SHORTLIST) {
+                val vm: ShortlistViewModel = viewModel(
+                    factory = ShortlistViewModelFactory(
+                        repository = container.jobRepository,
+                        cvRepository = container.cvRepository,
+                        expatPreferences = appViewModel.expatPreferences,
+                    ),
+                )
+                ShortlistScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
+                    onApply = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
+                    onOpenJobs = { navController.navigateToTab(Destination.Jobs) },
                 )
             }
         }

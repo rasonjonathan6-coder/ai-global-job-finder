@@ -1,8 +1,13 @@
 package com.aiglobal.jobfinder.ui.navigation
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -93,27 +98,21 @@ private fun NavItem(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val contentAlpha by animateFloatAsState(if (selected) 1f else 0.72f, tween(200), label = "navAlpha")
-    val indicatorWidth by animateDpAsState(if (selected) 118.dp else 0.dp, tween(280), label = "navWidth")
-    val indicatorHeight by animateDpAsState(if (selected) 42.dp else 0.dp, tween(280), label = "navHeight")
+    // The pill hugs its content instead of a fixed width, so a longer label such as
+    // "Applications" expands the gradient rather than being clipped by it.
+    val horizontalPadding by animateDpAsState(if (selected) 14.dp else 10.dp, tween(240), label = "navPad")
     val contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    val gradient = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Box(
-            modifier = Modifier
-                .height(indicatorHeight)
-                .width(indicatorWidth)
-                .clip(RoundedCornerShape(50))
-                .background(
-                    Brush.linearGradient(
-                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary),
-                    )
-                ),
-        )
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
+                .background(
+                    if (selected) Brush.linearGradient(gradient) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)),
+                )
                 .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-                .padding(horizontal = 10.dp, vertical = 9.dp),
+                .padding(horizontal = horizontalPadding, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -123,15 +122,21 @@ private fun NavItem(
                 tint = contentColor.copy(alpha = contentAlpha),
                 modifier = Modifier.size(if (selected) 20.dp else 22.dp),
             )
-            if (selected) {
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    text = destination.label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
+            AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn(tween(220, delayMillis = 60)) + expandHorizontally(tween(260), expandFrom = Alignment.Start),
+                exit = fadeOut(tween(110)) + shrinkHorizontally(tween(200), shrinkTowards = Alignment.Start),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        text = destination.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

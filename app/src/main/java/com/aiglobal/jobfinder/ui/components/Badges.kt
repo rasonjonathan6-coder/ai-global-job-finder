@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +43,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.aiglobal.jobfinder.data.model.ApplicationReadiness
 import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
 import com.aiglobal.jobfinder.data.model.MatchTier
@@ -214,6 +217,30 @@ fun ExpatScoreBadge(
         leadingIcon = Icons.Filled.CardGiftcard,
         modifier = modifier,
     )
+}
+
+/**
+ * Application readiness for the Stage 11 shortlist. Kept visually distinct from
+ * [MatchChip] and [ExpatScoreBadge] because it answers a different question: not "does my
+ * CV fit?" but "can I apply, and what is in the way?".
+ */
+@Composable
+fun ReadinessBadge(readiness: ApplicationReadiness, modifier: Modifier = Modifier) {
+    val (container, content) = when (readiness) {
+        ApplicationReadiness.PRIORITY -> extendedColors.successContainer to extendedColors.success
+        ApplicationReadiness.READY -> extendedColors.infoContainer to extendedColors.info
+        ApplicationReadiness.PREPARE_FIRST -> extendedColors.warningContainer to extendedColors.warning
+        ApplicationReadiness.NEEDS_REVIEW -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+        ApplicationReadiness.BLOCKED -> extendedColors.dangerContainer to extendedColors.danger
+    }
+    val icon = when (readiness) {
+        ApplicationReadiness.PRIORITY -> Icons.Filled.WorkspacePremium
+        ApplicationReadiness.READY -> Icons.Filled.CheckCircle
+        ApplicationReadiness.PREPARE_FIRST -> Icons.Filled.Build
+        ApplicationReadiness.NEEDS_REVIEW -> Icons.Filled.HelpOutline
+        ApplicationReadiness.BLOCKED -> Icons.Filled.ErrorOutline
+    }
+    Pill(text = readiness.label, containerColor = container, contentColor = content, leadingIcon = icon, modifier = modifier)
 }
 
 /** Small status chip for one benefit line in the detail sheet. */

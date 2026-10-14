@@ -16,8 +16,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
+import com.aiglobal.jobfinder.data.model.BenefitEvidence
+import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CandidateProfile
+import com.aiglobal.jobfinder.data.model.ExpatPreferences
+import com.aiglobal.jobfinder.data.model.Job
+import com.aiglobal.jobfinder.data.model.JobBenefitTypes
+import com.aiglobal.jobfinder.data.model.MadagascarEligibility
+import com.aiglobal.jobfinder.data.model.ShortlistState
 import com.aiglobal.jobfinder.data.model.CertificationEntry
 import com.aiglobal.jobfinder.data.model.CvFileType
 import com.aiglobal.jobfinder.data.model.CvRecord
@@ -31,6 +38,7 @@ import com.aiglobal.jobfinder.data.model.CompletenessHint
 import com.aiglobal.jobfinder.data.model.CoverLetter
 import com.aiglobal.jobfinder.data.model.ScamRisk
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsCatalog
+import com.aiglobal.jobfinder.data.expat.ShortlistEngine
 import com.aiglobal.jobfinder.data.interview.InterviewCoach
 import com.aiglobal.jobfinder.data.model.AutoApplyItem
 import com.aiglobal.jobfinder.data.model.AutoApplyState
@@ -65,6 +73,7 @@ import com.aiglobal.jobfinder.ui.screens.jobs.JobsContent
 import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
 import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldContent
+import com.aiglobal.jobfinder.ui.screens.shortlist.ShortlistContent
 import com.aiglobal.jobfinder.ui.theme.AiJobFinderTheme
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import com.aiglobal.jobfinder.viewmodel.AppViewModel
@@ -419,6 +428,49 @@ class ScreenshotTest {
         }
     }
 
+    // ---- Stage 11 screen ---------------------------------------------------
+
+    private val shortlistState: ShortlistState by lazy {
+        val profile = CandidateProfile(
+            fullName = "Jonathan Rakoto",
+            currentTitle = "Maintenance Technician",
+            yearsOfExperience = 6,
+            skills = listOf("Preventive maintenance", "Hydraulics", "PLC"),
+        )
+        val engine = ShortlistEngine(clock = { stage5Now })
+        val strongBenefits = listOf(
+            BenefitEvidence(JobBenefitTypes.VISA_SPONSORSHIP, BenefitStatus.CONFIRMED, "Visa sponsorship provided."),
+            BenefitEvidence(JobBenefitTypes.RELOCATION_SUPPORT, BenefitStatus.CONFIRMED, "Relocation support is included."),
+            BenefitEvidence(JobBenefitTypes.ACCOMMODATION, BenefitStatus.CONFIRMED, "Accommodation is provided."),
+            BenefitEvidence(JobBenefitTypes.HEALTH_INSURANCE, BenefitStatus.CONFIRMED, "Private health insurance."),
+        )
+        fun entry(job: Job, completeness: Int) =
+            engine.assess(job, profile, ExpatPreferences.defaults(), completeness, 60000)
+
+        val ready = entry(
+            runBlocking { repository.jobs.first() }.first { it.matchScore == 95 }.copy(benefitEvidence = strongBenefits),
+            completeness = 100,
+        )
+        val verify = entry(
+            runBlocking { repository.jobs.first() }
+                .first { it.country == "Germany" }
+                .copy(
+                    matchScore = 72,
+                    eligibility = MadagascarEligibility.UNCLEAR,
+                    eligibilityReasons = emptyList(),
+                    benefitEvidence = emptyList(),
+                    missingSkills = listOf("German B2", "SPS/IPC drives"),
+                ),
+            completeness = 60,
+        )
+        ShortlistState(
+            isLoading = false,
+            entries = listOf(ready, verify),
+            totalJobs = 214,
+            sourceNote = "Live from 3 sources.",
+        )
+    }
+
     // ---- Stage 5 screens ---------------------------------------------------
 
     private val stage5Now = 1_700_000_000_000L
@@ -508,6 +560,11 @@ class ScreenshotTest {
             ),
             onBack = {},
         )
+    }
+
+    @Test
+    fun shortlist() = renderBothModes("shortlist") {
+        ShortlistContent(state = shortlistState, onBack = {}, onRefresh = {})
     }
 
     /**
