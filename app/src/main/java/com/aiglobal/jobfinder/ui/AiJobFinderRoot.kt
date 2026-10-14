@@ -28,19 +28,25 @@ import com.aiglobal.jobfinder.AppContainer
 import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
 import com.aiglobal.jobfinder.ui.navigation.Destination
 import com.aiglobal.jobfinder.ui.screens.ai.AiScreen
+import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsScreen
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailScreen
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
+import com.aiglobal.jobfinder.ui.screens.autoapply.AutoApplyScreen
 import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterScreen
 import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
 import com.aiglobal.jobfinder.ui.screens.expat.ExpatScreen
 import com.aiglobal.jobfinder.ui.screens.home.HomeScreen
+import com.aiglobal.jobfinder.ui.screens.interview.InterviewScreen
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsScreen
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
+import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldScreen
 import com.aiglobal.jobfinder.viewmodel.AppViewModel
 import com.aiglobal.jobfinder.viewmodel.ApplicationDetailViewModel
 import com.aiglobal.jobfinder.viewmodel.ApplicationDetailViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ApplicationsViewModel
 import com.aiglobal.jobfinder.viewmodel.ApplicationsViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModel
+import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.CoverLetterViewModel
 import com.aiglobal.jobfinder.viewmodel.CoverLetterViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.CvViewModel
@@ -49,10 +55,16 @@ import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModel
 import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.HomeViewModel
 import com.aiglobal.jobfinder.viewmodel.HomeViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.InterviewViewModel
+import com.aiglobal.jobfinder.viewmodel.InterviewViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.JobAlertsViewModel
+import com.aiglobal.jobfinder.viewmodel.JobAlertsViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.JobsViewModel
 import com.aiglobal.jobfinder.viewmodel.JobsViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ProfileViewModel
 import com.aiglobal.jobfinder.viewmodel.ProfileViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.ScamShieldViewModel
+import com.aiglobal.jobfinder.viewmodel.ScamShieldViewModelFactory
 
 private const val TRANSITION_MS = 320
 
@@ -62,10 +74,16 @@ object SecondaryRoutes {
     const val APPLICATION_DETAIL = "application/{applicationId}"
     const val COVER_LETTER = "coverletter/{jobId}"
     const val EXPAT = "expat/{country}"
+    const val INTERVIEW = "interview/{jobId}"
+    const val SCAM = "scam/{jobId}"
+    const val ALERTS = "alerts"
+    const val AUTO_APPLY = "autoapply"
 
     fun applicationDetail(applicationId: String) = "application/$applicationId"
     fun coverLetter(jobId: String) = "coverletter/$jobId"
     fun expat(country: String) = "expat/${android.net.Uri.encode(country)}"
+    fun interview(jobId: String) = "interview/$jobId"
+    fun scam(jobId: String) = "scam/$jobId"
 }
 
 /**
@@ -147,6 +165,10 @@ fun AiJobFinderRoot(
                 AiScreen(
                     onBrowseJobs = { navController.navigateToTab(Destination.Jobs) },
                     onOpenCv = { navController.navigate(SecondaryRoutes.CV) },
+                    onOpenInterview = { navController.navigate(SecondaryRoutes.interview("")) },
+                    onOpenScamShield = { navController.navigate(SecondaryRoutes.scam("")) },
+                    onOpenAlerts = { navController.navigate(SecondaryRoutes.ALERTS) },
+                    onOpenAutoApply = { navController.navigate(SecondaryRoutes.AUTO_APPLY) },
                 )
             }
             composable(SecondaryRoutes.CV) {
@@ -217,6 +239,56 @@ fun AiJobFinderRoot(
                     viewModel = vm,
                     country = country,
                     onBack = { navController.popBackStack() },
+                )
+            }
+            composable(
+                route = SecondaryRoutes.INTERVIEW,
+                arguments = listOf(navArgument("jobId") { type = NavType.StringType }),
+            ) { entry ->
+                val jobId = entry.arguments?.getString("jobId").orEmpty()
+                val vm: InterviewViewModel = viewModel(
+                    factory = InterviewViewModelFactory(
+                        jobId = jobId,
+                        repository = container.jobRepository,
+                        cvRepository = container.cvRepository,
+                        coach = container.interviewCoach,
+                        store = container.interviewPrepStore,
+                    ),
+                )
+                InterviewScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = SecondaryRoutes.SCAM,
+                arguments = listOf(navArgument("jobId") { type = NavType.StringType }),
+            ) { entry ->
+                val jobId = entry.arguments?.getString("jobId").orEmpty()
+                val vm: ScamShieldViewModel = viewModel(
+                    factory = ScamShieldViewModelFactory(
+                        jobId = jobId,
+                        repository = container.jobRepository,
+                        detector = container.scamDetector,
+                    ),
+                )
+                ScamShieldScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            }
+            composable(SecondaryRoutes.ALERTS) {
+                val vm: JobAlertsViewModel = viewModel(
+                    factory = JobAlertsViewModelFactory(container.jobAlertsCenter),
+                )
+                JobAlertsScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
+                )
+            }
+            composable(SecondaryRoutes.AUTO_APPLY) {
+                val vm: AutoApplyViewModel = viewModel(
+                    factory = AutoApplyViewModelFactory(container.autoApplyCenter),
+                )
+                AutoApplyScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                 )
             }
         }

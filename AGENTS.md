@@ -81,6 +81,16 @@ Notes that cost time to rediscover:
 - `data/jobs/provider/` — `JobProvider` (stateless, network-bound) + `RawJob` (a posting
   exactly as the source sent it; absent fields stay null). Providers only translate a feed;
   they never score or enrich. `TextParsing.kt` holds `IsoDates`, `HtmlText` and `SalaryParser`.
+  `JsonFeed` is the network seam (`HttpJsonFeed` in production, a fake in tests); providers
+  take it as a constructor argument, so mapping is testable offline.
+  Key-free remote boards are always on: Arbeitnow, Remotive, Jobicy, Himalayas.
+  Two sources are credential-gated and stay dormant until the user saves a key in
+  Profile → "Job sources": Adzuna (`app_id`/`app_key`, queries ordinary national markets
+  per country, the only place visa-sponsored local vacancies live) and Jooble (POST API,
+  worldwide aggregation). Both throw `JobProviderException` with an actionable message
+  when unconfigured, so the Jobs sync banner shows the source as unavailable rather than
+  silently returning nothing. Credentials live in `UserPreferencesRepository` (DataStore)
+  and are read into the container through `@Volatile` caches the provider lambdas close over.
 - `data/jobs/engine/` — `MatchingEngine` (six weighted signals → score + one `MatchReason`
   per signal) and `EligibilityEngine` (priority rules → verdict + reasons tagged
   `official = true` only when the posting actually states the fact). `SkillLexicon` is the
@@ -128,6 +138,33 @@ behaviour. Do not remove the seam.
 - Routes: `SecondaryRoutes` in `ui/AiJobFinderRoot.kt` (`application/{id}`, `coverletter/{jobId}`,
   `expat/{country}`). They are pushed on top of a tab and hide the bottom bar; the country
   argument is URI-encoded because it can contain spaces.
+
+### Interview, scam, alerts and auto-apply pipeline (Stage 5)
+
+- `data/model/InterviewCoach.kt` — `InterviewQuestion`, `InterviewPrep`, `InterviewAttempt`,
+  `AnswerConfidence`. All `@Serializable` because attempts persist as JSON.
+- `data/interview/InterviewCoach.kt` + `InterviewQuestionBank.kt` — builds a prep sheet from
+  the posting + CV (opening/tricky/technical/salary/visa questions) and scores attempts.
+  `InterviewPrepStore.kt` persists attempts to app-private storage.
+- `data/model/ScamReport.kt` + `data/scam/ScamDetector.kt` — rule-based scan producing a
+  `ScamRisk` verdict, weighted findings and "good signs". Rules are pure and take a `clock`.
+- `data/model/JobAlert.kt` + `data/alerts/` — `JobAlertRule`, `JobAlert`, `JobAlertsState`;
+  `AlertMatcher` decides which postings fire a rule and `JobAlertsCenter` owns the rule set
+  plus the detected-alert list. `JobAlertStore` persists both.
+- `data/model/AutoApply.kt` + `data/autoapply/` — `AutoApplyState`, `AutoApplyItem`,
+  `AutoApplyStatus`, `AutoApplyCenter`/`AutoApplyEngine`. The contract is draft-only:
+  strong matches get a prepared draft, nothing is ever sent automatically.
+- `viewmodel/Stage5ViewModels.kt` — `InterviewViewModel`, `ScamShieldViewModel`,
+  `JobAlertsViewModel`, `AutoApplyViewModel` and their factories.
+- `ui/screens/{interview,scam,alerts,autoapply}/` — thin stateful wrapper + `internal`
+  stateless `*Content`, same pattern as Stage 4. `InterviewContent`/`ScamShieldContent`
+  take `InterviewUiState`/`ScamUiState`; the alerts/auto-apply content take their state
+  model directly.
+- Routes: `SecondaryRoutes.INTERVIEW` (`interview/{jobId}`), `SCAM` (`scam/{jobId}`),
+  `ALERTS` (`alerts`), `AUTO_APPLY` (`autoapply`). The AI tab's capability cards open all
+  four. Note the interview/scam cards sit near the bottom of the AI list, so tests that tap
+  them must scroll the list to the end first — the floating nav bar overlays the list and
+  otherwise swallows the tap.
 
 ## Conventions
 

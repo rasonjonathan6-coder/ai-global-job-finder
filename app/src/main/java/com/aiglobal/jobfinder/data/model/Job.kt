@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.data.model
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import kotlinx.serialization.Serializable
 
 /** How well the CV matches the posting, derived from [Job.matchScore]. */
 enum class MatchTier { EXCELLENT, STRONG, GOOD, FAIR, LOW;
@@ -23,6 +24,7 @@ enum class MadagascarEligibility { ELIGIBLE, VISA_SPONSORED, UNCLEAR, RESTRICTED
 /** Relocation / visa posture advertised by the employer. */
 enum class VisaSupport { FULL_SPONSORSHIP, RELOCATION_PACKAGE, SPONSORSHIP_AVAILABLE, NOT_MENTIONED, LOCAL_ONLY }
 
+@Serializable
 enum class ScamRisk { LOW, MEDIUM, HIGH }
 
 enum class WorkMode { ONSITE, HYBRID, REMOTE }

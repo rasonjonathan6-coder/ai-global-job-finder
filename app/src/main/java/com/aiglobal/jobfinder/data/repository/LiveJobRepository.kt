@@ -65,6 +65,14 @@ class LiveJobRepository(
             raw.map { mapper.toJob(it, profile) }
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    /**
+     * Search terms for the providers that support server-side search. Adzuna and Jooble
+     * match on a keyword, so sending the candidate's own title (falling back to a target
+     * role) turns a generic national feed into relevant vacancies. Providers without
+     * server-side search ignore this.
+     */
+    private var searchKeywords: List<String> = emptyList()
+
     override val jobs: Flow<List<Job>> = combine(scoredJobs, savedIds) { jobList, saved ->
         jobList.map { if (saved.contains(it.id)) it.copy(isSaved = true) else it }
     }
@@ -87,6 +95,12 @@ class LiveJobRepository(
         // Serve the cache immediately so the first frame has content, then refresh.
         val cached = cache.read()
         if (cached.isNotEmpty()) rawJobs.value = cached
+        scope.launch {
+            candidateProfile.collect { profile ->
+                searchKeywords = profile.currentTitle.takeIf { it.isNotBlank() }?.let { listOf(it) }
+                    ?: profile.preferredRoles.take(1)
+            }
+        }
         scope.launch { refresh() }
     }
 
@@ -99,7 +113,7 @@ class LiveJobRepository(
             val results = coroutineScope {
                 providers.map { provider ->
                     async {
-                        runCatching { provider.fetch(limit = perProviderLimit) }
+                        runCatching { provider.fetch(keywords = searchKeywords, limit = perProviderLimit) }
                             .fold(
                                 onSuccess = { provider to Result.success(it) },
                                 onFailure = { provider to Result.failure(it) },

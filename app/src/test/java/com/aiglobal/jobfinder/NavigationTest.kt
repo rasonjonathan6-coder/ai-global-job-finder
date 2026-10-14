@@ -108,4 +108,43 @@ class NavigationTest {
         composeRule.onNodeWithText("Language").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Back").assertIsDisplayed()
     }
+
+    /** Stage 5: the AI tab's capability cards must open the four new screens. */
+    @Test
+    fun aiTabOpensTheInterviewCoach() {
+        openAiTabAndTap("Start rehearsing")
+        composeRule.onNodeWithText("Interview coach").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Back").assertIsDisplayed()
+    }
+
+    @Test
+    fun aiTabOpensTheScamShield() {
+        openAiTabAndTap("Check a posting")
+        composeRule.onNodeWithText("Scam shield").assertIsDisplayed()
+    }
+
+    @Test
+    fun aiTabOpensJobAlerts() {
+        openAiTabAndTap("Manage alerts")
+        composeRule.onNodeWithText("Job alerts").assertIsDisplayed()
+    }
+
+    @Test
+    fun aiTabOpensSafeAutoApply() {
+        openAiTabAndTap("Open auto-apply")
+        composeRule.onNodeWithText("Safe auto-apply").assertIsDisplayed()
+    }
+
+    private fun openAiTabAndTap(actionLabel: String) {
+        composeRule.waitForIdle()
+        composeRule.onNodeWithContentDescription("AI").performClick()
+        composeRule.waitForIdle()
+        val list = composeRule.onNode(hasScrollAction())
+        list.performScrollToNode(hasText(actionLabel))
+        // The floating navigation bar overlays the list, so bring the card clear of it
+        // before tapping, exactly as a user would scroll before reaching for it.
+        list.performScrollToNode(hasText("Browse matched jobs"))
+        composeRule.onNodeWithText(actionLabel).performClick()
+        composeRule.waitForIdle()
+    }
 }

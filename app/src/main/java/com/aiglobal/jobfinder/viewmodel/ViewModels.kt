@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aiglobal.jobfinder.AppContainer
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.ApplicationRecord
 import com.aiglobal.jobfinder.data.model.ApplicationReminder
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
@@ -25,8 +26,24 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     val themeMode: StateFlow<ThemeMode> = container.preferencesRepository.themeMode
         .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.System)
 
+    /** Adzuna app id/key, empty until the user saves them. */
+    val adzunaCredentials: StateFlow<AdzunaCredentials> = container.preferencesRepository.adzunaCredentials
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AdzunaCredentials())
+
+    /** Jooble API key, empty until the user saves it. */
+    val joobleApiKey: StateFlow<String> = container.preferencesRepository.joobleApiKey
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { container.preferencesRepository.setThemeMode(mode) }
+    }
+
+    fun saveAdzunaCredentials(appId: String, appKey: String) {
+        viewModelScope.launch { container.preferencesRepository.setAdzunaCredentials(appId, appKey) }
+    }
+
+    fun saveJoobleApiKey(key: String) {
+        viewModelScope.launch { container.preferencesRepository.setJoobleApiKey(key) }
     }
 }
 

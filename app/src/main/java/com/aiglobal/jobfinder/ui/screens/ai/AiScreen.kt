@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
@@ -68,6 +69,10 @@ import kotlinx.coroutines.delay
 fun AiScreen(
     onBrowseJobs: () -> Unit,
     onOpenCv: () -> Unit,
+    onOpenInterview: () -> Unit = {},
+    onOpenScamShield: () -> Unit = {},
+    onOpenAlerts: () -> Unit = {},
+    onOpenAutoApply: () -> Unit = {},
     autoRun: Boolean = true,
 ) {
     val spacing = LocalSpacing.current
@@ -163,18 +168,38 @@ fun AiScreen(
                     title = "Scam shield",
                     body = "Flags upfront fees, unregistered employers and unrealistic salary claims.",
                     accent = extendedColors.danger,
+                    actionLabel = "Check a posting",
+                    onClick = onOpenScamShield,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.Mic,
                     title = "Interview coach",
                     body = "Rehearses visa interviews and technical rounds with instant feedback.",
                     accent = extendedColors.warning,
+                    actionLabel = "Start rehearsing",
+                    onClick = onOpenInterview,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.School,
                     title = "Skills gap plan",
                     body = "Tells you exactly which certificate unlocks the next salary band.",
                     accent = extendedColors.success,
+                )
+                CapabilityCard(
+                    icon = Icons.Filled.NotificationsActive,
+                    title = "Job alerts",
+                    body = "Saved searches that tell you the moment a matching posting appears.",
+                    accent = extendedColors.info,
+                    actionLabel = "Manage alerts",
+                    onClick = onOpenAlerts,
+                )
+                CapabilityCard(
+                    icon = Icons.Filled.RocketLaunch,
+                    title = "Safe auto-apply",
+                    body = "Prepares a tailored draft for every strong match, and never sends it for you.",
+                    accent = MaterialTheme.colorScheme.secondary,
+                    actionLabel = "Open auto-apply",
+                    onClick = onOpenAutoApply,
                 )
             }
         }

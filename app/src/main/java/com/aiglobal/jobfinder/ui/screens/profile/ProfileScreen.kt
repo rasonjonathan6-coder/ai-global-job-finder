@@ -19,13 +19,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
@@ -41,22 +46,28 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.Skill
 import com.aiglobal.jobfinder.data.model.UserProfile
 import com.aiglobal.jobfinder.ui.components.AppCard
 import com.aiglobal.jobfinder.ui.components.IconLabelRow
 import com.aiglobal.jobfinder.ui.components.InitialsAvatar
 import com.aiglobal.jobfinder.ui.components.Pill
+import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.ProgressBar
 import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
@@ -77,6 +88,8 @@ fun ProfileScreen(
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
+    val adzunaCredentials by appViewModel.adzunaCredentials.collectAsStateWithLifecycle()
+    val joobleApiKey by appViewModel.joobleApiKey.collectAsStateWithLifecycle()
 
     val current = profile
     if (current == null) {
@@ -169,6 +182,15 @@ fun ProfileScreen(
         item { ThemeCard(themeMode = themeMode, onSelect = appViewModel::setThemeMode) }
 
         item { AutoApplyCard(enabled = current.autoApplyEnabled, onToggle = viewModel::setAutoApply) }
+
+        item {
+            JobSourcesCard(
+                credentials = adzunaCredentials,
+                joobleKey = joobleApiKey,
+                onSaveAdzuna = appViewModel::saveAdzunaCredentials,
+                onSaveJooble = appViewModel::saveJoobleApiKey,
+            )
+        }
 
         item {
             AppCard(modifier = Modifier.fillMaxWidth()) {
@@ -531,6 +553,160 @@ private fun AutoApplyCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Job sources. The remote boards need no setup; Adzuna and Jooble reach ordinary
+ * national vacancies (where visa-sponsored roles live) but each needs a free key.
+ * Keys are stored on-device only and never leave the phone except in the request
+ * to the source itself.
+ */
+@Composable
+internal fun JobSourcesCard(
+    credentials: AdzunaCredentials,
+    joobleKey: String,
+    onSaveAdzuna: (String, String) -> Unit,
+    onSaveJooble: (String) -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    var expanded by remember { mutableStateOf(false) }
+    var appId by remember(credentials.appId) { mutableStateOf(credentials.appId) }
+    var appKey by remember(credentials.appKey) { mutableStateOf(credentials.appKey) }
+    var jooble by remember(joobleKey) { mutableStateOf(joobleKey) }
+
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Hub,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(spacing.sm))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Job sources",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Arbeitnow, Remotive, Jobicy and Himalayas are always on.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            SourceStatusRow(
+                label = "Adzuna",
+                detail = "National markets in 7 countries",
+                configured = credentials.isConfigured,
+            )
+            SourceStatusRow(
+                label = "Jooble",
+                detail = "Aggregated vacancies worldwide",
+                configured = joobleKey.isNotBlank(),
+            )
+
+            SecondaryButton(
+                text = if (expanded) "Hide" else "Add optional sources",
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = Icons.Filled.Key,
+            )
+
+            if (expanded) {
+                Text(
+                    text = "Both are free. Create credentials at developer.adzuna.com and jooble.org/api, " +
+                        "then paste them here. They are stored only on this device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                SettingsTextField(value = appId, onValueChange = { appId = it }, label = "Adzuna app ID")
+                SettingsTextField(value = appKey, onValueChange = { appKey = it }, label = "Adzuna app key")
+                PrimaryButton(
+                    text = "Save Adzuna credentials",
+                    onClick = { onSaveAdzuna(appId, appKey) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = appId.isNotBlank() && appKey.isNotBlank(),
+                )
+
+                Spacer(Modifier.height(spacing.xxs))
+                SettingsTextField(value = jooble, onValueChange = { jooble = it }, label = "Jooble API key")
+                PrimaryButton(
+                    text = "Save Jooble key",
+                    onClick = { onSaveJooble(jooble) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = jooble.isNotBlank(),
+                )
+            }
+        }
+    }
+}
+
+/** One optional source and whether its credentials are present. */
+@Composable
+private fun SourceStatusRow(
+    label: String,
+    detail: String,
+    configured: Boolean,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = if (configured) Icons.Filled.CheckCircle else Icons.Filled.CloudOff,
+            contentDescription = null,
+            tint = if (configured) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(LocalSpacing.current.sm))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Pill(
+            text = if (configured) "On" else "Off",
+            containerColor = if (configured) extendedColors.successContainer else MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = if (configured) extendedColors.onSuccessContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SettingsTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 13.dp),
+        )
     }
 }
 

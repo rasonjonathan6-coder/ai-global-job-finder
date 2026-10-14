@@ -15,7 +15,7 @@ data class JobSource(
     val jobCount: Int = 0,
     val message: String? = null,
 ) {
-    val isOfficial: Boolean get() = id == "arbeitnow" || id == "remotive" || id == "jobicy"
+    val isOfficial: Boolean get() = id == "arbeitnow" || id == "remotive" || id == "jobicy" || id == "himalayas"
 }
 
 /** Aggregate sync status for the whole job feed. */

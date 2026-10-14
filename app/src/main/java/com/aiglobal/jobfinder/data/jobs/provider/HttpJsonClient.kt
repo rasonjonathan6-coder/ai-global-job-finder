@@ -29,13 +29,38 @@ object HttpJsonClient {
         JSONObject(getText(url, headers))
     }
 
+    /** POSTs [body] as JSON to [url] and parses the response as a JSON object. */
+    suspend fun postObject(
+        url: String,
+        body: String,
+        headers: Map<String, String> = emptyMap(),
+    ): JSONObject = withContext(Dispatchers.IO) {
+        JSONObject(
+            request(
+                url = url,
+                method = "POST",
+                body = body,
+                headers = headers + mapOf("Content-Type" to "application/json"),
+            ),
+        )
+    }
+
     /** GETs [url] and returns the raw body as text. */
     suspend fun getText(
         url: String,
         headers: Map<String, String> = emptyMap(),
     ): String = withContext(Dispatchers.IO) {
+        request(url = url, method = "GET", body = null, headers = headers)
+    }
+
+    private fun request(
+        url: String,
+        method: String,
+        body: String?,
+        headers: Map<String, String>,
+    ): String {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
+            requestMethod = method
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
             setRequestProperty("Accept", "application/json, text/plain, */*")
@@ -43,8 +68,15 @@ object HttpJsonClient {
             setRequestProperty("User-Agent", USER_AGENT)
             for ((key, value) in headers) setRequestProperty(key, value)
             instanceFollowRedirects = true
+            if (body != null) {
+                doOutput = true
+                setRequestProperty("Content-Length", body.toByteArray(Charsets.UTF_8).size.toString())
+            }
         }
         try {
+            if (body != null) {
+                connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
             val status = connection.responseCode
             if (status !in 200..299) {
                 connection.errorStream?.close()
@@ -53,7 +85,7 @@ object HttpJsonClient {
             val encoding = connection.contentEncoding?.lowercase().orEmpty()
             val rawStream = connection.inputStream
             val stream = if (encoding.contains("gzip")) GZIPInputStream(rawStream) else rawStream
-            BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { it.readText() }
+            return BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { it.readText() }
         } finally {
             connection.disconnect()
         }

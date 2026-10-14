@@ -29,21 +29,36 @@ import com.aiglobal.jobfinder.data.model.LanguageSkill
 import com.aiglobal.jobfinder.data.model.ProfileCompleteness
 import com.aiglobal.jobfinder.data.model.CompletenessHint
 import com.aiglobal.jobfinder.data.model.CoverLetter
+import com.aiglobal.jobfinder.data.model.ScamRisk
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsCatalog
+import com.aiglobal.jobfinder.data.interview.InterviewCoach
+import com.aiglobal.jobfinder.data.model.AutoApplyItem
+import com.aiglobal.jobfinder.data.model.AutoApplyState
+import com.aiglobal.jobfinder.data.model.AutoApplyStatus
+import com.aiglobal.jobfinder.data.model.JobAlert
+import com.aiglobal.jobfinder.data.model.JobAlertRule
+import com.aiglobal.jobfinder.data.model.JobAlertsState
 import com.aiglobal.jobfinder.data.repository.SampleData
 import com.aiglobal.jobfinder.data.repository.SampleJobRepository
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.scam.ScamDetector
 import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
 import com.aiglobal.jobfinder.ui.navigation.Destination
 import com.aiglobal.jobfinder.ui.screens.ai.AiScreen
+import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsContent
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailContent
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
+import com.aiglobal.jobfinder.ui.screens.autoapply.AutoApplyContent
 import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterContent
 import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
 import com.aiglobal.jobfinder.ui.screens.expat.ExpatContent
 import com.aiglobal.jobfinder.ui.screens.home.HomeContent
+import com.aiglobal.jobfinder.ui.screens.interview.InterviewContent
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsContent
+import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
+import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldContent
 import com.aiglobal.jobfinder.ui.theme.AiJobFinderTheme
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import com.aiglobal.jobfinder.viewmodel.AppViewModel
@@ -53,8 +68,10 @@ import com.aiglobal.jobfinder.viewmodel.CoverLetterUiState
 import com.aiglobal.jobfinder.viewmodel.CvUiState
 import com.aiglobal.jobfinder.viewmodel.ExpatUiState
 import com.aiglobal.jobfinder.viewmodel.HomeUiState
+import com.aiglobal.jobfinder.viewmodel.InterviewUiState
 import com.aiglobal.jobfinder.viewmodel.JobsUiState
 import com.aiglobal.jobfinder.viewmodel.ProfileViewModel
+import com.aiglobal.jobfinder.viewmodel.ScamUiState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -307,6 +324,16 @@ class ScreenshotTest {
     }
 
     @Test
+    fun jobSourcesSettings() = renderBothModes("job-sources") {
+        JobSourcesCard(
+            credentials = AdzunaCredentials(appId = "abc123", appKey = "def456"),
+            joobleKey = "jooble-key",
+            onSaveAdzuna = { _, _ -> },
+            onSaveJooble = {},
+        )
+    }
+
+    @Test
     fun bottomNavigation() = renderBothModes("bottom-nav") {
         Column(
             modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
@@ -314,6 +341,97 @@ class ScreenshotTest {
         ) {
             BottomNavBar(current = Destination.Jobs, onSelect = {})
         }
+    }
+
+    // ---- Stage 5 screens ---------------------------------------------------
+
+    private val stage5Now = 1_700_000_000_000L
+
+    @Test
+    fun interviewCoach() = renderBothModes("interview") {
+        val job = runBlocking { repository.jobs.first() }.first { it.matchScore == 95 }
+        InterviewContent(
+            state = InterviewUiState(
+                isLoading = false,
+                job = job,
+                prep = InterviewCoach(clock = { stage5Now }).prep(
+                    job,
+                    CandidateProfile(
+                        fullName = "Jonathan Rakoto",
+                        currentTitle = "Maintenance Technician",
+                        yearsOfExperience = 6,
+                        skills = listOf("Preventive maintenance", "Hydraulics", "PLC"),
+                    ),
+                ),
+            ),
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun scamShield() = renderBothModes("scam-shield") {
+        val job = runBlocking { repository.jobs.first() }.first { it.scamRisk == ScamRisk.HIGH }
+        ScamShieldContent(
+            state = ScamUiState(isLoading = false, job = job, report = ScamDetector(clock = { stage5Now }).scan(job)),
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun jobAlerts() = renderBothModes("job-alerts") {
+        JobAlertsContent(
+            state = JobAlertsState(
+                rules = listOf(
+                    JobAlertRule(
+                        id = "r1",
+                        name = "Visa-sponsored roles",
+                        countries = listOf("Canada"),
+                        minMatchScore = 60,
+                        createdAtEpochMillis = stage5Now,
+                    ),
+                ),
+                alerts = listOf(
+                    JobAlert(
+                        ruleId = "r1",
+                        ruleName = "Visa-sponsored roles",
+                        jobId = "ca-mtc-001",
+                        jobTitle = "Maintenance Technician",
+                        company = "Northline Industrial",
+                        country = "Canada",
+                        countryFlag = "🇨🇦",
+                        matchScore = 95,
+                        isVisaFriendly = true,
+                        detectedAtEpochMillis = stage5Now,
+                    ),
+                ),
+            ),
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun autoApply() = renderBothModes("auto-apply") {
+        AutoApplyContent(
+            state = AutoApplyState(
+                enabled = true,
+                threshold = 70,
+                items = listOf(
+                    AutoApplyItem(
+                        jobId = "ca-mtc-001",
+                        jobTitle = "Maintenance Technician",
+                        company = "Northline Industrial",
+                        country = "Canada",
+                        countryFlag = "🇨🇦",
+                        matchScore = 95,
+                        sourceUrl = "https://www.jobbank.gc.ca",
+                        status = AutoApplyStatus.DRAFT_READY,
+                        reason = "Match 95% and open to Madagascar applicants. Draft ready for your approval.",
+                        preparedAtEpochMillis = stage5Now,
+                    ),
+                ),
+            ),
+            onBack = {},
+        )
     }
 
     /**
