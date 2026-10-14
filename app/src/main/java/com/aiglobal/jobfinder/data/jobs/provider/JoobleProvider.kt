@@ -21,11 +21,18 @@ class JoobleProvider(
     override val name: String = "Jooble"
     override val homepage: String = "https://jooble.org"
     override val kind: ProviderKind = ProviderKind.AGGREGATOR
+    override val documentationUrl: String = "https://jooble.org/api/about"
+    override val requiresCredentials: Boolean = true
+    override val supportsServerSideSearch: Boolean = true
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val key = apiKey().trim()
         if (key.isEmpty()) {
-            throw JobProviderException(id, "Add your Jooble API key in Settings to search this source")
+            throw JobProviderException(
+                providerId = id,
+                message = "Add your Jooble API key in Settings to search this source",
+                category = ProviderErrorCategory.NOT_CONFIGURED,
+            )
         }
         val body = JSONObject().apply {
             put("keywords", keywords.firstOrNull().orEmpty())
@@ -37,9 +44,21 @@ class JoobleProvider(
         val json = try {
             feed.objectPost("$BASE_URL/$key", body.toString())
         } catch (t: Throwable) {
-            throw JobProviderException(id, "Jooble did not respond", t)
+            throw JobProviderException(
+                providerId = id,
+                message = "Jooble did not respond",
+                cause = t,
+                category = ProviderErrorClassifier.classify(id, t),
+            )
         }
-        val jobs = json.optJSONArray("jobs") ?: return emptyList()
+        // A 200 response is not proof the body is usable: a maintenance page or an
+        // error object can still parse as JSON, so the expected array is required.
+        val jobs = json.optJSONArray("jobs")
+            ?: throw JobProviderException(
+                providerId = id,
+                message = "Jooble returned an unexpected response shape",
+                category = ProviderErrorCategory.INVALID_RESPONSE,
+            )
         return buildList {
             for (i in 0 until jobs.length()) {
                 val item = jobs.optJSONObject(i) ?: continue

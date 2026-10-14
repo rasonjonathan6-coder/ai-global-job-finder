@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.data.jobs
 
 import com.aiglobal.jobfinder.data.geo.CountryCatalog
 import com.aiglobal.jobfinder.data.geo.CurrencyConverter
+import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityEngine
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityInput
 import com.aiglobal.jobfinder.data.jobs.engine.MatchInput
@@ -29,6 +30,7 @@ import kotlin.math.absoluteValue
 class JobMapper(
     private val matchingEngine: MatchingEngine,
     private val eligibilityEngine: EligibilityEngine,
+    private val benefitExtractor: ExpatBenefitExtractor = ExpatBenefitExtractor(),
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -61,6 +63,11 @@ class JobMapper(
         )
 
         val summary = HtmlText.excerpt(raw.descriptionHtml, EXCERPT_CHARS)
+        val benefitEvidence = benefitExtractor.extract(
+            title = raw.title,
+            description = plainDescription,
+            tags = raw.tags,
+        )
 
         return Job(
             id = "${raw.providerId}:${raw.externalId}",
@@ -95,6 +102,7 @@ class JobMapper(
             salaryIsEstimated = raw.salaryMin == null,
             matchReasons = match.reasons,
             eligibilityReasons = eligibility.reasons,
+            benefitEvidence = benefitEvidence,
             isNew = postedDaysAgo != null && postedDaysAgo <= 3,
         )
     }

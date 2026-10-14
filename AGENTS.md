@@ -139,6 +139,35 @@ behaviour. Do not remove the seam.
   `expat/{country}`). They are pushed on top of a tab and hide the bottom bar; the country
   argument is URI-encoded because it can contain spaces.
 
+### Expat intelligence and verified benefits (Stage 7)
+
+- Three numbers are kept deliberately separate and must never be conflated on screen:
+  the CV **match score** (`Job.matchScore`), the Madagascar **eligibility verdict**
+  (`Job.eligibility`) and the **Expat Benefits Score** (`ExpatBenefitsAssessment.score`).
+- `data/expat/ExpatBenefitExtractor.kt` — reads documented benefits from the posting text
+  with the proving sentence. Phrase tables per benefit key: `strong` → `CONFIRMED`,
+  `hedged` → `NEEDS_VERIFICATION`, `refusals` → `NOT_OFFERED`, and **silence →
+  `UNKNOWN`** (never treated as a refusal). Pure function of the text.
+- `data/expat/ExpatBenefitsEngine.kt` — scores documented benefits against the user's
+  priorities. Only documented benefits earn points; `evidenceCoverage` reports how much of
+  the listing was readable and `lowEvidence` (coverage < 40%) marks the score as
+  unreliable with an explanation that blames missing information, not the employer.
+  `minimumSalaryEur` is scored separately and only once the user sets a minimum.
+- `data/model/ExpatBenefits.kt` — `BenefitType`/`JobBenefitTypes`, `BenefitPriority`
+  (`NOT_IMPORTANT`=0, `NICE`=1, `IMPORTANT`=2, `ESSENTIAL`=3), `BenefitEvidence`,
+  `BenefitScoreComponent`, `ExpatPreferences`, `ExpatBenefitsAssessment`. `ExpatPreferences`
+  reads unset keys from each type's `defaultPriority`.
+- Preferences persist in `UserPreferencesRepository` (`expat_priorities` as `key=weight`,
+  plus min salary/countries/scores/visa gate) and are exposed through `AppViewModel`
+  (`expatPreferences`, `setBenefitPriority`, `setRequireVisaSponsorship`).
+- `JobsViewModel` builds `JobsUiState.expatAssessments: Map<jobId, assessment>` and the
+  expat filters (`minExpatScore`, `visaDocumentedOnly`); `JobsUiState.expatAssessment(job)`
+  is the UI accessor.
+- UI: `ExpatScoreBadge` (`ui/components/Badges.kt`) shows the score plus evidence coverage;
+  `ExpatBenefitsSection`/`BenefitEvidenceRow` (`ui/screens/jobs/JobsScreen.kt`) render the
+  per-benefit evidence in the explanation sheet; `ExpatPriorityCard` in `ProfileScreen`
+  edits the priorities. Tests: `Stage7PipelineTest`.
+
 ### Interview, scam, alerts and auto-apply pipeline (Stage 5)
 
 - `data/model/InterviewCoach.kt` — `InterviewQuestion`, `InterviewPrep`, `InterviewAttempt`,
@@ -165,6 +194,45 @@ behaviour. Do not remove the seam.
   four. Note the interview/scam cards sit near the bottom of the AI list, so tests that tap
   them must scroll the list to the end first — the floating nav bar overlays the list and
   otherwise swallows the tap.
+
+### Live search validation and application links (Stage 8)
+
+- `data/model/ProviderDiagnostics.kt` — `ProviderStatus` (finer-grained than `SourceState`:
+  `SUCCESS_EMPTY` vs `SUCCESS_WITH_RESULTS` vs `PARTIAL_SUCCESS`, and `NOT_CONFIGURED`/
+  `DISABLED`/`WAITING_FOR_NETWORK` are **dormant, not failures**), `ProviderDiagnostic`
+  (per-source counts, timings, classified `errorCategory`, `message`), `ProviderSettings`
+  (`disabledIds` + `configuredCredentialIds`), and `ProviderDiagnostics` (the whole feed's
+  snapshot with `successCount`/`failureCount`/`totalValidJobs`/`showingCachedOnly`).
+  Every field is only ever set from a real attempt — a provider never reports success
+  before it has actually been queried.
+- `data/repository/JobRepository.kt` — adds `diagnostics: Flow<ProviderDiagnostics>` and
+  `suspend runLiveValidation()`. `LiveJobRepository` records one diagnostic per source
+  (including dormant rows so the screen has no gaps), keeps the last good list when a run
+  produces nothing usable, and guards concurrent runs with a `Mutex.tryLock()` (a second
+  call while one is in flight is ignored, not queued).
+- `viewmodel/Stage8ViewModels.kt` — `SourceDiagnosticsViewModel` + factory; drives the
+  validation screen and turns a finished run into a plain-language note.
+- `ui/screens/diagnostics/LiveSearchValidationScreen.kt` — `LiveSearchValidationScreen`
+  wrapper + `internal LiveSearchValidationContent(state, ...)`. `SourceStatusBadge` and
+  `providerDetail()` are shared with Profile. Route: `SecondaryRoutes.DIAGNOSTICS`
+  (`"diagnostics"`), pushed on top of the Profile tab and hiding the bottom bar.
+- `ProfileScreen.JobSourcesCard` — now takes `diagnostics` and shows each source's real
+  last-run outcome (status badge + message) with an on/off `Switch`, plus "Run live
+  validation" / "Open diagnostics" actions. Credential entry (Adzuna appId+appKey, Jooble
+  key) is behind "Add optional sources". Toggles persist through
+  `AppViewModel.setSourceEnabled` → `UserPreferencesRepository.setSourceEnabled`.
+- `data/apply/ApplicationUrlInspector.kt` — classifies a posting URL (employer / job board
+  / government portal / unverified / invalid) and lists concrete warnings (http, free
+  domains, punycode, raw IP, over-long links). Pure function of the URL + source name.
+- `ui/screens/jobs/ApplyLinkSheet.kt` — `ApplyLinkSheet` + the shared
+  `applicationUrlInspector`. **Apply never opens a link silently**: both Jobs and Home
+  route an Apply tap through this sheet, which states the host, the destination kind and
+  any warnings before the browser opens. The URL is only launched via
+  `Context.openExternally` in `AiJobFinderRoot.kt`, which accepts http/https only and
+  swallows a missing-handler failure instead of crashing.
+- Tests: `JobSourcesScreenTest` drives `JobSourcesCard` with recorded diagnostics (not a
+  hard-coded "always on" list) at `w320dp-h640dp`, so the credential fields and the
+  per-source status must both fit a narrow phone.
 
 ## Conventions
 

@@ -61,6 +61,14 @@ fun JobCard(
     onToggleSave: () -> Unit,
     modifier: Modifier = Modifier,
     index: Int = 0,
+    /**
+     * Expat Benefits Score for this posting, or null when it has not been computed.
+     * Kept as a separate parameter so the card can never accidentally show it as the
+     * CV match score.
+     */
+    expatScore: Int? = null,
+    expatEvidenceCoverage: Int = 0,
+    expatLowEvidence: Boolean = false,
 ) {
     val spacing = com.aiglobal.jobfinder.ui.theme.LocalSpacing.current
     val visible = remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -177,6 +185,13 @@ fun JobCard(
                     EligibilityBadge(job.eligibility)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         VisaBadge(job.visaSupport, modifier = Modifier.widthIn(max = 220.dp))
+                    }
+                    if (expatScore != null) {
+                        ExpatScoreBadge(
+                            score = expatScore,
+                            evidenceCoverage = expatEvidenceCoverage,
+                            lowEvidence = expatLowEvidence,
+                        )
                     }
                     if (job.scamRisk != com.aiglobal.jobfinder.data.model.ScamRisk.LOW) {
                         ScamRiskBadge(job.scamRisk)

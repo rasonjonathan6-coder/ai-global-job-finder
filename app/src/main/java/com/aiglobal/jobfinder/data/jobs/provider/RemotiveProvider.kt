@@ -16,6 +16,8 @@ class RemotiveProvider(
     override val name: String = "Remotive"
     override val homepage: String = "https://remotive.com"
     override val kind: ProviderKind = ProviderKind.REMOTE_BOARD
+    override val documentationUrl: String = "https://remotive.com/remote-jobs/api"
+    override val supportsServerSideSearch: Boolean = true
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val query = keywords.firstOrNull()?.takeIf { it.isNotBlank() }
@@ -27,9 +29,19 @@ class RemotiveProvider(
         val json = try {
             feed.objectAt(url)
         } catch (t: Throwable) {
-            throw JobProviderException(id, "Remotive did not respond", t)
+            throw JobProviderException(
+                providerId = id,
+                message = "Remotive did not respond",
+                cause = t,
+                category = ProviderErrorClassifier.classify(id, t),
+            )
         }
-        val jobs = json.optJSONArray("jobs") ?: return emptyList()
+        val jobs = json.optJSONArray("jobs")
+            ?: throw JobProviderException(
+                providerId = id,
+                message = "Remotive returned an unexpected response shape",
+                category = ProviderErrorCategory.INVALID_RESPONSE,
+            )
         return buildList {
             for (i in 0 until jobs.length()) {
                 val item = jobs.optJSONObject(i) ?: continue

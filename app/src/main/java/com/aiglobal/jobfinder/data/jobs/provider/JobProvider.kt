@@ -50,6 +50,21 @@ interface JobProvider {
     val kind: ProviderKind
 
     /**
+     * Official API or developer-documentation page for this source. Shown in the
+     * diagnostics screen so the user can read the source's own terms and limits.
+     */
+    val documentationUrl: String get() = homepage
+
+    /** True when the source stays dormant until the user saves credentials. */
+    val requiresCredentials: Boolean get() = false
+
+    /**
+     * True when the source supports server-side keyword search, so sending the
+     * candidate's own title narrows the feed instead of being ignored.
+     */
+    val supportsServerSideSearch: Boolean get() = false
+
+    /**
      * Fetches the current postings.
      *
      * @param keywords lower-cased search terms; a provider may ignore them when the
@@ -64,4 +79,50 @@ class JobProviderException(
     val providerId: String,
     message: String,
     cause: Throwable? = null,
+    /**
+     * Explicit reason, set when the provider itself can tell what went wrong (for
+     * example "no key configured" or "HTTP 401"). When null, [ProviderErrorClassifier]
+     * infers the category from [cause] and the message.
+     */
+    val category: ProviderErrorCategory? = null,
 ) : Exception(message, cause)
+
+/**
+ * Why a provider attempt did not return usable postings. Kept coarse and stable so the
+ * diagnostics screen and the sync banner can describe the failure in plain words
+ * instead of showing a stack trace.
+ */
+enum class ProviderErrorCategory(val label: String, val explanation: String) {
+    NOT_CONFIGURED(
+        "Not configured",
+        "This source needs credentials before it can be searched. Add them in Profile → Job sources.",
+    ),
+    AUTHENTICATION(
+        "Authentication failed",
+        "The source rejected the saved credentials. Check that the key is correct and still active.",
+    ),
+    RATE_LIMITED(
+        "Rate limited",
+        "The source is temporarily refusing requests. Wait a little before trying again.",
+    ),
+    TIMEOUT(
+        "Timed out",
+        "The source did not answer in time. It may be slow or unreachable right now.",
+    ),
+    NETWORK(
+        "Network error",
+        "The source could not be reached. Check your internet connection and try again.",
+    ),
+    INVALID_RESPONSE(
+        "Invalid response",
+        "The source replied, but its response could not be understood. Nothing was changed.",
+    ),
+    HTTP_ERROR(
+        "Request rejected",
+        "The source answered with an error status instead of job data.",
+    ),
+    UNKNOWN(
+        "Unknown failure",
+        "The source failed for a reason the app could not classify.",
+    ),
+}

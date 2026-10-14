@@ -15,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -34,6 +35,7 @@ import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
 import com.aiglobal.jobfinder.ui.screens.autoapply.AutoApplyScreen
 import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterScreen
 import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
+import com.aiglobal.jobfinder.ui.screens.diagnostics.LiveSearchValidationScreen
 import com.aiglobal.jobfinder.ui.screens.expat.ExpatScreen
 import com.aiglobal.jobfinder.ui.screens.home.HomeScreen
 import com.aiglobal.jobfinder.ui.screens.interview.InterviewScreen
@@ -65,6 +67,8 @@ import com.aiglobal.jobfinder.viewmodel.ProfileViewModel
 import com.aiglobal.jobfinder.viewmodel.ProfileViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ScamShieldViewModel
 import com.aiglobal.jobfinder.viewmodel.ScamShieldViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.SourceDiagnosticsViewModel
+import com.aiglobal.jobfinder.viewmodel.SourceDiagnosticsViewModelFactory
 
 private const val TRANSITION_MS = 320
 
@@ -78,6 +82,7 @@ object SecondaryRoutes {
     const val SCAM = "scam/{jobId}"
     const val ALERTS = "alerts"
     const val AUTO_APPLY = "autoapply"
+    const val DIAGNOSTICS = "diagnostics"
 
     fun applicationDetail(applicationId: String) = "application/$applicationId"
     fun coverLetter(jobId: String) = "coverletter/$jobId"
@@ -105,6 +110,7 @@ fun AiJobFinderRoot(
     appViewModel: AppViewModel,
 ) {
     val navController = rememberNavController()
+    val context = LocalContext.current
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val current = Destination.fromRoute(currentRoute)
@@ -140,15 +146,21 @@ fun AiJobFinderRoot(
                     viewModel = vm,
                     onOpenJobs = { navController.navigateToTab(Destination.Jobs) },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
-                    onApply = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
+                    onOpenLink = { url -> context.openExternally(url) },
                 )
             }
             composable(Destination.Jobs.route) {
-                val vm: JobsViewModel = viewModel(factory = JobsViewModelFactory(container.jobRepository))
+                val vm: JobsViewModel = viewModel(
+                    factory = JobsViewModelFactory(
+                        repository = container.jobRepository,
+                        expatPreferences = appViewModel.expatPreferences,
+                    ),
+                )
                 JobsScreen(
                     viewModel = vm,
                     onOpenAi = { navController.navigateToTab(Destination.Ai) },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
+                    onOpenLink = { url -> context.openExternally(url) },
                 )
             }
             composable(Destination.Applications.route) {
@@ -195,6 +207,7 @@ fun AiJobFinderRoot(
                     appViewModel = appViewModel,
                     onOpenAi = { navController.navigateToTab(Destination.Ai) },
                     onOpenExpat = { country -> navController.navigate(SecondaryRoutes.expat(country)) },
+                    onOpenDiagnostics = { navController.navigate(SecondaryRoutes.DIAGNOSTICS) },
                 )
             }
             composable(
@@ -291,6 +304,15 @@ fun AiJobFinderRoot(
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                 )
             }
+            composable(SecondaryRoutes.DIAGNOSTICS) {
+                val vm: SourceDiagnosticsViewModel = viewModel(
+                    factory = SourceDiagnosticsViewModelFactory(container.jobRepository),
+                )
+                LiveSearchValidationScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         if (showBottomBar) {
@@ -310,4 +332,18 @@ private fun androidx.navigation.NavHostController.navigateToTab(destination: Des
         launchSingleTop = true
         restoreState = true
     }
+}
+
+/**
+ * Hands a posting URL to the system browser. Only http/https addresses are launched, so a
+ * malformed link in a feed cannot open an unexpected intent; if nothing can handle it, the
+ * failure is swallowed rather than crashing the app.
+ */
+private fun android.content.Context.openExternally(url: String) {
+    if (url.isBlank()) return
+    val uri = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return
+    if (uri.scheme?.lowercase() !in setOf("http", "https")) return
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { startActivity(intent) }
 }

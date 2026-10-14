@@ -7,10 +7,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
+import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.theme.AiJobFinderTheme
 import org.junit.Rule
@@ -21,8 +26,9 @@ import org.robolectric.annotation.Config
 
 /**
  * Layout verification for the job-source settings card at a narrow phone width, where
- * the longest hint strings are most likely to clip. The credentials stay on-device, so
- * the card must make clear which sources are on and where the keys come from.
+ * the longest hint strings are most likely to clip. The card reports each source's real
+ * last-run outcome, so the test drives it with recorded diagnostics rather than a
+ * hard-coded "always on" list.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], qualifiers = "w320dp-h640dp-hdpi")
@@ -31,13 +37,37 @@ class JobSourcesScreenTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
-    private fun render(credentials: AdzunaCredentials, joobleKey: String) {
+    private fun diagnostics(vararg providers: ProviderDiagnostic) =
+        ProviderDiagnostics(providers = providers.toList())
+
+    private fun provider(
+        id: String,
+        name: String,
+        status: ProviderStatus,
+        enabled: Boolean = true,
+        message: String? = null,
+    ) = ProviderDiagnostic(
+        providerId = id,
+        name = name,
+        homepage = "https://example.com",
+        documentationUrl = "https://example.com/docs",
+        status = status,
+        enabled = enabled,
+        message = message,
+    )
+
+    private fun render(
+        credentials: AdzunaCredentials = AdzunaCredentials(),
+        joobleKey: String = "",
+        diagnostics: ProviderDiagnostics = ProviderDiagnostics(),
+    ) {
         composeRule.setContent {
             AiJobFinderTheme {
                 Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     JobSourcesCard(
                         credentials = credentials,
                         joobleKey = joobleKey,
+                        diagnostics = diagnostics,
                         onSaveAdzuna = { _, _ -> },
                         onSaveJooble = {},
                     )
@@ -47,18 +77,37 @@ class JobSourcesScreenTest {
     }
 
     @Test
-    fun bothSourcesOffShowAsUnconfigured() {
-        render(AdzunaCredentials(), "")
+    fun unconfiguredSourcesAreListedWithoutBeingReportedAsFailures() {
+        render(
+            diagnostics = diagnostics(
+                provider("adzuna", "Adzuna", ProviderStatus.NOT_CONFIGURED),
+                provider("jooble", "Jooble", ProviderStatus.NOT_CONFIGURED),
+            ),
+        )
         composeRule.onNodeWithText("Adzuna").assertIsDisplayed()
         composeRule.onNodeWithText("Jooble").assertIsDisplayed()
-        composeRule.onNodeWithText("Arbeitnow, Remotive, Jobicy and Himalayas are always on.").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Not configured").assertCountEquals(2)
+        composeRule.onNodeWithText("0 of 2 sources answered on the last run.").assertIsDisplayed()
+    }
+
+    @Test
+    fun aSuccessfulSourceShowsItsMessage() {
+        render(
+            diagnostics = diagnostics(
+                provider("remotive", "Remotive", ProviderStatus.SUCCESS_WITH_RESULTS, message = "Returned 12 postings."),
+            ),
+        )
+        composeRule.onNodeWithText("Remotive").assertIsDisplayed()
+        composeRule.onNodeWithText("Success").assertIsDisplayed()
+        composeRule.onNodeWithText("Returned 12 postings.").assertIsDisplayed()
     }
 
     @Test
     fun expandingRevealsTheCredentialFields() {
-        render(AdzunaCredentials(appId = "id", appKey = "key"), "jooble")
+        render(credentials = AdzunaCredentials(appId = "id", appKey = "key"), joobleKey = "jooble")
         composeRule.onNodeWithText("Add optional sources").performClick()
         composeRule.onNodeWithText("Adzuna app ID").assertIsDisplayed()
+        composeRule.onNodeWithText("Adzuna app key").assertIsDisplayed()
         composeRule.onNodeWithText("Jooble API key").assertIsDisplayed()
     }
 }

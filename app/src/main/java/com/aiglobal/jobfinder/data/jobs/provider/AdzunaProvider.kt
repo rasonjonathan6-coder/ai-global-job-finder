@@ -22,11 +22,18 @@ class AdzunaProvider(
     override val name: String = "Adzuna"
     override val homepage: String = "https://www.adzuna.com"
     override val kind: ProviderKind = ProviderKind.AGGREGATOR
+    override val documentationUrl: String = "https://developer.adzuna.com/docs/search"
+    override val requiresCredentials: Boolean = true
+    override val supportsServerSideSearch: Boolean = true
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val creds = credentials()
         if (!creds.isConfigured) {
-            throw JobProviderException(id, "Add your Adzuna app id and key in Settings to search this source")
+            throw JobProviderException(
+                providerId = id,
+                message = "Add your Adzuna app id and key in Settings to search this source",
+                category = ProviderErrorCategory.NOT_CONFIGURED,
+            )
         }
         val what = keywords.firstOrNull()?.takeIf { it.isNotBlank() }
         val perCountry = (limit / countries.size).coerceAtLeast(5)
@@ -50,7 +57,12 @@ class AdzunaProvider(
         // Only surface an error when every country failed, so one throttled market
         // does not hide the postings the others returned.
         if (collected.isEmpty() && lastError != null) {
-            throw JobProviderException(id, "Adzuna did not respond", lastError)
+            throw JobProviderException(
+                providerId = id,
+                message = "Adzuna did not respond",
+                cause = lastError,
+                category = ProviderErrorClassifier.classify(id, lastError),
+            )
         }
         return collected.take(limit)
     }

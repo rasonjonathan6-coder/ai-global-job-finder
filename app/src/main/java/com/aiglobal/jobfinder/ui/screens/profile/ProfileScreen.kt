@@ -24,16 +24,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.School
@@ -61,9 +61,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.model.BenefitPriority
+import com.aiglobal.jobfinder.data.model.BenefitType
+import com.aiglobal.jobfinder.data.model.ExpatPreferences
+import com.aiglobal.jobfinder.data.model.JobBenefitTypes
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
+import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.Skill
 import com.aiglobal.jobfinder.data.model.UserProfile
 import com.aiglobal.jobfinder.ui.components.AppCard
+import com.aiglobal.jobfinder.ui.components.FilterChip
 import com.aiglobal.jobfinder.ui.components.IconLabelRow
 import com.aiglobal.jobfinder.ui.components.InitialsAvatar
 import com.aiglobal.jobfinder.ui.components.Pill
@@ -73,6 +80,8 @@ import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SkeletonBox
 import com.aiglobal.jobfinder.ui.components.isDarkTheme
+import com.aiglobal.jobfinder.ui.screens.diagnostics.SourceStatusBadge
+import com.aiglobal.jobfinder.ui.screens.diagnostics.providerDetail
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import com.aiglobal.jobfinder.ui.theme.extendedColors
@@ -85,11 +94,14 @@ fun ProfileScreen(
     appViewModel: AppViewModel,
     onOpenAi: () -> Unit,
     onOpenExpat: (String) -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
     val adzunaCredentials by appViewModel.adzunaCredentials.collectAsStateWithLifecycle()
     val joobleApiKey by appViewModel.joobleApiKey.collectAsStateWithLifecycle()
+    val expatPreferences by appViewModel.expatPreferences.collectAsStateWithLifecycle()
+    val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
 
     val current = profile
     if (current == null) {
@@ -181,14 +193,33 @@ fun ProfileScreen(
 
         item { ThemeCard(themeMode = themeMode, onSelect = appViewModel::setThemeMode) }
 
+        item {
+            SectionHeader(
+                title = "Expat benefits",
+                subtitle = "What you want a job abroad to include — this drives the Expat Benefits Score",
+            )
+        }
+
+        item {
+            ExpatPriorityCard(
+                preferences = expatPreferences,
+                onPriorityChange = appViewModel::setBenefitPriority,
+                onRequireVisaChange = appViewModel::setRequireVisaSponsorship,
+            )
+        }
+
         item { AutoApplyCard(enabled = current.autoApplyEnabled, onToggle = viewModel::setAutoApply) }
 
         item {
             JobSourcesCard(
                 credentials = adzunaCredentials,
                 joobleKey = joobleApiKey,
+                diagnostics = diagnostics,
                 onSaveAdzuna = appViewModel::saveAdzunaCredentials,
                 onSaveJooble = appViewModel::saveJoobleApiKey,
+                onToggleSource = appViewModel::setSourceEnabled,
+                onRunValidation = viewModel::runValidation,
+                onOpenDiagnostics = onOpenDiagnostics,
             )
         }
 
@@ -494,6 +525,97 @@ private fun ThemeOption(
 }
 
 @Composable
+private fun ExpatPriorityCard(
+    preferences: ExpatPreferences,
+    onPriorityChange: (String, BenefitPriority) -> Unit,
+    onRequireVisaChange: (Boolean) -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Text(
+                text = "How much each benefit matters to you",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "Your Expat Benefits Score rewards the postings that document what you marked " +
+                    "essential or important. It is always shown apart from your CV match score.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            JobBenefitTypes.all.forEach { type ->
+                ExpatBenefitPriorityRow(
+                    type = type,
+                    priority = preferences.priorityOf(type),
+                    onSelect = { onPriorityChange(type.key, it) },
+                )
+            }
+
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Require documented visa sponsorship",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Only show postings where the employer states sponsorship",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = preferences.requireVisaSponsorship,
+                    onCheckedChange = onRequireVisaChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/** One benefit line with a four-step priority selector. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ExpatBenefitPriorityRow(
+    type: BenefitType,
+    priority: BenefitPriority,
+    onSelect: (BenefitPriority) -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = type.emoji, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = type.label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            BenefitPriority.entries.forEach { option ->
+                FilterChip(
+                    label = option.label,
+                    selected = option == priority,
+                    onClick = { onSelect(option) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun AutoApplyCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
     val spacing = LocalSpacing.current
     AppCard(modifier = Modifier.fillMaxWidth()) {
@@ -566,8 +688,12 @@ private fun AutoApplyCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
 internal fun JobSourcesCard(
     credentials: AdzunaCredentials,
     joobleKey: String,
+    diagnostics: ProviderDiagnostics = ProviderDiagnostics(),
     onSaveAdzuna: (String, String) -> Unit,
     onSaveJooble: (String) -> Unit,
+    onToggleSource: (String, Boolean) -> Unit = { _, _ -> },
+    onRunValidation: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     var expanded by remember { mutableStateOf(false) }
@@ -592,22 +718,34 @@ internal fun JobSourcesCard(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "Arbeitnow, Remotive, Jobicy and Himalayas are always on.",
+                        text = "${diagnostics.successCount} of ${diagnostics.providers.size} sources answered on the last run.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            SourceStatusRow(
-                label = "Adzuna",
-                detail = "National markets in 7 countries",
-                configured = credentials.isConfigured,
+            diagnostics.providers.forEach { provider ->
+                DiagnosticRow(
+                    name = provider.name,
+                    detail = provider.message ?: providerDetail(provider),
+                    status = provider.status,
+                    enabled = provider.enabled,
+                    onToggle = { enabled -> onToggleSource(provider.providerId, enabled) },
+                )
+            }
+
+            SecondaryButton(
+                text = "Run live validation",
+                onClick = onRunValidation,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = Icons.Filled.PlayArrow,
             )
-            SourceStatusRow(
-                label = "Jooble",
-                detail = "Aggregated vacancies worldwide",
-                configured = joobleKey.isNotBlank(),
+            SecondaryButton(
+                text = "Open diagnostics",
+                onClick = onOpenDiagnostics,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = Icons.Filled.MonitorHeart,
             )
 
             SecondaryButton(
@@ -619,7 +757,7 @@ internal fun JobSourcesCard(
 
             if (expanded) {
                 Text(
-                    text = "Both are free. Create credentials at developer.adzuna.com and jooble.org/api, " +
+                    text = "Adzuna and Jooble are free. Create credentials at developer.adzuna.com and jooble.org/api, " +
                         "then paste them here. They are stored only on this device.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -647,37 +785,38 @@ internal fun JobSourcesCard(
     }
 }
 
-/** One optional source and whether its credentials are present. */
+/** One source's real health plus its on/off switch. */
 @Composable
-private fun SourceStatusRow(
-    label: String,
+private fun DiagnosticRow(
+    name: String,
     detail: String,
-    configured: Boolean,
+    status: ProviderStatus,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = if (configured) Icons.Filled.CheckCircle else Icons.Filled.CloudOff,
-            contentDescription = null,
-            tint = if (configured) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(LocalSpacing.current.sm))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                SourceStatusBadge(status)
+            }
             Text(
                 text = detail,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        Pill(
-            text = if (configured) "On" else "Off",
-            containerColor = if (configured) extendedColors.successContainer else MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = if (configured) extendedColors.onSuccessContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        Spacer(Modifier.width(LocalSpacing.current.sm))
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary),
         )
     }
 }

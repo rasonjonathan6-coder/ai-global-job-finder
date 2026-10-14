@@ -20,15 +20,28 @@ class HimalayasProvider(
     override val name: String = "Himalayas"
     override val homepage: String = "https://himalayas.app"
     override val kind: ProviderKind = ProviderKind.REMOTE_BOARD
+    override val documentationUrl: String = "https://himalayas.app/jobs/api"
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val url = "$BASE_URL?limit=${limit.coerceIn(1, 100)}"
         val json = try {
             feed.objectAt(url)
         } catch (t: Throwable) {
-            throw JobProviderException(id, "Himalayas did not respond", t)
+            throw JobProviderException(
+                providerId = id,
+                message = "Himalayas did not respond",
+                cause = t,
+                category = ProviderErrorClassifier.classify(id, t),
+            )
         }
-        val jobs = json.optJSONArray("jobs") ?: return emptyList()
+        // The feed always carries a "jobs" array, even when empty. A body without one is
+        // an unexpected shape, not an empty result, so the two are not confused.
+        val jobs = json.optJSONArray("jobs")
+            ?: throw JobProviderException(
+                providerId = id,
+                message = "Himalayas returned an unexpected response shape",
+                category = ProviderErrorCategory.INVALID_RESPONSE,
+            )
         return buildList {
             for (i in 0 until jobs.length()) {
                 val item = jobs.optJSONObject(i) ?: continue

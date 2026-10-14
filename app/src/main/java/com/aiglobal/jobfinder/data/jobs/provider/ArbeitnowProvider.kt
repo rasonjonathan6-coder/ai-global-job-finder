@@ -13,14 +13,26 @@ class ArbeitnowProvider(
     override val name: String = "Arbeitnow"
     override val homepage: String = "https://www.arbeitnow.com"
     override val kind: ProviderKind = ProviderKind.AGGREGATOR
+    override val documentationUrl: String = "https://www.arbeitnow.com/blog/arbeitnow-api"
+    override val supportsServerSideSearch: Boolean = false
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val json = try {
             feed.objectAt("$BASE_URL?page=1")
         } catch (t: Throwable) {
-            throw JobProviderException(id, "Arbeitnow did not respond", t)
+            throw JobProviderException(
+                providerId = id,
+                message = "Arbeitnow did not respond",
+                cause = t,
+                category = ProviderErrorClassifier.classify(id, t),
+            )
         }
-        val data = json.optJSONArray("data") ?: return emptyList()
+        val data = json.optJSONArray("data")
+            ?: throw JobProviderException(
+                providerId = id,
+                message = "Arbeitnow returned an unexpected response shape",
+                category = ProviderErrorCategory.INVALID_RESPONSE,
+            )
         return buildList {
             for (i in 0 until data.length()) {
                 val item = data.optJSONObject(i) ?: continue

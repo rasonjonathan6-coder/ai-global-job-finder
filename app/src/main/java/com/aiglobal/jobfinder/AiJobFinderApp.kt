@@ -25,6 +25,8 @@ import com.aiglobal.jobfinder.data.jobs.provider.JoobleProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JobicyProvider
 import com.aiglobal.jobfinder.data.jobs.provider.RemotiveProvider
 import com.aiglobal.jobfinder.data.model.CandidateProfile
+import com.aiglobal.jobfinder.data.model.ProviderSettings
+import com.aiglobal.jobfinder.data.net.NetworkMonitor
 import com.aiglobal.jobfinder.data.prefs.UserPreferencesRepository
 import com.aiglobal.jobfinder.data.repository.CvRepository
 import com.aiglobal.jobfinder.data.repository.JobRepository
@@ -35,6 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -120,7 +123,28 @@ open class AppContainer(application: Application) {
         ),
         candidateProfile = candidateProfile,
         cache = JobCache(File(application.filesDir, "job_feed")),
+        isOnline = { NetworkMonitor(application).isOnline() },
+        providerSettings = providerSettings,
     )
+
+    /**
+     * Which sources are switched off, and which credential-gated sources have keys saved.
+     * The repository uses this to tell "not configured" apart from "failed", so a source
+     * the user has not set up never appears as broken.
+     */
+    val providerSettings: Flow<ProviderSettings> = combine(
+        preferencesRepository.disabledSourceIds,
+        preferencesRepository.adzunaCredentials,
+        preferencesRepository.joobleApiKey,
+    ) { disabled: Set<String>, adzuna: AdzunaCredentials, jooble: String ->
+        ProviderSettings(
+            disabledIds = disabled,
+            configuredCredentialIds = buildSet {
+                if (adzuna.isConfigured) add("adzuna")
+                if (jooble.isNotBlank()) add("jooble")
+            },
+        )
+    }
 
     /** Last-known Adzuna credentials, read synchronously by the provider factory. */
     @Volatile

@@ -14,15 +14,26 @@ class JobicyProvider(
     override val name: String = "Jobicy"
     override val homepage: String = "https://jobicy.com"
     override val kind: ProviderKind = ProviderKind.REMOTE_BOARD
+    override val documentationUrl: String = "https://jobicy.com/jobs-rss-feed"
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val url = "$BASE_URL?count=${limit.coerceIn(1, 50)}"
         val json = try {
             feed.objectAt(url)
         } catch (t: Throwable) {
-            throw JobProviderException(id, "Jobicy did not respond", t)
+            throw JobProviderException(
+                providerId = id,
+                message = "Jobicy did not respond",
+                cause = t,
+                category = ProviderErrorClassifier.classify(id, t),
+            )
         }
-        val jobs = json.optJSONArray("jobs") ?: return emptyList()
+        val jobs = json.optJSONArray("jobs")
+            ?: throw JobProviderException(
+                providerId = id,
+                message = "Jobicy returned an unexpected response shape",
+                category = ProviderErrorCategory.INVALID_RESPONSE,
+            )
         return buildList {
             for (i in 0 until jobs.length()) {
                 val item = jobs.optJSONObject(i) ?: continue

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Gavel
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
 import com.aiglobal.jobfinder.data.model.MatchTier
 import com.aiglobal.jobfinder.data.model.ScamRisk
@@ -184,6 +186,46 @@ fun ScamRiskBadge(risk: ScamRisk, modifier: Modifier = Modifier) {
         ScamRisk.HIGH -> Triple("Scam warning", extendedColors.dangerContainer, extendedColors.danger)
     }
     Pill(text = label, containerColor = container, contentColor = content, leadingIcon = Icons.Filled.Gavel, modifier = modifier)
+}
+
+/**
+ * The Expat Benefits Score, shown as its own chip so it can never be read as the CV
+ * match. When the posting documents too few benefits to trust the number, the chip says
+ * so instead of implying the employer offers little.
+ */
+@Composable
+fun ExpatScoreBadge(
+    score: Int,
+    evidenceCoverage: Int,
+    lowEvidence: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val content = when {
+        lowEvidence -> extendedColors.warning
+        score >= 75 -> extendedColors.success
+        score >= 50 -> extendedColors.info
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val label = if (lowEvidence) "Expat $score% · $evidenceCoverage% documented" else "Expat benefits $score%"
+    Pill(
+        text = label,
+        containerColor = content.copy(alpha = 0.14f),
+        contentColor = content,
+        leadingIcon = Icons.Filled.CardGiftcard,
+        modifier = modifier,
+    )
+}
+
+/** Small status chip for one benefit line in the detail sheet. */
+@Composable
+fun BenefitStatusChip(status: BenefitStatus, modifier: Modifier = Modifier) {
+    val (container, content) = when (status) {
+        BenefitStatus.CONFIRMED -> extendedColors.successContainer to extendedColors.success
+        BenefitStatus.NEEDS_VERIFICATION -> extendedColors.warningContainer to extendedColors.warning
+        BenefitStatus.NOT_OFFERED -> extendedColors.dangerContainer to extendedColors.danger
+        BenefitStatus.UNKNOWN -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Pill(text = status.label, containerColor = container, contentColor = content, modifier = modifier)
 }
 
 /** Thin labelled progress bar used for profile completion and AI analysis. */

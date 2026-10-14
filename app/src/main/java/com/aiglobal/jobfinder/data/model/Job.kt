@@ -74,6 +74,12 @@ data class Job(
     val matchReasons: List<MatchReason> = emptyList(),
     /** Why the eligibility verdict was reached, official facts first. */
     val eligibilityReasons: List<EligibilityReason> = emptyList(),
+    /**
+     * What the posting documents about expat benefits, with the sentence that proves it.
+     * This is independent of the user's priorities, so it can be cached with the posting;
+     * the [ExpatBenefitsAssessment] is derived later, once preferences are known.
+     */
+    val benefitEvidence: List<BenefitEvidence> = emptyList(),
     val isSaved: Boolean = false,
     val isNew: Boolean = false,
 ) {

@@ -28,10 +28,13 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FilterAltOff
+import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -58,14 +61,19 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aiglobal.jobfinder.data.model.BenefitScoreComponent
+import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.EligibilityReason
+import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSyncState
 import com.aiglobal.jobfinder.data.model.MatchReason
 import com.aiglobal.jobfinder.data.model.MatchSignal
 import com.aiglobal.jobfinder.data.model.SourceState
+import com.aiglobal.jobfinder.ui.components.BenefitStatusChip
 import com.aiglobal.jobfinder.ui.components.EmptyState
 import com.aiglobal.jobfinder.ui.components.ErrorState
+import com.aiglobal.jobfinder.ui.components.ExpatScoreBadge
 import com.aiglobal.jobfinder.ui.components.FilterChip
 import com.aiglobal.jobfinder.ui.components.IconChipButton
 import com.aiglobal.jobfinder.ui.components.JobCard
@@ -86,6 +94,7 @@ fun JobsScreen(
     viewModel: JobsViewModel,
     onOpenAi: () -> Unit,
     onOpenJob: (String) -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     JobsContent(
@@ -94,14 +103,17 @@ fun JobsScreen(
         onToggleSaved = viewModel::toggleSavedFilter,
         onToggleEligible = viewModel::toggleEligibleFilter,
         onToggleSponsored = viewModel::toggleSponsoredFilter,
+        onToggleVisaDocumented = viewModel::toggleVisaDocumentedFilter,
         onCountryChange = viewModel::onCountryChange,
         onSourceChange = viewModel::onSourceChange,
         onSortChange = viewModel::onSortChange,
+        onMinExpatScoreChange = viewModel::onMinExpatScoreChange,
         onClearFilters = viewModel::clearFilters,
         onRefresh = viewModel::refresh,
         onOpenAi = onOpenAi,
         onToggleSaveJob = viewModel::toggleSaved,
         onOpenJob = onOpenJob,
+        onOpenLink = onOpenLink,
     )
 }
 
@@ -112,16 +124,21 @@ internal fun JobsContent(
     onToggleSaved: () -> Unit,
     onToggleEligible: () -> Unit,
     onToggleSponsored: () -> Unit,
+    onToggleVisaDocumented: () -> Unit = {},
     onCountryChange: (String?) -> Unit,
     onSourceChange: (String?) -> Unit,
     onSortChange: (JobSort) -> Unit,
+    onMinExpatScoreChange: (Int) -> Unit = {},
     onClearFilters: () -> Unit,
     onRefresh: () -> Unit,
     onOpenAi: () -> Unit,
     onToggleSaveJob: (String) -> Unit,
     onOpenJob: (String) -> Unit = {},
+    /** Launches the posting URL once the candidate has confirmed the destination. */
+    onOpenLink: (String) -> Unit = {},
 ) {
     var explainJob by remember { mutableStateOf<Job?>(null) }
+    var applyJob by remember { mutableStateOf<Job?>(null) }
     var showFilters by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -139,6 +156,8 @@ internal fun JobsContent(
             onToggleSaved = onToggleSaved,
             onToggleEligible = onToggleEligible,
             onToggleSponsored = onToggleSponsored,
+            onToggleVisaDocumented = onToggleVisaDocumented,
+            onMinExpatScoreChange = onMinExpatScoreChange,
         )
 
         when {
@@ -187,12 +206,16 @@ internal fun JobsContent(
                     verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.sm),
                 ) {
                     itemsIndexed(state.visibleJobs, key = { _, job -> job.id }) { index, job ->
+                        val expat = state.expatAssessment(job)
                         JobCard(
                             job = job,
                             onViewJob = { explainJob = job },
-                            onApply = { explainJob = job },
+                            onApply = { applyJob = job },
                             onToggleSave = { onToggleSaveJob(job.id) },
                             index = index,
+                            expatScore = expat.score.takeIf { expat.hasEvidence },
+                            expatEvidenceCoverage = expat.evidenceCoverage,
+                            expatLowEvidence = expat.hasEvidence && expat.lowEvidence,
                         )
                     }
                 }
@@ -203,11 +226,27 @@ internal fun JobsContent(
     explainJob?.let { job ->
         JobExplanationSheet(
             job = job,
+            expat = state.expatAssessment(job),
             onDismiss = { explainJob = null },
-            onOpenSource = { onOpenAi() },
+            onOpenSource = {
+                explainJob = null
+                applyJob = job
+            },
             onWriteLetter = {
                 explainJob = null
                 onOpenJob(job.id)
+            },
+        )
+    }
+
+    applyJob?.let { job ->
+        ApplyLinkSheet(
+            job = job,
+            inspection = applicationUrlInspector.inspect(job),
+            onDismiss = { applyJob = null },
+            onOpen = { url ->
+                applyJob = null
+                onOpenLink(url)
             },
         )
     }
@@ -324,6 +363,8 @@ private fun JobsFilterRow(
     onToggleSaved: () -> Unit,
     onToggleEligible: () -> Unit,
     onToggleSponsored: () -> Unit,
+    onToggleVisaDocumented: () -> Unit,
+    onMinExpatScoreChange: (Int) -> Unit,
 ) {
     val spacing = LocalSpacing.current
     LazyRow(
@@ -346,6 +387,22 @@ private fun JobsFilterRow(
                 selected = state.sponsoredOnly,
                 onClick = onToggleSponsored,
                 leadingIcon = Icons.Filled.VerifiedUser,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Visa documented",
+                selected = state.visaDocumentedOnly,
+                onClick = onToggleVisaDocumented,
+                leadingIcon = Icons.Filled.Description,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Benefits 60%+",
+                selected = state.minExpatScore >= 60,
+                onClick = { onMinExpatScoreChange(if (state.minExpatScore >= 60) 0 else 60) },
+                leadingIcon = Icons.Filled.CardGiftcard,
             )
         }
         item {
@@ -447,6 +504,7 @@ private fun sourceSummary(syncState: JobSyncState, total: Int, eligible: Int): S
 @Composable
 private fun JobExplanationSheet(
     job: Job,
+    expat: ExpatBenefitsAssessment,
     onDismiss: () -> Unit,
     onOpenSource: () -> Unit,
     onWriteLetter: () -> Unit,
@@ -497,6 +555,8 @@ private fun JobExplanationSheet(
                 subtitle = "Official statements from the posting come first",
             )
             job.eligibilityReasons.forEach { reason -> EligibilityReasonRow(reason) }
+
+            ExpatBenefitsSection(expat)
 
             Spacer(Modifier.height(spacing.xs))
             PrimaryButton(
@@ -576,6 +636,119 @@ private fun EligibilityReasonRow(reason: EligibilityReason) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * Expat benefits block for the detail sheet. It states the Expat Benefits Score as its
+ * own number (never merged with the CV match), then lists every benefit the user cares
+ * about with the status and the exact wording it came from. Benefits the posting is
+ * silent about are shown as "Not stated", never as a refusal.
+ */
+@Composable
+private fun ExpatBenefitsSection(expat: ExpatBenefitsAssessment) {
+    val spacing = LocalSpacing.current
+    SectionHeader(
+        title = "Expat benefits",
+        subtitle = "Scored separately from your CV match, from what the posting documents",
+    )
+
+    if (!expat.hasEvidence) {
+        Text(
+            text = "This posting does not describe its expat benefits, so there is nothing to score yet. " +
+                "Check the employer's own page before you rely on any package.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        ExpatScoreBadge(
+            score = expat.score,
+            evidenceCoverage = expat.evidenceCoverage,
+            lowEvidence = expat.lowEvidence,
+        )
+        Pill(
+            text = "${expat.evidenceCoverage}% documented",
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    Text(
+        text = expat.explanation,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    if (expat.unmetEssentials.isNotEmpty()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            Icon(
+                Icons.Filled.PriorityHigh,
+                contentDescription = null,
+                tint = extendedColors.warning,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = "You marked ${expat.unmetEssentials.joinToString(", ") { it.shortLabel }} as essential, " +
+                    "but this posting does not document ${if (expat.unmetEssentials.size == 1) "it" else "them"}. " +
+                    "Ask the employer before you count on it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    expat.components.forEach { component -> BenefitEvidenceRow(component) }
+}
+
+@Composable
+private fun BenefitEvidenceRow(component: BenefitScoreComponent) {
+    val spacing = LocalSpacing.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        Text(text = component.type.emoji, style = MaterialTheme.typography.bodyMedium)
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = component.type.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                BenefitStatusChip(component.status)
+            }
+            if (component.status == BenefitStatus.CONFIRMED ||
+                component.status == BenefitStatus.NEEDS_VERIFICATION
+            ) {
+                Text(
+                    text = "“${component.evidence}”",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (component.priority.weight > 0) {
+                Text(
+                    text = "You rated this ${component.priority.label.lowercase()} · " +
+                        "${component.earnedPoints}/${component.potentialPoints} pts",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

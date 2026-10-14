@@ -37,6 +37,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.ui.components.ErrorState
 import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.components.JobCardCompact
@@ -59,6 +63,8 @@ import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SkeletonBox
 import com.aiglobal.jobfinder.ui.components.StatCardSkeleton
 import com.aiglobal.jobfinder.ui.components.isDarkTheme
+import com.aiglobal.jobfinder.ui.screens.jobs.ApplyLinkSheet
+import com.aiglobal.jobfinder.ui.screens.jobs.applicationUrlInspector
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
 import com.aiglobal.jobfinder.ui.theme.extendedColors
 import com.aiglobal.jobfinder.viewmodel.HomeUiState
@@ -69,7 +75,7 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenJobs: () -> Unit,
     onOpenJob: (String) -> Unit,
-    onApply: (String) -> Unit,
+    onOpenLink: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -83,7 +89,12 @@ fun HomeScreen(
                 onRetry = { viewModel.refresh() },
             )
         } else {
-            HomeContent(state = state, onOpenJobs = onOpenJobs, onOpenJob = onOpenJob, onApply = onApply)
+            HomeContent(
+                state = state,
+                onOpenJobs = onOpenJobs,
+                onOpenJob = onOpenJob,
+                onOpenLink = onOpenLink,
+            )
         }
     }
 }
@@ -93,10 +104,11 @@ internal fun HomeContent(
     state: HomeUiState,
     onOpenJobs: () -> Unit,
     onOpenJob: (String) -> Unit,
-    onApply: (String) -> Unit,
+    onOpenLink: (String) -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     val profile = state.profile
+    var applyJob by remember { mutableStateOf<Job?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -145,7 +157,7 @@ internal fun HomeContent(
                     JobCard(
                         job = job,
                         onViewJob = { onOpenJob(job.id) },
-                        onApply = { onApply(job.id) },
+                        onApply = { applyJob = job },
                         onToggleSave = { },
                         index = index,
                     )
@@ -182,6 +194,18 @@ internal fun HomeContent(
                 AiInsightCard()
             }
         }
+    }
+
+    applyJob?.let { job ->
+        ApplyLinkSheet(
+            job = job,
+            inspection = applicationUrlInspector.inspect(job),
+            onDismiss = { applyJob = null },
+            onOpen = { url ->
+                applyJob = null
+                onOpenLink(url)
+            },
+        )
     }
 }
 

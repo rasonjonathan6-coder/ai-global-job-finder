@@ -41,6 +41,10 @@ import com.aiglobal.jobfinder.data.model.JobAlertsState
 import com.aiglobal.jobfinder.data.repository.SampleData
 import com.aiglobal.jobfinder.data.repository.SampleJobRepository
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.apply.ApplicationUrlInspector
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
+import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.scam.ScamDetector
 import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
@@ -52,9 +56,11 @@ import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
 import com.aiglobal.jobfinder.ui.screens.autoapply.AutoApplyContent
 import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterContent
 import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
+import com.aiglobal.jobfinder.ui.screens.diagnostics.LiveSearchValidationContent
 import com.aiglobal.jobfinder.ui.screens.expat.ExpatContent
 import com.aiglobal.jobfinder.ui.screens.home.HomeContent
 import com.aiglobal.jobfinder.ui.screens.interview.InterviewContent
+import com.aiglobal.jobfinder.ui.screens.jobs.ApplyLinkSheetBody
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsContent
 import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
@@ -72,6 +78,7 @@ import com.aiglobal.jobfinder.viewmodel.InterviewUiState
 import com.aiglobal.jobfinder.viewmodel.JobsUiState
 import com.aiglobal.jobfinder.viewmodel.ProfileViewModel
 import com.aiglobal.jobfinder.viewmodel.ScamUiState
+import com.aiglobal.jobfinder.viewmodel.SourceDiagnosticsUiState
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Rule
@@ -155,7 +162,7 @@ class ScreenshotTest {
 
     @Test
     fun homeScreen() = renderBothModes("home") {
-        HomeContent(state = homeState, onOpenJobs = {}, onOpenJob = {}, onApply = {})
+        HomeContent(state = homeState, onOpenJobs = {}, onOpenJob = {})
     }
 
     @Test
@@ -163,7 +170,15 @@ class ScreenshotTest {
         val job = runBlocking { repository.jobs.first() }.first { it.matchScore == 95 }
         renderBothModes("job-card") {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                JobCard(job = job, onViewJob = {}, onApply = {}, onToggleSave = {})
+                JobCard(
+                    job = job,
+                    onViewJob = {},
+                    onApply = {},
+                    onToggleSave = {},
+                    expatScore = 100,
+                    expatEvidenceCoverage = 67,
+                    expatLowEvidence = false,
+                )
             }
         }
     }
@@ -328,10 +343,71 @@ class ScreenshotTest {
         JobSourcesCard(
             credentials = AdzunaCredentials(appId = "abc123", appKey = "def456"),
             joobleKey = "jooble-key",
+            diagnostics = ProviderDiagnostics(
+                providers = listOf(
+                    diagnostic("arbeitnow", "Arbeitnow", ProviderStatus.SUCCESS_WITH_RESULTS),
+                    diagnostic("remotive", "Remotive", ProviderStatus.SUCCESS_EMPTY, message = "The source answered and had no matching jobs."),
+                    diagnostic("adzuna", "Adzuna", ProviderStatus.PARTIAL_SUCCESS, message = "2 records did not pass validation."),
+                    diagnostic("jooble", "Jooble", ProviderStatus.NETWORK_ERROR, message = "The source could not be reached."),
+                    diagnostic("jobicy", "Jobicy", ProviderStatus.NOT_CONFIGURED, message = "This source needs a key before it can be searched."),
+                    diagnostic("himalayas", "Himalayas", ProviderStatus.DISABLED, enabled = false, message = "You switched this source off."),
+                ),
+                lastAttemptAtEpochMillis = 1_700_000_000_000L,
+            ),
             onSaveAdzuna = { _, _ -> },
             onSaveJooble = {},
         )
     }
+
+    @Test
+    fun liveSearchValidation() = renderBothModes("live-search-validation") {
+        LiveSearchValidationContent(
+            state = SourceDiagnosticsUiState(
+                diagnostics = ProviderDiagnostics(
+                    providers = listOf(
+                        diagnostic("arbeitnow", "Arbeitnow", ProviderStatus.SUCCESS_WITH_RESULTS, validJobCount = 18),
+                        diagnostic("adzuna", "Adzuna", ProviderStatus.RATE_LIMITED, message = "The source is rate limiting this device. Try again later."),
+                        diagnostic("jooble", "Jooble", ProviderStatus.NOT_CONFIGURED),
+                    ),
+                    lastAttemptAtEpochMillis = 1_700_000_000_000L,
+                    showingCachedOnly = true,
+                ),
+                note = "1 source(s) answered, 1 failed. Kept the good results.",
+            ),
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun applyLinkSheetContent() = renderBothModes("apply-link") {
+        val job = runBlocking { repository.jobs.first() }.first()
+        ApplyLinkSheetBody(
+            job = job,
+            inspection = ApplicationUrlInspector().inspect("http://job-boards.freehost.tk/apply/12345"),
+            onDismiss = {},
+            onOpen = {},
+        )
+    }
+
+    private fun diagnostic(
+        id: String,
+        name: String,
+        status: ProviderStatus,
+        enabled: Boolean = true,
+        validJobCount: Int = 0,
+        message: String? = null,
+    ) = ProviderDiagnostic(
+        providerId = id,
+        name = name,
+        homepage = "https://example.com",
+        documentationUrl = "https://example.com/docs",
+        status = status,
+        enabled = enabled,
+        validJobCount = validJobCount,
+        lastAttemptAtEpochMillis = 1_700_000_000_000L,
+        lastDurationMillis = 412,
+        message = message,
+    )
 
     @Test
     fun bottomNavigation() = renderBothModes("bottom-nav") {

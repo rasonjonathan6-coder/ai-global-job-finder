@@ -4,11 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aiglobal.jobfinder.AppContainer
+import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.ApplicationRecord
 import com.aiglobal.jobfinder.data.model.ApplicationReminder
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
+import com.aiglobal.jobfinder.data.model.BenefitPriority
 import com.aiglobal.jobfinder.data.model.DashboardStats
+import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
+import com.aiglobal.jobfinder.data.model.ExpatPreferences
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSyncState
 import com.aiglobal.jobfinder.data.model.UserProfile
@@ -34,6 +38,10 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     val joobleApiKey: StateFlow<String> = container.preferencesRepository.joobleApiKey
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
+    /** The user's expat benefit priorities and gates, defaulting until they are stored. */
+    val expatPreferences: StateFlow<ExpatPreferences> = container.preferencesRepository.expatPreferences
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ExpatPreferences.defaults())
+
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { container.preferencesRepository.setThemeMode(mode) }
     }
@@ -44,6 +52,34 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     fun saveJoobleApiKey(key: String) {
         viewModelScope.launch { container.preferencesRepository.setJoobleApiKey(key) }
+    }
+
+    /** Switches a job source on or off; the feed honours it on the next validation run. */
+    fun setSourceEnabled(sourceId: String, enabled: Boolean) {
+        viewModelScope.launch { container.preferencesRepository.setSourceEnabled(sourceId, enabled) }
+    }
+
+    /** Sets how much one benefit matters to the user, and persists it. */
+    fun setBenefitPriority(key: String, priority: BenefitPriority) {
+        viewModelScope.launch {
+            val current = expatPreferences.value.priorities.toMutableMap()
+            current[key] = priority.weight
+            container.preferencesRepository.setExpatPriorities(current)
+        }
+    }
+
+    fun setExpatMinimumSalary(minimumEur: Int?) {
+        viewModelScope.launch { container.preferencesRepository.setExpatMinimumSalary(minimumEur) }
+    }
+
+    fun setExpatMinScores(minExpatScore: Int, minMatchScore: Int) {
+        viewModelScope.launch {
+            container.preferencesRepository.setExpatMinScores(minExpatScore, minMatchScore)
+        }
+    }
+
+    fun setRequireVisaSponsorship(required: Boolean) {
+        viewModelScope.launch { container.preferencesRepository.setRequireVisaSponsorship(required) }
     }
 }
 
@@ -68,6 +104,14 @@ data class JobsUiState(
     val minMatch: Int = 0,
     val sort: JobSort = JobSort.BEST_MATCH,
     val syncState: JobSyncState = JobSyncState(),
+    /** Expat Benefits Score per job id. Kept beside the CV match, never blended into it. */
+    val expatAssessments: Map<String, ExpatBenefitsAssessment> = emptyMap(),
+    /** User priorities and gates, mirrored here so the filter row can show them. */
+    val expatPreferences: ExpatPreferences = ExpatPreferences(),
+    /** Hide postings whose Expat Benefits Score is below this. 0 disables the filter. */
+    val minExpatScore: Int = 0,
+    /** When true, only postings whose employer documents visa sponsorship are shown. */
+    val visaDocumentedOnly: Boolean = false,
 ) {
     /** Countries present in the current result set, for the country filter. */
     val countries: List<String>
@@ -85,7 +129,14 @@ data class JobsUiState(
 
     val hasActiveFilters: Boolean
         get() = savedOnly || eligibleOnly || sponsoredOnly || country != null ||
-            source != null || minMatch > 0 || query.isNotBlank()
+            source != null || minMatch > 0 || minExpatScore > 0 || visaDocumentedOnly ||
+            query.isNotBlank()
+
+    /** Expat Benefits Score for one posting, or the honest empty state when unknown. */
+    fun expatScore(job: Job): Int? = expatAssessments[job.id]?.score
+
+    fun expatAssessment(job: Job): ExpatBenefitsAssessment =
+        expatAssessments[job.id] ?: ExpatBenefitsAssessment.EMPTY
 
     val visibleJobs: List<Job>
         get() {
@@ -96,9 +147,18 @@ data class JobsUiState(
                 it.visaSupport == com.aiglobal.jobfinder.data.model.VisaSupport.FULL_SPONSORSHIP ||
                     it.visaSupport == com.aiglobal.jobfinder.data.model.VisaSupport.SPONSORSHIP_AVAILABLE
             }
+            if (visaDocumentedOnly) result = result.filter { job ->
+                job.benefitEvidence.any {
+                    it.type.key == com.aiglobal.jobfinder.data.model.JobBenefitTypes.VISA_SPONSORSHIP.key &&
+                        it.status == com.aiglobal.jobfinder.data.model.BenefitStatus.CONFIRMED
+                }
+            }
             country?.let { selected -> result = result.filter { it.country == selected } }
             source?.let { selected -> result = result.filter { it.providerId == selected } }
             if (minMatch > 0) result = result.filter { it.matchScore >= minMatch }
+            if (minExpatScore > 0) {
+                result = result.filter { (expatAssessments[it.id]?.score ?: 0) >= minExpatScore }
+            }
 
             val q = query.trim().lowercase()
             if (q.isNotBlank()) {
@@ -131,7 +191,11 @@ enum class JobSort(val label: String) {
     SALARY_HIGH("Highest salary"),
 }
 
-class JobsViewModel(private val repository: com.aiglobal.jobfinder.data.repository.JobRepository) : ViewModel() {
+class JobsViewModel(
+    private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
+    private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> = kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
+    private val expatEngine: ExpatBenefitsEngine = ExpatBenefitsEngine(),
+) : ViewModel() {
 
     private val uiStateInternal = kotlinx.coroutines.flow.MutableStateFlow(JobsUiState())
 
@@ -139,17 +203,39 @@ class JobsViewModel(private val repository: com.aiglobal.jobfinder.data.reposito
 
     init {
         viewModelScope.launch {
-            repository.jobs.collect { jobs ->
-                uiStateInternal.update { it.copy(jobs = jobs) }
-            }
-        }
-        viewModelScope.launch {
             repository.syncState.collect { sync ->
                 uiStateInternal.update { it.copy(syncState = sync) }
             }
         }
+        // Re-score every posting whenever the feed or the user's priorities change, so the
+        // Expat Benefits Score always reflects the current postings and the current wishes.
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(repository.jobs, expatPreferences) { jobs, prefs ->
+                jobs to prefs
+            }.collect { (jobs, prefs) ->
+                uiStateInternal.update {
+                    it.copy(
+                        jobs = jobs,
+                        expatPreferences = prefs,
+                        expatAssessments = jobs.associate { job ->
+                            job.id to expatEngine.assess(
+                                benefits = job.benefitEvidence,
+                                preferences = prefs,
+                                salaryEurPerYear = eurPerYear(job),
+                            )
+                        },
+                    )
+                }
+            }
+        }
         refresh()
     }
+
+    /** Advertised salary normalised to EUR/year, or null when the source published none. */
+    private fun eurPerYear(job: Job): Int? =
+        if (job.salaryMin <= 0) null
+        else com.aiglobal.jobfinder.data.geo.CurrencyConverter
+            .toEurPerYear(job.salaryMin, job.currencyCode, job.salaryPeriod)
 
     fun refresh() {
         viewModelScope.launch {
@@ -182,16 +268,27 @@ class JobsViewModel(private val repository: com.aiglobal.jobfinder.data.reposito
             country = null,
             source = null,
             minMatch = 0,
+            minExpatScore = 0,
+            visaDocumentedOnly = false,
         )
     }
+
+    fun onMinExpatScoreChange(value: Int) = uiStateInternal.update { it.copy(minExpatScore = value) }
+
+    fun toggleVisaDocumentedFilter() =
+        uiStateInternal.update { it.copy(visaDocumentedOnly = !it.visaDocumentedOnly) }
 
     fun toggleSaved(jobId: String) = viewModelScope.launch { repository.toggleSaved(jobId) }
 }
 
-class JobsViewModelFactory(private val repository: com.aiglobal.jobfinder.data.repository.JobRepository) :
-    ViewModelProvider.Factory {
+class JobsViewModelFactory(
+    private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
+    private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> =
+        kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = JobsViewModel(repository) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        JobsViewModel(repository, expatPreferences) as T
 }
 
 data class HomeUiState(
@@ -354,7 +451,13 @@ class ProfileViewModel(
         .map { it as UserProfile? }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Per-source health, shown in the Job sources diagnostics section. */
+    val diagnostics: StateFlow<com.aiglobal.jobfinder.data.model.ProviderDiagnostics> = repository.diagnostics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), com.aiglobal.jobfinder.data.model.ProviderDiagnostics())
+
     fun setAutoApply(enabled: Boolean) = viewModelScope.launch { repository.setAutoApply(enabled) }
+
+    fun runValidation() = viewModelScope.launch { repository.runLiveValidation() }
 }
 
 class ProfileViewModelFactory(
