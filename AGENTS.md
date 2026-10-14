@@ -281,6 +281,47 @@ results) answered both, and two scoring defects it exposed were fixed.
   `Stage7PipelineTest.documentedBenefitsStillResolveWithWholeWordMatching` pin the exact
   live-observed strings so these regressions cannot return.
 
+### Adzuna configuration and secret handling (Stage 10)
+
+Stage 10 connected Adzuna for real. The provider, the DataStore keys and the Settings card
+already existed; the work was making the credentials safe to use and proving the source
+returns genuine overseas maintenance vacancies.
+
+- **Adzuna needs credentials, and they must never leak.** Adzuna requires `app_id` **and**
+  `app_key` as query parameters, so the key rides the request URL. `HttpJsonClient` used to
+  throw `IOException("HTTP $status for $url")`, which put the key into the exception message
+  (and would put it in any future log). `HttpJsonClient.redactUrl` now masks any query
+  parameter whose name looks secret (`key`, `token`, `secret`, `password`, `auth`,
+  `credential`, `app_id`) before the URL is used in a message. `app_id` is masked too: it is
+  semi-public (it also appears in `redirect_url`'s `utm_source`) but there is no reason to
+  echo it.
+- **The Settings UI no longer renders a stored key.** `CredentialField` shows a saved value
+  as `Saved ••••••••` with a "Replace" action and an empty input; the field is only populated
+  when the user chooses to replace it, and it is a `PasswordVisualTransformation` field. A
+  key pasted into Settings therefore never reappears on screen or in a screenshot. Credentials
+  live in DataStore (`adzuna_app_id`, `adzuna_app_key`) and are never cleared by a refresh.
+- **Live verification.** With the user's real credentials supplied only as environment
+  variables (never written to the repo), the app's own `AdzunaProvider` fetched **243 unique
+  postings** across eight maintenance keywords and six markets (GB/CA/DE/FR/NL/AU). 69 scored
+  ≥55% for the candidate; the top hits are real overseas roles (a Venlo maintenance
+  technician at 77%, PPG Mechanical Maintenance in Australia at 71%, Amentum in Canada at
+  67%). Adzuna is the only configured source that does **server-side keyword search**, which
+  is why it is the one that can target the candidate's trade.
+- **Benefits stayed conservative.** Of 243 postings, only 7 had a `CONFIRMED` expat benefit,
+  and the two marked `VISA_SPONSORED` are the same two whose text says "457 Sponsorship
+  Available". The evidence sentences were printed and checked; the "Transport / allowance"
+  finding traces to "Company Car", which is a real documented benefit.
+- **Failure behaviour.** `ProviderErrorClassifier` now recognises Adzuna's own `AUTH_FAIL`
+  code as `AUTHENTICATION` (previously the word "auth" alone did not match). A concrete HTTP
+  status is classified before the generic `cause is IOException` branch, so an HTTP 503 is
+  reported as `HTTP_ERROR` ("server rejected") rather than `NETWORK` ("check your internet").
+  A failed market does not discard the markets that answered, and a provider that fails
+  entirely is reported as a source diagnostic — it never surfaces as a job.
+- Tests: `Stage10AdzunaTest` (17 tests) covers credential validation, the key travelling in
+  the URL, redaction, all five error categories, empty/malformed/skipped results, per-market
+  isolation and salary/remote mapping. `JobSourcesScreenTest` asserts the stored key is never
+  rendered and that "Replace" appears. Suite: 142 tests, 0 failures.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

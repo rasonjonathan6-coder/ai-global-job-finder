@@ -20,6 +20,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Bolt
@@ -697,9 +702,16 @@ internal fun JobSourcesCard(
 ) {
     val spacing = LocalSpacing.current
     var expanded by remember { mutableStateOf(false) }
-    var appId by remember(credentials.appId) { mutableStateOf(credentials.appId) }
-    var appKey by remember(credentials.appKey) { mutableStateOf(credentials.appKey) }
-    var jooble by remember(joobleKey) { mutableStateOf(joobleKey) }
+    // Saved keys are masked and never echoed back into the fields. The field starts empty;
+    // "Replace" reveals it so the old value is only overwritten by deliberate entry.
+    var appId by remember(credentials.appId) { mutableStateOf("") }
+    var appKey by remember(credentials.appKey) { mutableStateOf("") }
+    var jooble by remember(joobleKey) { mutableStateOf("") }
+    var editingAppId by remember(credentials.appId) { mutableStateOf(false) }
+    var editingAppKey by remember(credentials.appKey) { mutableStateOf(false) }
+    var editingJooble by remember(joobleKey) { mutableStateOf(false) }
+    val adzunaSaved = credentials.isConfigured
+    val joobleSaved = joobleKey.isNotBlank()
 
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -763,20 +775,50 @@ internal fun JobSourcesCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                SettingsTextField(value = appId, onValueChange = { appId = it }, label = "Adzuna app ID")
-                SettingsTextField(value = appKey, onValueChange = { appKey = it }, label = "Adzuna app key")
+                CredentialField(
+                    label = "Adzuna app ID",
+                    saved = adzunaSaved,
+                    editing = editingAppId,
+                    value = appId,
+                    onValueChange = { appId = it },
+                    onReplace = { appId = ""; editingAppId = true },
+                )
+                CredentialField(
+                    label = "Adzuna app key",
+                    saved = adzunaSaved,
+                    editing = editingAppKey,
+                    value = appKey,
+                    onValueChange = { appKey = it },
+                    onReplace = { appKey = ""; editingAppKey = true },
+                    secret = true,
+                )
                 PrimaryButton(
                     text = "Save Adzuna credentials",
-                    onClick = { onSaveAdzuna(appId, appKey) },
+                    onClick = {
+                        onSaveAdzuna(appId.trim(), appKey.trim())
+                        editingAppId = false
+                        editingAppKey = false
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = appId.isNotBlank() && appKey.isNotBlank(),
                 )
 
                 Spacer(Modifier.height(spacing.xxs))
-                SettingsTextField(value = jooble, onValueChange = { jooble = it }, label = "Jooble API key")
+                CredentialField(
+                    label = "Jooble API key",
+                    saved = joobleSaved,
+                    editing = editingJooble,
+                    value = jooble,
+                    onValueChange = { jooble = it },
+                    onReplace = { jooble = ""; editingJooble = true },
+                    secret = true,
+                )
                 PrimaryButton(
                     text = "Save Jooble key",
-                    onClick = { onSaveJooble(jooble) },
+                    onClick = {
+                        onSaveJooble(jooble.trim())
+                        editingJooble = false
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = jooble.isNotBlank(),
                 )
@@ -821,31 +863,72 @@ private fun DiagnosticRow(
     }
 }
 
+/**
+ * A credential field that never shows a saved value. When something is already stored it
+ * shows a masked status with a "Replace" action; the field is empty until the user chooses
+ * to replace it, so the stored key is not echoed back into the UI (or into a screenshot).
+ */
 @Composable
-private fun SettingsTextField(
+private fun CredentialField(
+    label: String,
+    saved: Boolean,
+    editing: Boolean,
     value: String,
     onValueChange: (String) -> Unit,
-    label: String,
+    onReplace: () -> Unit,
+    secret: Boolean = false,
 ) {
+    val spacing = LocalSpacing.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
-                .padding(horizontal = 14.dp, vertical = 13.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            if (saved && !editing) {
+                Text(
+                    text = if (secret) "Saved ••••••••" else "Saved",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        if (saved && !editing) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onReplace),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Replace",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(spacing.xs))
+                Text(
+                    text = "stored only on this device",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        } else {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 14.dp, vertical = 13.dp),
+            )
+        }
     }
 }
 

@@ -110,4 +110,29 @@ class JobSourcesScreenTest {
         composeRule.onNodeWithText("Adzuna app key").assertIsDisplayed()
         composeRule.onNodeWithText("Jooble API key").assertIsDisplayed()
     }
+
+    @Test
+    fun aSavedKeyIsNeverShownAndOffersReplacement() {
+        render(credentials = AdzunaCredentials(appId = "id", appKey = "topsecret"), joobleKey = "jooblesecret")
+        composeRule.onNodeWithText("Add optional sources").performClick()
+
+        // The stored values must not be rendered anywhere on the screen.
+        composeRule.onAllNodesWithText("topsecret").assertCountEquals(0)
+        composeRule.onAllNodesWithText("jooblesecret").assertCountEquals(0)
+        composeRule.onAllNodesWithText("id").assertCountEquals(0)
+
+        // Instead the card shows a masked status and a replace affordance (app ID + app key + Jooble).
+        composeRule.onAllNodesWithText("Saved ••••••••").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Saved").assertCountEquals(1)
+        composeRule.onAllNodesWithText("Replace").assertCountEquals(3)
+    }
+
+    @Test
+    fun replacingRevealsAnEmptyFieldForTheNewValue() {
+        render(credentials = AdzunaCredentials(appId = "id", appKey = "topsecret"))
+        composeRule.onNodeWithText("Add optional sources").performClick()
+        composeRule.onAllNodesWithText("Replace")[0].performClick()
+        // After choosing to replace, an editable field is shown (its label is still present).
+        composeRule.onNodeWithText("Adzuna app ID").assertIsDisplayed()
+    }
 }

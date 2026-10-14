@@ -80,7 +80,7 @@ object HttpJsonClient {
             val status = connection.responseCode
             if (status !in 200..299) {
                 connection.errorStream?.close()
-                throw java.io.IOException("HTTP $status for $url")
+                throw java.io.IOException("HTTP $status for ${redactUrl(url)}")
             }
             val encoding = connection.contentEncoding?.lowercase().orEmpty()
             val rawStream = connection.inputStream
@@ -90,4 +90,25 @@ object HttpJsonClient {
             connection.disconnect()
         }
     }
+
+    /**
+     * Strips anything that looks like a secret out of a URL before it is put in a message
+     * or a stack trace. Adzuna requires its key as a query parameter, so without this a
+     * failed request would carry the key into any log that records the exception.
+     */
+    internal fun redactUrl(url: String): String {
+        val queryStart = url.indexOf('?')
+        if (queryStart < 0) return url
+        val base = url.substring(0, queryStart)
+        val params = url.substring(queryStart + 1)
+            .split('&')
+            .filter { it.isNotBlank() }
+            .joinToString("&") { param ->
+                val name = param.substringBefore('=')
+                if (SECRET_PARAM.containsMatchIn(name)) "$name=***" else param
+            }
+        return "$base?$params"
+    }
+
+    private val SECRET_PARAM = Regex("(?i)(key|token|secret|password|passwd|auth|credential|app_?id)")
 }

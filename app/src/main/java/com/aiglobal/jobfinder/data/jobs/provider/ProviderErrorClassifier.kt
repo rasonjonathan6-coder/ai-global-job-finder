@@ -42,8 +42,11 @@ object ProviderErrorClassifier {
             RATE_LIMIT.containsMatchIn(haystack) -> ProviderErrorCategory.RATE_LIMITED
             TIMEOUT.containsMatchIn(haystack) -> ProviderErrorCategory.TIMEOUT
             INVALID_RESPONSE.containsMatchIn(haystack) -> ProviderErrorCategory.INVALID_RESPONSE
-            NETWORK.containsMatchIn(haystack) || cause is IOException -> ProviderErrorCategory.NETWORK
+            NETWORK.containsMatchIn(haystack) -> ProviderErrorCategory.NETWORK
+            // A concrete status beats the generic IOException branch: an HTTP 503 is the
+            // server rejecting the request, not the phone failing to reach it.
             httpStatus != null -> ProviderErrorCategory.HTTP_ERROR
+            cause is IOException -> ProviderErrorCategory.NETWORK
             else -> ProviderErrorCategory.UNKNOWN
         }
     }
@@ -56,7 +59,7 @@ object ProviderErrorClassifier {
     }
 
     private val HTTP_STATUS = Regex("\\b(\\d{3})\\b")
-    private val AUTH = Regex("unauthor|forbidden|invalid (?:api )?key|invalid token|access denied|credential|not authorized|401|403")
+    private val AUTH = Regex("unauthor|forbidden|invalid (?:api )?key|invalid token|access denied|credential|not authorized|401|403|auth_fail|auth fail")
     private val RATE_LIMIT = Regex("rate limit|too many requests|throttl|quota|429")
     private val TIMEOUT = Regex("timeout|timed out|deadline exceeded")
     private val INVALID_RESPONSE = Regex("invalid response|malformed|unexpected|not valid json|jsonexception|not a json")
