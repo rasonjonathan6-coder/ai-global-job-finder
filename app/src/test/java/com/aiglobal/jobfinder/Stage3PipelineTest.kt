@@ -13,6 +13,7 @@ import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.LanguageLevel
 import com.aiglobal.jobfinder.data.model.LanguageSkill
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
+import com.aiglobal.jobfinder.data.model.MatchSignal
 import com.aiglobal.jobfinder.data.model.MatchWeights
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
 import com.aiglobal.jobfinder.data.model.VisaSupport
@@ -171,6 +172,30 @@ class Stage3PipelineTest {
         // A partial skill match must score below a full one rather than being rounded up.
         val skillsReason = assessment.reasons.first { it.label == "Skills" }
         assertTrue(skillsReason.weight < MatchWeights().skills)
+    }
+
+    @Test
+    fun anUnrelatedRoleDoesNotScoreHighOnOneSharedTool() {
+        // Live Stage 9 audit: a "Product Design Manager" posting mentioned "CMMS" once and
+        // was scored as a 66% match for a maintenance technician because the single skill
+        // was the only one detected, awarding the full skill weight.
+        val assessment = matchingEngine.assess(
+            MatchInput(
+                title = "Product Design Manager",
+                country = "Canada",
+                description = "Own our product design system and roadmap. Familiarity with CMMS " +
+                    "tooling is a plus. 3 years experience.",
+                postedDaysAgo = 4,
+            ),
+            technicianProfile,
+        )
+
+        val skillsReason = assessment.reasons.first { it.label == "Skills" }
+        assertEquals(MatchSignal.NEGATIVE, skillsReason.signal)
+        assertTrue(
+            "An unrelated role must not reach a high match score (was ${assessment.score})",
+            assessment.score < 45,
+        )
     }
 
     // ---- Salary parsing ----------------------------------------------------

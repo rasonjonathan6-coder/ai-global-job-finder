@@ -45,37 +45,9 @@ class MatchingEngine(private val weights: MatchWeights = MatchWeights()) {
 
         var score = 0
 
-        // ---- Skills
-        val skillPoints = if (requiredSkills.isEmpty()) {
-            // Nothing comparable detected: award a neutral share rather than a perfect one.
-            (weights.skills * 0.45f)
-        } else {
-            weights.skills * (matched.size.toFloat() / requiredSkills.size)
-        }.roundToInt()
-        score += skillPoints
-        reasons += MatchReason(
-            label = "Skills",
-            detail = when {
-                requiredSkills.isEmpty() && candidateSkills.isEmpty() ->
-                    "No comparable skills found in the posting or your profile yet."
-                requiredSkills.isEmpty() ->
-                    "The posting does not name specific skills, so this part is scored neutrally."
-                matched.isEmpty() ->
-                    "None of the ${requiredSkills.size} skills named in the posting appear in your profile."
-                missing.isEmpty() ->
-                    "You match all ${requiredSkills.size} skills named in the posting."
-                else ->
-                    "You match ${matched.size} of ${requiredSkills.size} skills named in the posting."
-            },
-            signal = when {
-                requiredSkills.isEmpty() -> MatchSignal.NEUTRAL
-                matched.isEmpty() -> MatchSignal.NEGATIVE
-                else -> MatchSignal.POSITIVE
-            },
-            weight = skillPoints,
-        )
-
         // ---- Role / title alignment
+        // Computed before skills because it gates how much a skill overlap is worth: a
+        // single familiar tool in an otherwise unrelated posting is not a skill match.
         val titleRatio = titleSimilarity(profile, job.title)
         val titlePoints = (weights.title * titleRatio).roundToInt()
         score += titlePoints
@@ -92,6 +64,47 @@ class MatchingEngine(private val weights: MatchWeights = MatchWeights()) {
                 else -> MatchSignal.NEGATIVE
             },
             weight = titlePoints,
+        )
+
+        // ---- Skills
+        val rawSkillRatio = if (requiredSkills.isEmpty()) {
+            // Nothing comparable detected: award a neutral share rather than a perfect one.
+            0.45f
+        } else {
+            matched.size.toFloat() / requiredSkills.size
+        }
+        // A skill overlap only counts when the posting is for a role the candidate does.
+        // Without this gate, one incidentally-detected tool ("CMMS" in a marketing job)
+        // awarded the full skill weight and pushed an unrelated posting to a high score.
+        val skillGate = when {
+            requiredSkills.isEmpty() || titleRatio >= 0.35f -> 1f
+            titleRatio >= 0.2f -> 0.5f
+            else -> 0.2f
+        }
+        val skillPoints = (weights.skills * rawSkillRatio * skillGate).roundToInt()
+        score += skillPoints
+        reasons += MatchReason(
+            label = "Skills",
+            detail = when {
+                requiredSkills.isEmpty() && candidateSkills.isEmpty() ->
+                    "No comparable skills found in the posting or your profile yet."
+                requiredSkills.isEmpty() ->
+                    "The posting does not name specific skills, so this part is scored neutrally."
+                matched.isEmpty() ->
+                    "None of the ${requiredSkills.size} skills named in the posting appear in your profile."
+                skillGate < 1f ->
+                    "The posting names a skill you have, but it is not a role you do; the overlap counts for little."
+                missing.isEmpty() ->
+                    "You match all ${requiredSkills.size} skills named in the posting."
+                else ->
+                    "You match ${matched.size} of ${requiredSkills.size} skills named in the posting."
+            },
+            signal = when {
+                requiredSkills.isEmpty() -> MatchSignal.NEUTRAL
+                matched.isEmpty() || skillGate < 1f -> MatchSignal.NEGATIVE
+                else -> MatchSignal.POSITIVE
+            },
+            weight = skillPoints,
         )
 
         // ---- Experience

@@ -77,11 +77,62 @@ class Stage7PipelineTest {
     }
 
     @Test
+    fun aNegatedStrongPhraseIsARefusalNotAnOffer() {
+        // Live Stage 9 audit: these exact phrasings were being classified as CONFIRMED
+        // visa sponsorship because they contain the words "visa sponsorship".
+        val findings = byKey(
+            "Please note that at this time, we cannot support candidates requiring visa sponsorship or relocation. " +
+                "As a result, visa sponsorship and relocation support are not available for this position.",
+        )
+
+        assertEquals(BenefitStatus.NOT_OFFERED, findings.getValue(JobBenefitTypes.VISA_SPONSORSHIP.key).status)
+        assertEquals(BenefitStatus.NOT_OFFERED, findings.getValue(JobBenefitTypes.RELOCATION_SUPPORT.key).status)
+    }
+
+    @Test
     fun hedgedWordingNeedsVerificationRatherThanBeingTreatedAsConfirmed() {
         val findings = byKey("A housing allowance may be available depending on the site.")
 
         val accommodation = findings.getValue(JobBenefitTypes.ACCOMMODATION.key)
         assertEquals(BenefitStatus.NEEDS_VERIFICATION, accommodation.status)
+    }
+
+    @Test
+    fun incidentalProseDoesNotInventBenefits() {
+        // Each of these strings produced a false positive in the live Stage 9 audit: an
+        // ordinary word in the posting was being read as a documented benefit.
+        val findings = byKey(
+            "As a family-owned company, we think long term. " +
+                "Identify supply chain risks such as transportation disruptions. " +
+                "Bookkeeping, data entry, insurance and g suite. " +
+                "Law, including family law, divorce and product liability. " +
+                "Our vision is to digitalise medical transports.",
+        )
+
+        JobBenefitTypes.all.forEach { type ->
+            val finding = findings.getValue(type.key)
+            assertFalse(
+                "'${type.key}' must stay unknown when the posting only uses the word incidentally, " +
+                    "but evidence was '${finding.evidence}'",
+                finding.isDocumented,
+            )
+        }
+    }
+
+    @Test
+    fun documentedBenefitsStillResolveWithWholeWordMatching() {
+        val findings = byKey(
+            "We offer visa sponsorship and a relocation package. " +
+                "Health insurance and annual flights home are included. " +
+                "Company accommodation is provided and we run a German course for new joiners.",
+        )
+
+        assertEquals(BenefitStatus.CONFIRMED, findings.getValue(JobBenefitTypes.VISA_SPONSORSHIP.key).status)
+        assertEquals(BenefitStatus.CONFIRMED, findings.getValue(JobBenefitTypes.RELOCATION_SUPPORT.key).status)
+        assertEquals(BenefitStatus.CONFIRMED, findings.getValue(JobBenefitTypes.HEALTH_INSURANCE.key).status)
+        assertEquals(BenefitStatus.CONFIRMED, findings.getValue(JobBenefitTypes.FLIGHTS_HOME.key).status)
+        assertEquals(BenefitStatus.CONFIRMED, findings.getValue(JobBenefitTypes.ACCOMMODATION.key).status)
+        assertEquals(BenefitStatus.CONFIRMED, findings.getValue(JobBenefitTypes.LANGUAGE_TRAINING.key).status)
     }
 
     // ------------------------------------------------------------------- scoring

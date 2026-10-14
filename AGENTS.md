@@ -234,6 +234,53 @@ behaviour. Do not remove the seam.
   hard-coded "always on" list) at `w320dp-h640dp`, so the credential fields and the
   per-source status must both fit a narrow phone.
 
+### Real-world retrieval verification (Stage 9)
+
+Stage 9 asked whether the app retrieves **genuine** overseas vacancies for the candidate
+and whether it can tell **verified** employment benefits apart from marketing prose. A
+throwaway live probe (hitting the real provider APIs and running the real engines over the
+results) answered both, and two scoring defects it exposed were fixed.
+
+- **Live retrieval works for the key-free sources.** Arbeitnow (HTTP 200), Remotive (200),
+  Jobicy (200) and Himalayas (200) all returned real postings and mapped them cleanly
+  (title/company/location/url 100% populated). Adzuna reports `NOT_CONFIGURED` without an
+  app id/key, and Jooble is blocked by a Cloudflare bot challenge from a datacenter IP —
+  both are surfaced as actionable diagnostics, not silent failures.
+- **The remote boards ignore search terms.** Remotive (`search`/`category`), Jobicy
+  (`industry`/`tag`) and Himalayas (`q`/`search`) all return the same generic
+  newest-first feed regardless of the parameter. Only Adzuna/Jooble do server-side keyword
+  search, and both need credentials. So with no credentials the app cannot *target*
+  maintenance-technician roles; it can only fetch generic feeds and rank them locally. This
+  is a source limitation, documented here rather than worked around with fabricated data.
+- **`MatchingEngine` — a skill overlap is now gated by role alignment.** A live
+  "Product Design Manager" posting that mentioned "CMMS" once was scored 66% for a
+  maintenance technician: because it was the only skill detected, it awarded the *full*
+  skill weight even though the role signal was 0. Skill points are now multiplied by a
+  gate (`titleRatio >= 0.35` → full, `>= 0.2` → half, else → 0.2), and the Skills reason
+  says so ("...it is not a role you do; the overlap counts for little"). The same posting
+  now scores 41% and no unrelated role reaches the 60% "matching" threshold. Titles that
+  are genuinely close (ratio ≥ 0.35) are unaffected, so a real match is not penalised.
+- **`ExpatBenefitExtractor` — whole-word matching + negation awareness.** The live audit
+  found two ways the extractor misled the user:
+  1. *False positives from incidental words.* "family-owned company", "transportation
+     disruptions", "insurance and g suite" were being read as family-support / transport /
+     health-insurance benefits, because hedged phrases were matched as bare substrings
+     ("family", "transport", "insurance"). Phrases are now matched on whole words
+     (`\b…\b`), and the bare-noun hedged entries were removed — a bare noun is not
+     evidence of a benefit. Documented benefits ("visa sponsorship", "relocation package")
+     still resolve; only the noise is gone.
+  2. *Refusals read as offers.* "we **cannot** support candidates requiring visa
+     sponsorship" and "visa sponsorship ... **are not available**" contain a strong phrase,
+     so they were classified `CONFIRMED`. A sentence that contains a strong phrase **and**
+     an unambiguous negation (`cannot`, `do not`, `will not`, `unable to`, `not available`,
+     …) is now recorded as `NOT_OFFERED`. The negation list deliberately excludes the
+     word "no" on its own so that "no cost"/"no fee" offers are not misread as refusals.
+- Tests: `Stage3PipelineTest.anUnrelatedRoleDoesNotScoreHighOnOneSharedTool`,
+  `Stage7PipelineTest.incidentalProseDoesNotInventBenefits`,
+  `Stage7PipelineTest.aNegatedStrongPhraseIsARefusalNotAnOffer`, and
+  `Stage7PipelineTest.documentedBenefitsStillResolveWithWholeWordMatching` pin the exact
+  live-observed strings so these regressions cannot return.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
