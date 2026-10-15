@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,10 +34,13 @@ import androidx.compose.ui.unit.dp
 import com.aiglobal.jobfinder.data.apply.ApplicationDestination
 import com.aiglobal.jobfinder.data.apply.ApplicationLinkInspection
 import com.aiglobal.jobfinder.data.apply.ApplicationUrlInspector
+import com.aiglobal.jobfinder.data.jobs.freshness.JobFreshnessEngine
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
+import com.aiglobal.jobfinder.ui.components.postedAgeLabel
+import com.aiglobal.jobfinder.ui.components.retrievedLabel
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
 import com.aiglobal.jobfinder.ui.theme.extendedColors
 
@@ -114,6 +118,30 @@ internal fun ApplyLinkSheetBody(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        val freshness = remember(job) { jobFreshnessEngine.assess(job) }
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.xxs)) {
+            Text(
+                text = "Freshness and source",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = "${freshness.label} — ${freshness.detail}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "Published: ${postedAgeLabel(job.postedAtEpochMillis)}  ·  ${retrievedLabel(job.retrievedAtEpochMillis)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "Listed by ${job.source.ifBlank { "an unknown source" }}. A working link does not by itself confirm the vacancy is still open.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -208,3 +236,6 @@ private fun destinationStyle(destination: ApplicationDestination): Triple<ImageV
 
 /** Shared inspector, so the sheet and any caller agree on how a link is judged. */
 internal val applicationUrlInspector = ApplicationUrlInspector()
+
+/** Shared freshness classifier, so the sheet and any caller agree on how old a posting is. */
+internal val jobFreshnessEngine = JobFreshnessEngine()

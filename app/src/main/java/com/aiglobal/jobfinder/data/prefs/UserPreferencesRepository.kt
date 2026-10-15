@@ -69,6 +69,9 @@ class UserPreferencesRepository(
     private val demoModeKey = booleanPreferencesKey("demo_mode_enabled")
     private val autoApplyEnabledKey = booleanPreferencesKey("auto_apply_enabled")
     private val savedJobIdsKey = stringSetPreferencesKey("saved_job_ids")
+    private val autoRefreshEnabledKey = booleanPreferencesKey("auto_refresh_enabled")
+    private val refreshIntervalHoursKey = intPreferencesKey("refresh_interval_hours")
+    private val notificationsEnabledKey = booleanPreferencesKey("notifications_enabled")
 
     val themeMode: Flow<ThemeMode> = dataStore.data.map { prefs ->
         runCatching { ThemeMode.valueOf(prefs[themeKey] ?: ThemeMode.System.name) }
@@ -108,6 +111,39 @@ class UserPreferencesRepository(
 
     suspend fun setSavedJobIds(ids: Set<String>) {
         dataStore.edit { prefs -> prefs[savedJobIdsKey] = ids }
+    }
+
+    /**
+     * Automatic background refresh. On by default at a modest twice-daily cadence, because
+     * a job search only works if it runs while the app is closed. The interval is a request
+     * to WorkManager, which Android may defer — the UI never promises an exact time.
+     */
+    val refreshPreferences: Flow<com.aiglobal.jobfinder.data.refresh.RefreshPreferences> =
+        dataStore.data.map { prefs ->
+            com.aiglobal.jobfinder.data.refresh.RefreshPreferences(
+                enabled = prefs[autoRefreshEnabledKey] ?: true,
+                intervalHours = prefs[refreshIntervalHoursKey]
+                    ?: com.aiglobal.jobfinder.data.refresh.RefreshInterval.TWICE_DAILY.hours,
+            )
+        }
+
+    suspend fun setAutoRefreshEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[autoRefreshEnabledKey] = enabled }
+    }
+
+    suspend fun setRefreshIntervalHours(hours: Int) {
+        dataStore.edit { prefs -> prefs[refreshIntervalHoursKey] = hours }
+    }
+
+    /**
+     * Whether the app may post a notification for a new strong match. Off until the user
+     * turns it on, so a fresh install never interrupts anyone.
+     */
+    val notificationsEnabled: Flow<Boolean> = dataStore.data
+        .map { prefs -> prefs[notificationsEnabledKey] ?: false }
+
+    suspend fun setNotificationsEnabled(enabled: Boolean) {
+        dataStore.edit { prefs -> prefs[notificationsEnabledKey] = enabled }
     }
 
     /**

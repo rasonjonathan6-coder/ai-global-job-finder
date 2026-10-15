@@ -29,11 +29,15 @@ import com.aiglobal.jobfinder.data.jobs.provider.RemotiveProvider
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.ProviderSettings
 import com.aiglobal.jobfinder.data.net.NetworkMonitor
+import com.aiglobal.jobfinder.data.notifications.JobNotificationCenter
+import com.aiglobal.jobfinder.data.notifications.JobNotificationsCoordinator
+import com.aiglobal.jobfinder.data.notifications.NotificationHistoryStore
 import com.aiglobal.jobfinder.data.prefs.UserPreferencesRepository
 import com.aiglobal.jobfinder.data.repository.CvRepository
 import com.aiglobal.jobfinder.data.repository.JobRepository
 import com.aiglobal.jobfinder.data.repository.LiveJobRepository
 import com.aiglobal.jobfinder.data.scam.ScamDetector
+import com.aiglobal.jobfinder.work.JobRefreshScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -92,7 +96,7 @@ open class AppContainer(application: Application) {
      * that forces fixtures on. Every fixture-aware component reads this one flow, so jobs,
      * applications and saved searches always agree on whether sample data is being served.
      */
-    private val demoMode: Flow<Boolean> by lazy {
+    val demoMode: Flow<Boolean> by lazy {
         combine(preferencesRepository.demoMode, MutableStateFlow(seedsSampleData)) { persisted, seeded ->
             persisted || seeded
         }
@@ -238,6 +242,23 @@ open class AppContainer(application: Application) {
         )
     }
 
+    // ---------------------------------------------------------------- Stage 20
+
+    /**
+     * New-match notifications: the pure decision (which postings, and the honest wording)
+     * plus the history that stops a job being announced twice. The channel is created here
+     * so the system settings entry exists before the first notification.
+     */
+    val jobNotificationsCoordinator: JobNotificationsCoordinator by lazy {
+        JobNotificationsCoordinator(
+            center = JobNotificationCenter(application),
+            history = NotificationHistoryStore(application),
+        )
+    }
+
+    /** The one periodic background refresh. Created here; the schedule follows the preference. */
+    val jobRefreshScheduler: JobRefreshScheduler by lazy { JobRefreshScheduler(application) }
+
     /** The current CV-derived profile, read synchronously for the auto-apply prep pass. */
     private fun candidateProfileValue(): CandidateProfile = candidateProfileState.value
 
@@ -266,7 +287,20 @@ open class AiJobFinderApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = createContainer()
+        // Keep the periodic refresh in step with the user's preference, and make sure the
+        // notification channel exists before the first match is found. Both are cheap and
+        // idempotent, so running them on every start is safe.
+        val appContainer = container
+        appContainer.jobNotificationsCoordinator.prepare()
+        appScopeForScheduling().launch {
+            appContainer.preferencesRepository.refreshPreferences.collect { preferences ->
+                appContainer.jobRefreshScheduler.apply(preferences)
+            }
+        }
     }
+
+    private fun appScopeForScheduling(): CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** Overridable so tests can install a container with a deterministic repository. */
     protected open fun createContainer(): AppContainer = AppContainer(this)

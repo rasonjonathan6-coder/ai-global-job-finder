@@ -72,6 +72,14 @@ fun relativeTime(epochMillis: Long, now: Long = System.currentTimeMillis()): Str
 fun postedAgeLabel(postedAtEpochMillis: Long?, now: Long = System.currentTimeMillis()): String =
     postedAtEpochMillis?.let { relativeTime(it, now) } ?: "Date not stated"
 
+/**
+ * Retrieval label: when this app last pulled the posting from its source. Kept distinct from
+ * the publication date so a listing the source keeps returning is never shown as if it were
+ * freshly published — the two timestamps answer different questions.
+ */
+fun retrievedLabel(retrievedAtEpochMillis: Long?, now: Long = System.currentTimeMillis()): String =
+    retrievedAtEpochMillis?.let { "Fetched ${relativeTime(it, now)}" } ?: "Not fetched yet"
+
 fun formatShortDate(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(dateFormat)
 

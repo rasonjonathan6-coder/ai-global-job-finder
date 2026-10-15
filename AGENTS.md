@@ -659,6 +659,42 @@ A hardening pass over the live path, driven by running the probe against the rea
   to the readiness score and never exceed their ceilings. Suite: **254 tests, 0 failures**
   (2 skipped: the opt-in live probes).
 
+### Automated discovery, freshness and background refresh (Stage 20)
+
+Turns the feed from "refresh when the app is open" into a job search that keeps working while
+the app is closed, without ever inventing freshness or firing a notification the user did not ask for.
+
+- **One periodic worker, ever.** `JobRefreshScheduler` schedules a single unique periodic job
+  (`JobRefreshWorker` via `work-runtime-ktx`). It is network-constrained (`NetworkType.CONNECTED`)
+  and holds off under low battery, so it never runs offline; `ExistingPeriodicWorkPolicy.UPDATE`
+  means a preference change replaces the schedule rather than stacking a second one. `apply()` is
+  driven by `UserPreferencesRepository.refreshPreferences` collected in `AiJobFinderApp.onCreate`,
+  so the switch and the interval always match the worker that exists.
+- **Honest retry.** `JobRefreshWorker` returns `Result.retry()` only when the run produced nothing
+  usable (no network, or the repository fell back to cache-only); a partial success still succeeds,
+  because the cache already holds the last good feed. Backoff is exponential.
+- **Freshness never invented (`JobFreshnessEngine`).** Publication age comes only from
+  `Job.postedAtEpochMillis`; a missing or future date is `UNKNOWN` ("Date not stated"), never
+  "fresh". Retrieval time (`Job.retrievedAtEpochMillis`) is reported separately
+  (`retrievedLabel`) so a listing the source keeps returning is never shown as newly published.
+  Surfaced in `ApplyLinkSheet` ("Freshness and source"), which also states the source and that a
+  working link does not by itself confirm the vacancy is open.
+- **Notifications are opt-in and de-duplicated (`JobNotificationPolicy`, `NotificationHistoryStore`,
+  `JobNotificationsCoordinator`).** Off by default; the `POST_NOTIFICATIONS` runtime permission is
+  requested only when the user turns the switch on (Android 13+; implicit below). A job is announced
+  at most once, ever — the notified ids persist to a small file and survive a restart — and the body
+  claims visa sponsorship or international eligibility *only* when the eligibility engine already
+  found that evidence. Runs are capped (default 3) so a big feed cannot fire a burst. Demo fixtures
+  never notify, because they are not real opportunities.
+- **UI.** Profile gains a "Automatic refresh" card: an on/off switch, the interval chips
+  (6 h / twice a day / daily / weekly) and the "New match alerts" switch with its permission flow.
+  The copy says "about every N hours" — never a fixed time — because Android may defer background work.
+- Tests: `Stage20DiscoveryTest` (freshness buckets, no-invented-date, notification selection/dedup/
+  cap/honest-wording, refresh-pref fallback), `Stage20NotificationTest` (history survives a restart,
+  a strong match is announced once, off = silent, demo = silent), `Stage20ProfileScreenTest` (card
+  layout at 320 dp, interval wiring, off-state copy). Suite: **272 tests, 0 failures**
+  (2 skipped: the opt-in live probes).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

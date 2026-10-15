@@ -19,6 +19,8 @@ import com.aiglobal.jobfinder.data.model.JobSyncState
 import com.aiglobal.jobfinder.data.model.NvidiaResult
 import com.aiglobal.jobfinder.data.model.UserProfile
 import com.aiglobal.jobfinder.data.model.isTerminal
+import com.aiglobal.jobfinder.data.refresh.RefreshInterval
+import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +61,36 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     /** The user's expat benefit priorities and gates, defaulting until they are stored. */
     val expatPreferences: StateFlow<ExpatPreferences> = container.preferencesRepository.expatPreferences
         .stateIn(viewModelScope, SharingStarted.Eagerly, ExpatPreferences.defaults())
+
+    /** Automatic background-refresh settings. Drives the switch and interval in Profile. */
+    val refreshPreferences: StateFlow<RefreshPreferences> =
+        container.preferencesRepository.refreshPreferences
+            .stateIn(viewModelScope, SharingStarted.Eagerly, RefreshPreferences())
+
+    /** Whether new strong matches may raise a notification. Off until the user opts in. */
+    val notificationsEnabled: StateFlow<Boolean> = container.preferencesRepository.notificationsEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun setAutoRefreshEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.preferencesRepository.setAutoRefreshEnabled(enabled) }
+    }
+
+    fun setRefreshInterval(interval: RefreshInterval) {
+        viewModelScope.launch { container.preferencesRepository.setRefreshIntervalHours(interval.hours) }
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        viewModelScope.launch { container.preferencesRepository.setNotificationsEnabled(enabled) }
+    }
+
+    /**
+     * Asks WorkManager to run one refresh now, off the main thread and with the same network
+     * constraint the scheduled run uses. The screen does not wait for it; the feed updates
+     * when it lands, exactly as it does for a background run.
+     */
+    fun refreshNowInBackground() {
+        container.jobRefreshScheduler.refreshNow()
+    }
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { container.preferencesRepository.setThemeMode(mode) }

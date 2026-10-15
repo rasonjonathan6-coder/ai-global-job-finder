@@ -23,6 +23,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -42,10 +45,12 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Science
@@ -92,6 +97,9 @@ import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.Skill
 import com.aiglobal.jobfinder.data.model.UserProfile
+import com.aiglobal.jobfinder.data.notifications.NotificationPermission
+import com.aiglobal.jobfinder.data.refresh.RefreshInterval
+import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import com.aiglobal.jobfinder.ui.components.AppCard
 import com.aiglobal.jobfinder.ui.components.FilterChip
 import com.aiglobal.jobfinder.ui.components.IconLabelRow
@@ -130,6 +138,8 @@ fun ProfileScreen(
     val credentialsEncrypted = appViewModel.credentialsEncrypted
     val expatPreferences by appViewModel.expatPreferences.collectAsStateWithLifecycle()
     val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
+    val refreshPreferences by appViewModel.refreshPreferences.collectAsStateWithLifecycle()
+    val notificationsEnabled by appViewModel.notificationsEnabled.collectAsStateWithLifecycle()
 
     val current = profile
     if (current == null) {
@@ -237,6 +247,23 @@ fun ProfileScreen(
         }
 
         item { AutoApplyCard(enabled = current.autoApplyEnabled, onToggle = viewModel::setAutoApply) }
+
+        item {
+            SectionHeader(
+                title = "Automatic refresh",
+                subtitle = "Find new jobs while the app is closed",
+            )
+        }
+
+        item {
+            RefreshAndNotificationsCard(
+                preferences = refreshPreferences,
+                notificationsEnabled = notificationsEnabled,
+                onAutoRefreshChange = appViewModel::setAutoRefreshEnabled,
+                onIntervalChange = appViewModel::setRefreshInterval,
+                onNotificationsChange = appViewModel::setNotificationsEnabled,
+            )
+        }
 
         item { DemoModeCard(enabled = demoMode, onToggle = viewModel::setDemoMode) }
 
@@ -812,6 +839,150 @@ private fun DemoModeCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
                     checkedTrackColor = MaterialTheme.colorScheme.primary,
                 ),
             )
+        }
+    }
+}
+
+/**
+ * Automatic refresh and new-match notifications. Two independent switches: refresh decides
+ * whether the background worker exists at all; notifications decide whether a discovered
+ * strong match is announced. The interval is described as approximate because Android may
+ * defer background work — the app never promises an exact time.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun RefreshAndNotificationsCard(
+    preferences: RefreshPreferences,
+    notificationsEnabled: Boolean,
+    onAutoRefreshChange: (Boolean) -> Unit,
+    onIntervalChange: (RefreshInterval) -> Unit,
+    onNotificationsChange: (Boolean) -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> onNotificationsChange(granted) }
+
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Schedule,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+                Spacer(Modifier.width(spacing.sm))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Background refresh",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (preferences.enabled) {
+                            "About every ${preferences.interval.label.removePrefix("Every ").lowercase()}"
+                        } else {
+                            "Off — jobs refresh only when you open the app"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = preferences.enabled,
+                    onCheckedChange = onAutoRefreshChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+            }
+
+            if (preferences.enabled) {
+                Text(
+                    text = "Android may delay background work to save battery, so this is an approximate cadence, not a fixed time.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    RefreshInterval.entries.forEach { interval ->
+                        FilterChip(
+                            label = interval.label,
+                            selected = interval == preferences.interval,
+                            onClick = { onIntervalChange(interval) },
+                        )
+                    }
+                }
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Notifications,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+                Spacer(Modifier.width(spacing.sm))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "New match alerts",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "Only strong matches you have not seen before",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = notificationsEnabled,
+                    onCheckedChange = { wanted ->
+                        if (wanted && NotificationPermission.isRequired() &&
+                            !NotificationPermission.isGranted(context)
+                        ) {
+                            permissionLauncher.launch(NotificationPermission.PERMISSION)
+                        } else {
+                            onNotificationsChange(wanted)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+            }
+
+            if (notificationsEnabled && NotificationPermission.isRequired() &&
+                !NotificationPermission.isGranted(context)
+            ) {
+                Text(
+                    text = "Android still needs permission for notifications. Turn this off and on again to grant it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
