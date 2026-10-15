@@ -112,6 +112,11 @@ data class JobsUiState(
     val minExpatScore: Int = 0,
     /** When true, only postings whose employer documents visa sponsorship are shown. */
     val visaDocumentedOnly: Boolean = false,
+    /**
+     * Ids the candidate has shortlisted. Mirrored here so a bookmark tap flips the card
+     * instantly, even when the underlying feed has not re-emitted the saved flag yet.
+     */
+    val savedJobIds: Set<String> = emptySet(),
 ) {
     /** Countries present in the current result set, for the country filter. */
     val countries: List<String>
@@ -138,10 +143,13 @@ data class JobsUiState(
     fun expatAssessment(job: Job): ExpatBenefitsAssessment =
         expatAssessments[job.id] ?: ExpatBenefitsAssessment.EMPTY
 
+    /** True when the card should show its bookmark filled, from either source of truth. */
+    fun isSaved(job: Job): Boolean = savedJobIds.contains(job.id) || job.isSaved
+
     val visibleJobs: List<Job>
         get() {
             var result = jobs
-            if (savedOnly) result = result.filter { it.isSaved }
+            if (savedOnly) result = result.filter { isSaved(it) }
             if (eligibleOnly) result = result.filter { it.applyableFromMadagascar }
             if (sponsoredOnly) result = result.filter {
                 it.visaSupport == com.aiglobal.jobfinder.data.model.VisaSupport.FULL_SPONSORSHIP ||
@@ -278,7 +286,18 @@ class JobsViewModel(
     fun toggleVisaDocumentedFilter() =
         uiStateInternal.update { it.copy(visaDocumentedOnly = !it.visaDocumentedOnly) }
 
-    fun toggleSaved(jobId: String) = viewModelScope.launch { repository.toggleSaved(jobId) }
+    /**
+     * Flips the saved flag locally first so the bookmark reacts immediately, then persists.
+     * The feed re-emits with the authoritative flag shortly after.
+     */
+    fun toggleSave(jobId: String) {
+        uiStateInternal.update { state ->
+            val next = if (state.savedJobIds.contains(jobId)) state.savedJobIds - jobId
+            else state.savedJobIds + jobId
+            state.copy(savedJobIds = next)
+        }
+        viewModelScope.launch { repository.toggleSaved(jobId) }
+    }
 }
 
 class JobsViewModelFactory(
@@ -297,6 +316,7 @@ data class HomeUiState(
     val stats: DashboardStats = DashboardStats(0, 0, 0, 0),
     val bestMatches: List<Job> = emptyList(),
     val newOpportunities: List<Job> = emptyList(),
+    val totalJobs: Int = 0,
     val applications: List<ApplicationRecord> = emptyList(),
     val reminders: List<ApplicationReminder> = emptyList(),
 ) {
@@ -332,6 +352,7 @@ class HomeViewModel(
                     it.copy(
                         bestMatches = jobs.sortedByDescending { job -> job.matchScore }.take(4),
                         newOpportunities = jobs.filter { job -> job.isNew },
+                        totalJobs = jobs.size,
                     )
                 }
             }
@@ -364,6 +385,8 @@ class HomeViewModel(
             _uiState.update { it.copy(isLoading = false) }
         }
     }
+
+    fun toggleSave(jobId: String) = viewModelScope.launch { repository.toggleSaved(jobId) }
 }
 
 class HomeViewModelFactory(
@@ -465,6 +488,49 @@ class ProfileViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = ProfileViewModel(repository) as T
+}
+
+/** What the AI workspace needs to describe the current state honestly. */
+data class AiUiState(
+    val hasCv: Boolean = false,
+    val skillCount: Int = 0,
+    val strongMatchCount: Int = 0,
+)
+
+class AiViewModel(
+    private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
+    cvRepository: com.aiglobal.jobfinder.data.repository.CvRepository,
+) : ViewModel() {
+
+    private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(AiUiState())
+    val uiState: StateFlow<AiUiState> = _uiState
+
+    init {
+        viewModelScope.launch {
+            repository.jobs.collect { jobs ->
+                _uiState.update { it.copy(strongMatchCount = jobs.count { job -> job.matchScore >= 80 }) }
+            }
+        }
+        viewModelScope.launch {
+            cvRepository.record.collect { record ->
+                val profile = record?.profile
+                _uiState.update {
+                    it.copy(
+                        hasCv = profile != null && (profile.fullName.isNotBlank() || profile.skills.isNotEmpty()),
+                        skillCount = profile?.skills?.size ?: 0,
+                    )
+                }
+            }
+        }
+    }
+}
+
+class AiViewModelFactory(
+    private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
+    private val cvRepository: com.aiglobal.jobfinder.data.repository.CvRepository,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = AiViewModel(repository, cvRepository) as T
 }
 
 private fun <T> kotlinx.coroutines.flow.MutableStateFlow<T>.update(transform: (T) -> T) {

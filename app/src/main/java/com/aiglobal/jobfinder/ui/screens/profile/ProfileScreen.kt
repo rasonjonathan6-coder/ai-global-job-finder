@@ -155,7 +155,7 @@ fun ProfileScreen(
                     }
                     ProgressBar(fraction = current.profileCompletion / 100f)
                     Text(
-                        text = "Add your German A2 certificate and a second reference to reach 100%.",
+                        text = profileStrengthHint(current),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -238,6 +238,31 @@ fun ProfileScreen(
             }
         }
     }
+}
+
+/**
+ * Names the next concrete gap rather than asserting an invented one. The candidate is
+ * targeting several countries, so the hint points at the CV sections the analyser found
+ * empty — never at a certificate or reference the app has no evidence the user holds.
+ */
+private fun profileStrengthHint(profile: UserProfile): String {
+    if (profile.profileCompletion >= 100) return "Your profile is complete."
+
+    val gaps = buildList {
+        if (profile.skills.isEmpty()) add("your skills")
+        if (profile.experience.isEmpty()) add("your work experience")
+        if (profile.education.isEmpty()) add("your education")
+        if (!profile.cvImported) add("an imported CV")
+    }
+    if (gaps.isEmpty()) {
+        return "Re-import your CV to refresh your profile strength."
+    }
+    val joined = when (gaps.size) {
+        1 -> gaps.first()
+        2 -> "${gaps[0]} and ${gaps[1]}"
+        else -> gaps.dropLast(1).joinToString(", ") + " and " + gaps.last()
+    }
+    return "Add $joined to strengthen your profile."
 }
 
 @Composable

@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RocketLaunch
-import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -75,6 +74,13 @@ fun AiScreen(
     onOpenAlerts: () -> Unit = {},
     onOpenAutoApply: () -> Unit = {},
     onOpenShortlist: () -> Unit = {},
+    onOpenAdaptation: () -> Unit = {},
+    /** True once the CV has been analysed, so the headline card can tell the truth. */
+    hasCv: Boolean = false,
+    /** Skills extracted from the analysed CV, used in the analysis headline. */
+    skillCount: Int = 0,
+    /** How many postings currently match the profile, used in the analysis headline. */
+    strongMatchCount: Int = 0,
     autoRun: Boolean = true,
 ) {
     val spacing = LocalSpacing.current
@@ -117,7 +123,16 @@ fun AiScreen(
             }
         }
 
-        item { AnalysisCard(progress = progress, running = running, onRun = { running = true }) }
+        item {
+            AnalysisCard(
+                progress = progress,
+                running = running,
+                hasCv = hasCv,
+                skillCount = skillCount,
+                strongMatchCount = strongMatchCount,
+                onRun = { running = true },
+            )
+        }
 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -150,8 +165,14 @@ fun AiScreen(
                 CapabilityCard(
                     icon = Icons.Filled.Description,
                     title = "CV analysis",
-                    body = "Reads your CV, extracts skills and experience, then scores every posting against it.",
+                    body = if (hasCv) {
+                        "Your CV is analysed. Re-open it any time to correct a skill or add experience."
+                    } else {
+                        "Reads your CV, extracts skills and experience, then scores every posting against it."
+                    },
                     accent = MaterialTheme.colorScheme.primary,
+                    actionLabel = if (hasCv) "Open my CV" else "Import my CV",
+                    onClick = onOpenCv,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.Public,
@@ -166,12 +187,8 @@ fun AiScreen(
                     title = "CV adaptation",
                     body = "Rewrites your CV for each country's format — Canadian, German and Gulf conventions.",
                     accent = MaterialTheme.colorScheme.secondary,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.RocketLaunch,
-                    title = "Cover letters",
-                    body = "Generates a tailored letter per role, in the language the employer expects.",
-                    accent = extendedColors.info,
+                    actionLabel = "Adapt my CV",
+                    onClick = onOpenAdaptation,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.Gavel,
@@ -188,12 +205,6 @@ fun AiScreen(
                     accent = extendedColors.warning,
                     actionLabel = "Start rehearsing",
                     onClick = onOpenInterview,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.School,
-                    title = "Skills gap plan",
-                    body = "Tells you exactly which certificate unlocks the next salary band.",
-                    accent = extendedColors.success,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.NotificationsActive,
@@ -226,7 +237,14 @@ fun AiScreen(
 }
 
 @Composable
-private fun AnalysisCard(progress: Float, running: Boolean, onRun: () -> Unit) {
+private fun AnalysisCard(
+    progress: Float,
+    running: Boolean,
+    hasCv: Boolean,
+    skillCount: Int,
+    strongMatchCount: Int,
+    onRun: () -> Unit,
+) {
     val spacing = LocalSpacing.current
     val dark = isDarkTheme()
     val shape = RoundedCornerShape(24.dp)
@@ -273,7 +291,12 @@ private fun AnalysisCard(progress: Float, running: Boolean, onRun: () -> Unit) {
                     color = Color.White,
                 )
                 Text(
-                    text = if (running) "Matching against 1,240 live listings" else "8 strong matches found",
+                    text = when {
+                        running -> "Scoring your profile against the live feed"
+                        !hasCv -> "Import your CV to start matching"
+                        strongMatchCount > 0 -> "$strongMatchCount strong match${if (strongMatchCount == 1) "" else "es"} found"
+                        else -> "No strong matches yet — pull to refresh"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.72f),
                 )
@@ -288,7 +311,10 @@ private fun AnalysisCard(progress: Float, running: Boolean, onRun: () -> Unit) {
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            AnalysisStep("CV parsed — 12 skills extracted", progress > 0.15f)
+            AnalysisStep(
+                if (skillCount > 0) "CV parsed — $skillCount skills extracted" else "CV parsed",
+                progress > 0.15f,
+            )
             AnalysisStep("Skills mapped to international standards", progress > 0.4f)
             AnalysisStep("Visa eligibility checked per country", progress > 0.65f)
             AnalysisStep("Scam risk screened on every listing", progress > 0.85f)

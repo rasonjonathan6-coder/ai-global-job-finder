@@ -37,6 +37,7 @@ import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterScreen
 import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
 import com.aiglobal.jobfinder.ui.screens.diagnostics.LiveSearchValidationScreen
 import com.aiglobal.jobfinder.ui.screens.expat.ExpatScreen
+import com.aiglobal.jobfinder.ui.screens.adaptation.CvAdaptationScreen
 import com.aiglobal.jobfinder.ui.screens.home.HomeScreen
 import com.aiglobal.jobfinder.ui.screens.interview.InterviewScreen
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsScreen
@@ -50,8 +51,12 @@ import com.aiglobal.jobfinder.viewmodel.ApplicationsViewModel
 import com.aiglobal.jobfinder.viewmodel.ApplicationsViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModel
 import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.AiViewModel
+import com.aiglobal.jobfinder.viewmodel.AiViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.CoverLetterViewModel
 import com.aiglobal.jobfinder.viewmodel.CoverLetterViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.CvAdaptationViewModel
+import com.aiglobal.jobfinder.viewmodel.CvAdaptationViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.CvViewModel
 import com.aiglobal.jobfinder.viewmodel.CvViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModel
@@ -87,6 +92,7 @@ object SecondaryRoutes {
     const val AUTO_APPLY = "autoapply"
     const val DIAGNOSTICS = "diagnostics"
     const val SHORTLIST = "shortlist"
+    const val CV_ADAPTATION = "cvadaptation"
 
     fun applicationDetail(applicationId: String) = "application/$applicationId"
     fun coverLetter(jobId: String) = "coverletter/$jobId"
@@ -152,6 +158,8 @@ fun AiJobFinderRoot(
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                     onOpenLink = { url -> context.openExternally(url) },
                     onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
+                    onToggleSaveJob = { jobId -> vm.toggleSave(jobId) },
+                    onOpenAlerts = { navController.navigate(SecondaryRoutes.ALERTS) },
                 )
             }
             composable(Destination.Jobs.route) {
@@ -179,6 +187,10 @@ fun AiJobFinderRoot(
                 )
             }
             composable(Destination.Ai.route) {
+                val vm: AiViewModel = viewModel(
+                    factory = AiViewModelFactory(container.jobRepository, container.cvRepository),
+                )
+                val state by vm.uiState.collectAsStateWithLifecycle()
                 AiScreen(
                     onBrowseJobs = { navController.navigateToTab(Destination.Jobs) },
                     onOpenCv = { navController.navigate(SecondaryRoutes.CV) },
@@ -187,6 +199,10 @@ fun AiJobFinderRoot(
                     onOpenAlerts = { navController.navigate(SecondaryRoutes.ALERTS) },
                     onOpenAutoApply = { navController.navigate(SecondaryRoutes.AUTO_APPLY) },
                     onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
+                    onOpenAdaptation = { navController.navigate(SecondaryRoutes.CV_ADAPTATION) },
+                    hasCv = state.hasCv,
+                    skillCount = state.skillCount,
+                    strongMatchCount = state.strongMatchCount,
                 )
             }
             composable(SecondaryRoutes.CV) {
@@ -331,8 +347,18 @@ fun AiJobFinderRoot(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
-                    onApply = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                     onOpenJobs = { navController.navigateToTab(Destination.Jobs) },
+                    onOpenLink = { url -> context.openExternally(url) },
+                )
+            }
+            composable(SecondaryRoutes.CV_ADAPTATION) {
+                val vm: CvAdaptationViewModel = viewModel(
+                    factory = CvAdaptationViewModelFactory(container.cvRepository),
+                )
+                CvAdaptationScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenCv = { navController.navigate(SecondaryRoutes.CV) },
                 )
             }
         }

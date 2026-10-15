@@ -350,6 +350,40 @@ actually apply from Madagascar, and what is standing in the way?".
   scroll at 320×640dp; `ScreenshotTest.shortlist` captures light and dark. Suite: 159 tests,
   0 failures.
 
+### Finishing navigation and removing invented content (Stage 12)
+
+Stage 12 audited every navigation entry and removed the last invented content so the app can
+be trusted as a real job-application tool.
+
+- **Dead affordances are wired, not hidden.** Home's notification bell was a no-op
+  (`.clickable { }`); it now opens the alerts route and its badge lights when there is any
+  active application or interview. The Home job cards' bookmark now calls the real
+  `toggleSave`. The shortlist's "Apply" no longer silently navigates to the cover letter —
+  it opens the same `ApplyLinkSheet` the Jobs and Home screens use, so the host and any link
+  warnings are shown before the browser opens.
+- **No invented identity or advice.** Empty-state fallbacks must not fabricate a user:
+  the Home greeting shows `Hello, <first name>` only from the stored profile and otherwise
+  `Welcome back 👋` (never a hard-coded "Jonathan"). `ProfileScreen.profileStrengthHint`
+  derives the next gap from the profile's own empty sections instead of asserting an
+  invented "German A2 certificate".
+- **Dashboard numbers are derived, never canned.** `HomeUiState.totalJobs` carries the live
+  feed size, so `AiInsightCard` reports "scanned N listings in your last refresh" and the
+  count of Madagascar-eligible top matches, replacing the fixed "1,240 listings today".
+  `AiScreen.AnalysisCard` takes `hasCv`/`skillCount`/`strongMatchCount` from `AiViewModel`
+  rather than the canned "8 strong matches found" / "12 skills extracted".
+- **Cards that promised unbuilt features were removed.** The AI workspace dropped the
+  "Cover letters" (which actually opened CV analysis) and "Skills gap plan" capability cards
+  — nothing behind them. "CV adaptation" is now wired to `SecondaryRoutes.CV_ADAPTATION`
+  (`"cvadaptation"`), which was registered in `AiJobFinderRoot` but had no entry point.
+- **`JobsViewModel.toggleSave(jobId)`** flips a local `savedJobIds` set so the bookmark
+  reacts instantly, then persists through `repository.toggleSaved`; `JobsUiState.isSaved`
+  unifies the local and feed flags so the saved-only filter agrees with the icon.
+- **`AutoApplyCenter` honours the saved threshold.** It builds a fresh
+  `AutoApplyEngine(threshold = store.threshold.value)` per run instead of a default-threshold
+  engine, so the queue matches the number the settings screen shows.
+- Tests: the full suite (`./gradlew :app:testDebugUnitTest`) is green at 159 tests, 0
+  failures, covering navigation, both themes and narrow layouts.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

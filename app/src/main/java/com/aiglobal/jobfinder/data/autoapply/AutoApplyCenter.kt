@@ -28,7 +28,6 @@ class AutoApplyCenter(
     private val repository: JobRepository,
     private val applicationCenter: ApplicationCenter,
     private val store: AutoApplyStore,
-    private val engine: AutoApplyEngine = AutoApplyEngine(),
     private val candidateProfile: () -> CandidateProfile = { CandidateProfile() },
 ) {
 
@@ -73,7 +72,10 @@ class AutoApplyCenter(
         try {
             val jobs = repository.jobs.first()
             val profile = candidateProfile()
-            val queue = engine.buildQueue(jobs, store.items.value, limit = AutoApplyEngine.DEFAULT_LIMIT)
+            // Honour the user's saved threshold, not the engine's default, so the queue
+            // always matches the number the settings screen shows.
+            val activeEngine = AutoApplyEngine(threshold = store.threshold.value)
+            val queue = activeEngine.buildQueue(jobs, store.items.value, limit = AutoApplyEngine.DEFAULT_LIMIT)
             val prepared = queue.map { item ->
                 if (item.status != AutoApplyStatus.DRAFT_READY) return@map item
                 val job = jobs.firstOrNull { it.id == item.jobId } ?: return@map item

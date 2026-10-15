@@ -111,7 +111,7 @@ fun JobsScreen(
         onClearFilters = viewModel::clearFilters,
         onRefresh = viewModel::refresh,
         onOpenAi = onOpenAi,
-        onToggleSaveJob = viewModel::toggleSaved,
+        onToggleSaveJob = viewModel::toggleSave,
         onOpenJob = onOpenJob,
         onOpenLink = onOpenLink,
     )
@@ -208,7 +208,7 @@ internal fun JobsContent(
                     itemsIndexed(state.visibleJobs, key = { _, job -> job.id }) { index, job ->
                         val expat = state.expatAssessment(job)
                         JobCard(
-                            job = job,
+                            job = job.copy(isSaved = state.isSaved(job)),
                             onViewJob = { explainJob = job },
                             onApply = { applyJob = job },
                             onToggleSave = { onToggleSaveJob(job.id) },

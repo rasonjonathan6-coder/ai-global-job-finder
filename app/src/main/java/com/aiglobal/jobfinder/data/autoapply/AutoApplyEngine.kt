@@ -16,7 +16,7 @@ import com.aiglobal.jobfinder.data.model.ScamRisk
  * It prepares drafts only. Submission is always a separate, explicit user action.
  */
 class AutoApplyEngine(
-    private val threshold: Int = DEFAULT_THRESHOLD,
+    val threshold: Int = DEFAULT_THRESHOLD,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 

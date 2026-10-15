@@ -80,6 +80,8 @@ import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SkeletonBox
 import com.aiglobal.jobfinder.ui.components.isDarkTheme
+import com.aiglobal.jobfinder.ui.screens.jobs.ApplyLinkSheet
+import com.aiglobal.jobfinder.ui.screens.jobs.applicationUrlInspector
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
 import com.aiglobal.jobfinder.ui.theme.extendedColors
 import com.aiglobal.jobfinder.viewmodel.ShortlistViewModel
@@ -93,8 +95,8 @@ fun ShortlistScreen(
     viewModel: ShortlistViewModel,
     onBack: () -> Unit,
     onOpenJob: (String) -> Unit = {},
-    onApply: (String) -> Unit = {},
     onOpenJobs: () -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     ShortlistContent(
@@ -102,8 +104,8 @@ fun ShortlistScreen(
         onBack = onBack,
         onRefresh = viewModel::refresh,
         onOpenJob = onOpenJob,
-        onApply = onApply,
         onOpenJobs = onOpenJobs,
+        onOpenLink = onOpenLink,
     )
 }
 
@@ -114,11 +116,12 @@ internal fun ShortlistContent(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onOpenJob: (String) -> Unit = {},
-    onApply: (String) -> Unit = {},
     onOpenJobs: () -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     var explainEntry by remember { mutableStateOf<ShortlistEntry?>(null) }
+    var applyJob by remember { mutableStateOf<Job?>(null) }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         ShortlistHeader(state = state, onBack = onBack, onRefresh = onRefresh)
@@ -162,7 +165,7 @@ internal fun ShortlistContent(
                         entry = entry,
                         index = index,
                         onOpenJob = { onOpenJob(entry.job.id) },
-                        onApply = { onApply(entry.job.id) },
+                        onApply = { applyJob = entry.job },
                         onExplain = { explainEntry = entry },
                     )
                 }
@@ -174,6 +177,15 @@ internal fun ShortlistContent(
 
     explainEntry?.let { entry ->
         ReadinessExplanationSheet(entry = entry, onDismiss = { explainEntry = null })
+    }
+
+    applyJob?.let { job ->
+        ApplyLinkSheet(
+            job = job,
+            inspection = applicationUrlInspector.inspect(job),
+            onDismiss = { applyJob = null },
+            onOpen = onOpenLink,
+        )
     }
 }
 

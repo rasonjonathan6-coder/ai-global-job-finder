@@ -81,6 +81,8 @@ fun HomeScreen(
     onOpenJob: (String) -> Unit,
     onOpenLink: (String) -> Unit = {},
     onOpenShortlist: () -> Unit = {},
+    onToggleSaveJob: (String) -> Unit = {},
+    onOpenAlerts: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -100,6 +102,8 @@ fun HomeScreen(
                 onOpenJob = onOpenJob,
                 onOpenLink = onOpenLink,
                 onOpenShortlist = onOpenShortlist,
+                onToggleSaveJob = onToggleSaveJob,
+                onOpenAlerts = onOpenAlerts,
             )
         }
     }
@@ -112,6 +116,8 @@ internal fun HomeContent(
     onOpenJob: (String) -> Unit,
     onOpenLink: (String) -> Unit = {},
     onOpenShortlist: () -> Unit = {},
+    onToggleSaveJob: (String) -> Unit = {},
+    onOpenAlerts: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     val profile = state.profile
@@ -122,13 +128,16 @@ internal fun HomeContent(
         contentPadding = PaddingValues(bottom = spacing.navBarClearance),
     ) {
         item {
-            HomeTopBar(hasNotifications = state.stats.interviews > 0)
+            HomeTopBar(
+                hasNotifications = state.stats.applications > 0 || state.stats.interviews > 0,
+                onOpenAlerts = onOpenAlerts,
+            )
         }
 
         item {
             Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
                 GreetingHero(
-                    name = profile?.fullName?.substringBefore(" ") ?: "Jonathan",
+                    name = profile?.fullName?.substringBefore(" ")?.trim().orEmpty(),
                     profileCompletion = profile?.profileCompletion ?: 0,
                     headline = profile?.headline.orEmpty(),
                     strongMatches = state.stats.matchingJobs,
@@ -172,7 +181,7 @@ internal fun HomeContent(
                         job = job,
                         onViewJob = { onOpenJob(job.id) },
                         onApply = { applyJob = job },
-                        onToggleSave = { },
+                        onToggleSave = { onToggleSaveJob(job.id) },
                         index = index,
                     )
                 }
@@ -205,7 +214,10 @@ internal fun HomeContent(
         item {
             Spacer(Modifier.height(spacing.xl))
             Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
-                AiInsightCard()
+                AiInsightCard(
+                    scannedCount = state.totalJobs,
+                    eligibleCount = state.bestMatches.count { it.applyableFromMadagascar },
+                )
             }
         }
     }
@@ -224,7 +236,7 @@ internal fun HomeContent(
 }
 
 @Composable
-private fun HomeTopBar(hasNotifications: Boolean) {
+private fun HomeTopBar(hasNotifications: Boolean, onOpenAlerts: () -> Unit) {
     val spacing = LocalSpacing.current
     Row(
         modifier = Modifier
@@ -275,7 +287,7 @@ private fun HomeTopBar(hasNotifications: Boolean) {
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceContainer)
                     .border(1.dp, extendedColors.cardStroke, CircleShape)
-                    .clickable { },
+                    .clickable(onClick = onOpenAlerts),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -363,7 +375,7 @@ private fun GreetingHero(
 
             Spacer(Modifier.height(spacing.md))
             Text(
-                text = "Hello, $name 👋",
+                text = if (name.isBlank()) "Welcome back 👋" else "Hello, $name 👋",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.White,
             )
@@ -545,7 +557,7 @@ private fun StatTile(
 
 /** Bottom banner explaining what the AI is doing in the background. */
 @Composable
-private fun AiInsightCard() {
+private fun AiInsightCard(scannedCount: Int, eligibleCount: Int) {
     val spacing = LocalSpacing.current
     Row(
         modifier = Modifier
@@ -572,13 +584,17 @@ private fun AiInsightCard() {
         Spacer(Modifier.width(spacing.sm))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "AI scanned 1,240 listings today",
+                text = "AI scanned $scannedCount listings in your last refresh",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "Filtered to roles that sponsor visas or accept applicants from Madagascar.",
+                text = if (eligibleCount > 0) {
+                    "$eligibleCount are open to applicants based in Madagascar."
+                } else {
+                    "Filtered to roles that sponsor visas or accept applicants from Madagascar."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
