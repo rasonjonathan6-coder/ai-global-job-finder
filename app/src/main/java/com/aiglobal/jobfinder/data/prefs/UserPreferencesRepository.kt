@@ -10,13 +10,25 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCountries
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
 import com.aiglobal.jobfinder.data.model.JobBenefitTypes
+import com.aiglobal.jobfinder.data.model.NvidiaConfig
+import com.aiglobal.jobfinder.data.model.NvidiaModels
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ai_job_finder_prefs")
+
+/**
+ * The production secret cipher. Built lazily and tolerant of a platform without the Android
+ * Keystore (some test runtimes), in which case values fall back to plain app-private storage
+ * — the same protection the app had before encryption existed. [SecretCipher.isSecure] lets
+ * the UI state which of the two is in force instead of implying encryption that is not there.
+ */
+private fun defaultSecretCipher(): SecretCipher =
+    runCatching { AndroidKeystoreSecretCipher() }.getOrDefault(PassthroughSecretCipher)
 
 /** Persists the small amount of state that must survive process death. */
 class UserPreferencesRepository(
@@ -28,12 +40,24 @@ class UserPreferencesRepository(
      * production from opening two stores on the same file.
      */
     private val dataStore: DataStore<Preferences> = context.dataStore,
+    /**
+     * Wraps the credential values so a key is never written to disk in the clear. Injected so
+     * the JVM tests can use the identity cipher; production always uses the Keystore one.
+     */
+    private val secretCipher: SecretCipher = defaultSecretCipher(),
 ) {
+
+    /** True when saved credentials are encrypted at rest. */
+    val credentialsEncrypted: Boolean get() = secretCipher.isSecure
 
     private val themeKey = stringPreferencesKey("theme_mode")
     private val adzunaAppIdKey = stringPreferencesKey("adzuna_app_id")
     private val adzunaAppKeyKey = stringPreferencesKey("adzuna_app_key")
+    private val adzunaCountriesKey = stringSetPreferencesKey("adzuna_countries")
     private val joobleKey = stringPreferencesKey("jooble_api_key")
+    private val nvidiaApiKeyKey = stringPreferencesKey("nvidia_api_key")
+    private val nvidiaModelKey = stringPreferencesKey("nvidia_model_id")
+    private val nvidiaConsentKey = booleanPreferencesKey("nvidia_consent_granted")
     private val disabledSourcesKey = stringSetPreferencesKey("disabled_source_ids")
 
     private val expatPrioritiesKey = stringSetPreferencesKey("expat_priorities")
@@ -88,12 +112,13 @@ class UserPreferencesRepository(
 
     /**
      * Adzuna API credentials, entered by the user in Settings. Adzuna is the only
-     * source that needs a key; it stays dormant until both values are present.
+     * source that needs a key; it stays dormant until both values are present. The
+     * values are decrypted on read, so the rest of the app only ever sees plaintext.
      */
     val adzunaCredentials: Flow<AdzunaCredentials> = dataStore.data.map { prefs ->
         AdzunaCredentials(
-            appId = prefs[adzunaAppIdKey].orEmpty(),
-            appKey = prefs[adzunaAppKeyKey].orEmpty(),
+            appId = secretCipher.decrypt(prefs[adzunaAppIdKey].orEmpty()),
+            appKey = secretCipher.decrypt(prefs[adzunaAppKeyKey].orEmpty()),
         )
     }
 
@@ -103,18 +128,75 @@ class UserPreferencesRepository(
 
     suspend fun setAdzunaCredentials(appId: String, appKey: String) {
         dataStore.edit {
-            it[adzunaAppIdKey] = appId.trim()
-            it[adzunaAppKeyKey] = appKey.trim()
+            it[adzunaAppIdKey] = secretCipher.encrypt(appId.trim())
+            it[adzunaAppKeyKey] = secretCipher.encrypt(appKey.trim())
         }
     }
 
-    /** Jooble API key; the provider stays dormant while it is blank. */
+    /**
+     * Which Adzuna markets to search. Empty means "not chosen yet", in which case the
+     * provider falls back to its default set rather than searching nothing.
+     */
+    val adzunaCountries: Flow<Set<String>> = dataStore.data.map { prefs ->
+        prefs[adzunaCountriesKey].orEmpty()
+    }
+
+    suspend fun setAdzunaCountries(countries: Set<String>) {
+        dataStore.edit { prefs ->
+            prefs[adzunaCountriesKey] = countries.filter { AdzunaCountries.isSupported(it) }.toSet()
+        }
+    }
+
+    /** Jooble API key, encrypted at rest; the provider stays dormant while it is blank. */
     val joobleApiKey: Flow<String> = dataStore.data.map { prefs ->
-        prefs[joobleKey].orEmpty()
+        secretCipher.decrypt(prefs[joobleKey].orEmpty())
     }
 
     suspend fun setJoobleApiKey(key: String) {
-        dataStore.edit { it[joobleKey] = key.trim() }
+        dataStore.edit { it[joobleKey] = secretCipher.encrypt(key.trim()) }
+    }
+
+    /**
+     * The NVIDIA API key, encrypted at rest. Only ever read into memory to make a request;
+     * it is never logged, shown back in the UI, or written anywhere else.
+     */
+    val nvidiaApiKey: Flow<String> = dataStore.data.map { prefs ->
+        secretCipher.decrypt(prefs[nvidiaApiKeyKey].orEmpty())
+    }
+
+    suspend fun setNvidiaApiKey(key: String) {
+        dataStore.edit { it[nvidiaApiKeyKey] = secretCipher.encrypt(key.trim()) }
+    }
+
+    /** The selected NVIDIA model id, validated against the known list on read. */
+    val nvidiaModelId: Flow<String> = dataStore.data.map { prefs ->
+        prefs[nvidiaModelKey]?.takeIf { NvidiaModels.isKnown(it) } ?: NvidiaModels.defaultModelId
+    }
+
+    suspend fun setNvidiaModelId(modelId: String) {
+        dataStore.edit { it[nvidiaModelKey] = modelId }
+    }
+
+    /**
+     * Whether the user has consented to sending CV and posting text to NVIDIA. Defaults to
+     * false: the assistant stays off until the user explicitly turns it on.
+     */
+    val nvidiaConsent: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[nvidiaConsentKey] ?: false
+    }
+
+    suspend fun setNvidiaConsent(granted: Boolean) {
+        dataStore.edit { it[nvidiaConsentKey] = granted }
+    }
+
+    /** The full NVIDIA configuration, assembled from the three stored values. */
+    val nvidiaConfig: Flow<NvidiaConfig> = dataStore.data.map { prefs ->
+        NvidiaConfig(
+            apiKey = secretCipher.decrypt(prefs[nvidiaApiKeyKey].orEmpty()),
+            modelId = prefs[nvidiaModelKey]?.takeIf { NvidiaModels.isKnown(it) }
+                ?: NvidiaModels.defaultModelId,
+            consentGranted = prefs[nvidiaConsentKey] ?: false,
+        )
     }
 
     /** Sources the user has switched off. Kept so a disabled source stays disabled. */

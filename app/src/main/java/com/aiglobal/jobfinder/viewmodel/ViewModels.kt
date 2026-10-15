@@ -38,6 +38,22 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     val joobleApiKey: StateFlow<String> = container.preferencesRepository.joobleApiKey
         .stateIn(viewModelScope, SharingStarted.Eagerly, "")
 
+    /** Adzuna markets the user has chosen; empty means "use the provider defaults". */
+    val adzunaCountries: StateFlow<Set<String>> = container.preferencesRepository.adzunaCountries
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /** NVIDIA API key, model and consent for the optional drafting assistant. */
+    val nvidiaConfig: StateFlow<com.aiglobal.jobfinder.data.model.NvidiaConfig> =
+        container.nvidiaConfig
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                com.aiglobal.jobfinder.data.model.NvidiaConfig(),
+            )
+
+    /** True when saved credentials are encrypted at rest with the Android Keystore. */
+    val credentialsEncrypted: Boolean get() = container.credentialsEncrypted
+
     /** The user's expat benefit priorities and gates, defaulting until they are stored. */
     val expatPreferences: StateFlow<ExpatPreferences> = container.preferencesRepository.expatPreferences
         .stateIn(viewModelScope, SharingStarted.Eagerly, ExpatPreferences.defaults())
@@ -53,6 +69,30 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     fun saveJoobleApiKey(key: String) {
         viewModelScope.launch { container.preferencesRepository.setJoobleApiKey(key) }
     }
+
+    /** Replaces the Adzuna market set. An empty set restores the provider defaults. */
+    fun saveAdzunaCountries(countries: Set<String>) {
+        viewModelScope.launch { container.preferencesRepository.setAdzunaCountries(countries) }
+    }
+
+    fun saveNvidiaApiKey(key: String) {
+        viewModelScope.launch { container.preferencesRepository.setNvidiaApiKey(key) }
+    }
+
+    fun saveNvidiaModelId(modelId: String) {
+        viewModelScope.launch { container.preferencesRepository.setNvidiaModelId(modelId) }
+    }
+
+    fun setNvidiaConsent(granted: Boolean) {
+        viewModelScope.launch { container.preferencesRepository.setNvidiaConsent(granted) }
+    }
+
+    /**
+     * Validates a candidate key against NVIDIA without touching the saved one, so the user
+     * can confirm it works before committing. Returns the classified result to the caller.
+     */
+    suspend fun testNvidiaKey(candidateKey: String): com.aiglobal.jobfinder.data.model.NvidiaResult =
+        container.aiAssistant.testConnection(candidateKey.trim())
 
     /** Switches a job source on or off; the feed honours it on the next validation run. */
     fun setSourceEnabled(sourceId: String, enabled: Boolean) {
@@ -557,42 +597,143 @@ data class AiUiState(
     val hasCv: Boolean = false,
     val skillCount: Int = 0,
     val strongMatchCount: Int = 0,
+    /** True when a key is saved, consent is on, and there is a job to work on. */
+    val assistantReady: Boolean = false,
+    /** True when a key has been saved (regardless of consent). */
+    val assistantConfigured: Boolean = false,
+    /** True when the user has consented to sending profile facts to NVIDIA. */
+    val assistantConsent: Boolean = false,
+    /** The human-readable model name, for the panel subtitle. */
+    val modelLabel: String = "",
+    /** True while a request is in flight. */
+    val assistantRunning: Boolean = false,
+    /** The last successful output, already labelled as remote or on-device. */
+    val assistantOutput: String = "",
+    val assistantOutputTitle: String = "",
+    /** True when [assistantOutput] came from NVIDIA; false when it is the local fallback. */
+    val assistantOutputIsRemote: Boolean = false,
+    /** A classified, plain-language failure message, empty when the last run was fine. */
+    val assistantError: String = "",
 )
 
 class AiViewModel(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     cvRepository: com.aiglobal.jobfinder.data.repository.CvRepository,
+    private val aiAssistant: com.aiglobal.jobfinder.data.ai.NvidiaJobAssistant =
+        com.aiglobal.jobfinder.data.ai.NvidiaJobAssistant(),
+    nvidiaConfig: kotlinx.coroutines.flow.Flow<com.aiglobal.jobfinder.data.model.NvidiaConfig> =
+        kotlinx.coroutines.flow.flowOf(com.aiglobal.jobfinder.data.model.NvidiaConfig()),
 ) : ViewModel() {
 
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(AiUiState())
     val uiState: StateFlow<AiUiState> = _uiState
 
+    private var profile: com.aiglobal.jobfinder.data.model.CandidateProfile =
+        com.aiglobal.jobfinder.data.model.CandidateProfile()
+
+    /** The best-matching posting, which the assistant acts on. Null until the feed loads. */
+    private var bestJob: Job? = null
+
     init {
         viewModelScope.launch {
             repository.jobs.collect { jobs ->
-                _uiState.update { it.copy(strongMatchCount = jobs.count { job -> job.matchScore >= 80 }) }
+                bestJob = jobs.maxByOrNull { it.matchScore }
+                _uiState.update {
+                    it.copy(
+                        strongMatchCount = jobs.count { job -> job.matchScore >= 80 },
+                        assistantReady = it.assistantConfigured && it.assistantConsent && bestJob != null,
+                    )
+                }
             }
         }
         viewModelScope.launch {
             cvRepository.record.collect { record ->
-                val profile = record?.profile
+                val parsed = record?.profile
+                profile = parsed ?: com.aiglobal.jobfinder.data.model.CandidateProfile()
                 _uiState.update {
                     it.copy(
-                        hasCv = profile != null && (profile.fullName.isNotBlank() || profile.skills.isNotEmpty()),
-                        skillCount = profile?.skills?.size ?: 0,
+                        hasCv = parsed != null && (parsed.fullName.isNotBlank() || parsed.skills.isNotEmpty()),
+                        skillCount = parsed?.skills?.size ?: 0,
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            nvidiaConfig.collect { config ->
+                latestConfig = config
+                _uiState.update {
+                    it.copy(
+                        assistantConfigured = config.isConfigured,
+                        assistantConsent = config.consentGranted,
+                        modelLabel = com.aiglobal.jobfinder.data.model.NvidiaModels.labelFor(config.modelId),
+                        assistantReady = config.isConfigured && config.consentGranted && bestJob != null,
                     )
                 }
             }
         }
     }
+
+    /**
+     * Runs one assistant task on the best-matching posting. When the remote model is not
+     * available it degrades to the on-device explanation for [AssistTask.EXPLAIN_MATCH],
+     * so the panel always shows something useful and never implies remote output it lacks.
+     */
+    fun runAssistant(task: com.aiglobal.jobfinder.data.ai.AssistTask) {
+        val job = bestJob
+        if (job == null) {
+            _uiState.update { it.copy(assistantError = "No matching posting yet. Pull to refresh the feed.") }
+            return
+        }
+        _uiState.update { it.copy(assistantRunning = true, assistantError = "", assistantOutput = "") }
+        viewModelScope.launch {
+            val config = currentConfig()
+            val result = aiAssistant.run(config, task, profile, job)
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        assistantRunning = false,
+                        assistantOutput = result.text,
+                        assistantOutputTitle = "${task.label} — ${job.title}",
+                        assistantOutputIsRemote = true,
+                    )
+                }
+            } else {
+                val fallback = if (task == com.aiglobal.jobfinder.data.ai.AssistTask.EXPLAIN_MATCH) {
+                    aiAssistant.localExplanation(job, profile)
+                } else {
+                    ""
+                }
+                _uiState.update {
+                    it.copy(
+                        assistantRunning = false,
+                        assistantError = result.message,
+                        assistantOutput = fallback,
+                        assistantOutputTitle = if (fallback.isBlank()) "" else "${task.label} — on-device",
+                        assistantOutputIsRemote = false,
+                    )
+                }
+            }
+        }
+    }
+
+    /** The most recent config, read from the flow's latest emission. */
+    private var latestConfig: com.aiglobal.jobfinder.data.model.NvidiaConfig =
+        com.aiglobal.jobfinder.data.model.NvidiaConfig()
+
+    private fun currentConfig(): com.aiglobal.jobfinder.data.model.NvidiaConfig = latestConfig
 }
 
 class AiViewModelFactory(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val cvRepository: com.aiglobal.jobfinder.data.repository.CvRepository,
+    private val aiAssistant: com.aiglobal.jobfinder.data.ai.NvidiaJobAssistant =
+        com.aiglobal.jobfinder.data.ai.NvidiaJobAssistant(),
+    private val nvidiaConfig: kotlinx.coroutines.flow.Flow<com.aiglobal.jobfinder.data.model.NvidiaConfig> =
+        kotlinx.coroutines.flow.flowOf(com.aiglobal.jobfinder.data.model.NvidiaConfig()),
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = AiViewModel(repository, cvRepository) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        AiViewModel(repository, cvRepository, aiAssistant, nvidiaConfig) as T
 }
 
 private fun <T> kotlinx.coroutines.flow.MutableStateFlow<T>.update(transform: (T) -> T) {

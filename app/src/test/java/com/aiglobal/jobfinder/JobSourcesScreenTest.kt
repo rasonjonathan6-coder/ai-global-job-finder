@@ -13,9 +13,13 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.model.NvidiaConfig
+import com.aiglobal.jobfinder.data.model.NvidiaResult
+import com.aiglobal.jobfinder.data.model.NvidiaStatus
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.model.ProviderStatus
+import com.aiglobal.jobfinder.ui.screens.profile.AiAssistantCard
 import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.theme.AiJobFinderTheme
 import org.junit.Rule
@@ -134,5 +138,55 @@ class JobSourcesScreenTest {
         composeRule.onAllNodesWithText("Replace")[0].performClick()
         // After choosing to replace, an editable field is shown (its label is still present).
         composeRule.onNodeWithText("Adzuna app ID").assertIsDisplayed()
+    }
+
+    @Test
+    fun marketsCanBeChosenAndSaved() {
+        val selected = androidx.compose.runtime.mutableStateOf(emptySet<String>())
+        var lastSaved: Set<String>? = null
+        composeRule.setContent {
+            AiJobFinderTheme {
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    JobSourcesCard(
+                        credentials = AdzunaCredentials(appId = "id", appKey = "key"),
+                        joobleKey = "",
+                        diagnostics = ProviderDiagnostics(),
+                        adzunaCountries = selected.value,
+                        onSaveAdzuna = { _, _ -> },
+                        onSaveJooble = {},
+                        onSaveAdzunaCountries = {
+                            selected.value = it
+                            lastSaved = it
+                        },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Add optional sources").performClick()
+        composeRule.onNodeWithText("Choose Adzuna markets").performClick()
+        composeRule.onNodeWithText("Canada").performClick()
+        composeRule.onNodeWithText("Germany").performClick()
+        assert(lastSaved == setOf("ca", "de")) { "expected the two tapped markets, got $lastSaved" }
+    }
+
+    @Test
+    fun theAssistantCardIsOffUntilAKeyAndConsentAreGiven() {
+        composeRule.setContent {
+            AiJobFinderTheme {
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    AiAssistantCard(
+                        config = NvidiaConfig(),
+                        encrypted = true,
+                        onSaveKey = {},
+                        onSelectModel = {},
+                        onConsentChange = {},
+                        onTestKey = { NvidiaResult(NvidiaStatus.OK) },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("NVIDIA AI assistant").assertIsDisplayed()
+        composeRule.onNodeWithText("Off — add your API key to enable drafting").assertIsDisplayed()
+        composeRule.onNodeWithText("Set up the assistant").assertIsDisplayed()
     }
 }

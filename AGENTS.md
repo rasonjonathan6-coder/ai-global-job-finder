@@ -522,6 +522,45 @@ claim machine-checkable.
   confirmation at `w320dp`; `JobsFilterTest` gains the trade filter. Suite: **196 tests, 0
   failures**.
 
+### NVIDIA assistant and configurable Adzuna markets (Stage 16)
+
+Stage 15's AI catalog said plainly that there was no generative model and no cloud endpoint.
+Stage 16 makes that statement true instead of aspirational: it adds one real remote model
+(NVIDIA's OpenAI-compatible endpoint) behind an explicit consent gate, and lets the user
+choose which Adzuna national markets to query.
+
+- **Remote model, opt-in twice over (`data/ai/NvidiaAiClient.kt`, `NvidiaJobAssistant.kt`).**
+  `NvidiaAiClient` posts to `https://integrate.api.nvidia.com/v1/chat/completions` with the
+  key in the `Authorization` header (never the URL), a timeout, and an output-token ceiling.
+  `NvidiaJobAssistant` refuses to send anything unless the user has both saved a key **and**
+  turned the assistant on: `consentGranted == false` returns `CONSENT_REQUIRED` with zero
+  network calls. Nothing is ever submitted — the model returns a draft the user edits.
+- **Narrow grounding (`data/ai/GroundingContext.kt`).** The only thing sent is the
+  candidate's own verified fields and the posting's own text. It deliberately excludes the
+  CV file, email, phone and address; a drafting model does not need them. `Stage16NvidiaTest`
+  asserts the captured request body contains neither the email nor the phone.
+- **Every failure has a name (`NvidiaStatus`).** 401/403 → `INVALID_KEY`, 404/410 →
+  `MODEL_UNAVAILABLE` ("pick another model", not "the app broke"), 429 → `RATE_LIMITED`,
+  5xx/timeouts/DNS → `NETWORK`/`TIMEOUT`, blank key → `NOT_CONFIGURED`. The UI says what
+  happened instead of "something went wrong".
+- **Never a dead end.** When the assistant is off or a call fails, `localExplanation()` gives
+  a deterministic, on-device explanation of the match, prefixed "no data was sent anywhere".
+  The score is computed locally and the app never needs the network to explain it.
+- **Key handling unchanged from Stage 10.** The NVIDIA key is stored through the same
+  encrypted preference path; `AiAssistantCard` shows it masked with a "Replace" affordance
+  and never renders the stored value. Consent is a separate switch, stored with the key.
+- **Adzuna markets are user-selectable (`AdzunaCountries.supported`).** The country picker in
+  Profile → Job sources writes the chosen set; `AdzunaProvider` queries exactly that set
+  (each market is its own request because Adzuna's country is a path segment). An empty set
+  falls back to the defaults. `Stage16NvidiaTest.onlyTheChosenMarketsAreQueried` pins that an
+  unpicked market is never queried.
+- Tests: `Stage16NvidiaTest` (11) pins the consent/config gates, the failure classification,
+  the exact request body (model id, token ceiling, grounding, no personal identifiers), the
+  on-device fallback, and the Adzuna market selection; `ScreenshotTest` gains the assistant
+  panel in both themes and the NVIDIA settings card; `JobSourcesScreenTest` gains the market
+  picker and the assistant card at `w320dp`. Suite: **212 tests, 0 failures** (1 skipped:
+  the opt-in `Stage14LiveProbeTest`).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

@@ -3,6 +3,7 @@ package com.aiglobal.jobfinder
 import android.app.Application
 import com.aiglobal.jobfinder.data.alerts.JobAlertStore
 import com.aiglobal.jobfinder.data.alerts.JobAlertsCenter
+import com.aiglobal.jobfinder.data.ai.NvidiaJobAssistant
 import com.aiglobal.jobfinder.data.applications.ApplicationCenter
 import com.aiglobal.jobfinder.data.applications.ApplicationStore
 import com.aiglobal.jobfinder.data.autoapply.AutoApplyCenter
@@ -16,6 +17,7 @@ import com.aiglobal.jobfinder.data.jobs.JobCache
 import com.aiglobal.jobfinder.data.jobs.JobMapper
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityEngine
 import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCountries
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaProvider
 import com.aiglobal.jobfinder.data.jobs.provider.ArbeitnowProvider
@@ -127,6 +129,8 @@ open class AppContainer(application: Application) {
                 AdzunaProvider(
                     credentials = { adzunaCredentialsValue },
                     feed = HttpJsonFeed,
+                    countries = adzunaCountriesValue.toList().ifEmpty { AdzunaCountries.defaults },
+                    pagesPerCountry = 2,
                 ),
             )
             add(
@@ -176,6 +180,10 @@ open class AppContainer(application: Application) {
     @Volatile
     private var adzunaCredentialsValue: AdzunaCredentials = AdzunaCredentials()
 
+    /** Last-known Adzuna markets, read synchronously by the provider factory. */
+    @Volatile
+    private var adzunaCountriesValue: Set<String> = emptySet()
+
     /** Last-known Jooble API key, read synchronously by the provider factory. */
     @Volatile
     private var joobleApiKeyValue: String = ""
@@ -183,6 +191,9 @@ open class AppContainer(application: Application) {
     init {
         appScope.launch {
             preferencesRepository.adzunaCredentials.collect { adzunaCredentialsValue = it }
+        }
+        appScope.launch {
+            preferencesRepository.adzunaCountries.collect { adzunaCountriesValue = it }
         }
         appScope.launch {
             preferencesRepository.joobleApiKey.collect { joobleApiKeyValue = it }
@@ -221,6 +232,22 @@ open class AppContainer(application: Application) {
 
     /** The current CV-derived profile, read synchronously for the auto-apply prep pass. */
     private fun candidateProfileValue(): CandidateProfile = candidateProfileState.value
+
+    // ---------------------------------------------------------------- Stage 16
+
+    /**
+     * The optional AI drafting assistant, backed by NVIDIA's hosted model. It is the only
+     * component in the app that can send data off the device, and it does so only after the
+     * user saves a key, turns it on, and grants consent — enforced in [NvidiaJobAssistant].
+     */
+    val aiAssistant: NvidiaJobAssistant by lazy { NvidiaJobAssistant() }
+
+    /** NVIDIA API key, model and consent, encrypted at rest in [UserPreferencesRepository]. */
+    val nvidiaConfig: Flow<com.aiglobal.jobfinder.data.model.NvidiaConfig> =
+        preferencesRepository.nvidiaConfig
+
+    /** True when the persisted credential store is encrypted (the Keystore is available). */
+    val credentialsEncrypted: Boolean get() = preferencesRepository.credentialsEncrypted
 }
 
 open class AiJobFinderApp : Application() {

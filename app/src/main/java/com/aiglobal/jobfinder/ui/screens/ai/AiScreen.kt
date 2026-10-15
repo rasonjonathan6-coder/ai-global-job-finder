@@ -31,14 +31,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -60,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aiglobal.jobfinder.data.ai.AssistTask
 import com.aiglobal.jobfinder.data.model.AiCapability
 import com.aiglobal.jobfinder.data.model.AiCapabilityCatalog
 import com.aiglobal.jobfinder.data.model.AiCapabilityKind
@@ -72,6 +76,23 @@ import com.aiglobal.jobfinder.ui.components.isDarkTheme
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
 import com.aiglobal.jobfinder.ui.theme.extendedColors
 import kotlinx.coroutines.delay
+
+/**
+ * Everything the AI workspace needs to describe the optional remote assistant honestly.
+ * Defaults describe "not set up", so a caller that has not wired the ViewModel yet cannot
+ * accidentally imply the model is on.
+ */
+data class AssistantState(
+    val configured: Boolean = false,
+    val consent: Boolean = false,
+    val ready: Boolean = false,
+    val modelLabel: String = "",
+    val running: Boolean = false,
+    val output: String = "",
+    val outputTitle: String = "",
+    val outputIsRemote: Boolean = false,
+    val error: String = "",
+)
 
 /** The AI workspace. Stage 2 opens with the real CV pipeline as its first action. */
 @Composable
@@ -91,6 +112,10 @@ fun AiScreen(
     /** How many postings currently match the profile, used in the analysis headline. */
     strongMatchCount: Int = 0,
     autoRun: Boolean = true,
+    /** The optional remote assistant, described honestly by [AssistantState]. */
+    assistant: AssistantState = AssistantState(),
+    onRunAssistant: (AssistTask) -> Unit = {},
+    onOpenAssistantSettings: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     var progress by remember { mutableFloatStateOf(if (autoRun) 0f else 1f) }
@@ -160,6 +185,14 @@ fun AiScreen(
                     onClick = onOpenCv,
                 )
             }
+        }
+
+        item {
+            AssistantPanel(
+                state = assistant,
+                onRun = onRunAssistant,
+                onOpenSettings = onOpenAssistantSettings,
+            )
         }
 
         item {
@@ -377,6 +410,206 @@ private fun AnalysisStep(label: String, done: Boolean) {
 }
 
 @Composable
+private fun AssistantPanel(
+    state: AssistantState,
+    onRun: (AssistTask) -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    val shape = RoundedCornerShape(20.dp)
+    val accent = MaterialTheme.colorScheme.secondary
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, extendedColors.cardStroke, shape)
+            .padding(spacing.md),
+        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(accent.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Cloud,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "NVIDIA drafting assistant",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = when {
+                        !state.configured -> "Optional — add your NVIDIA API key to switch it on"
+                        !state.consent -> "Key saved — turn it on to allow sending your CV facts"
+                        else -> "Ready · ${state.modelLabel.ifBlank { "model selected" }}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Pill(
+                text = if (state.ready) "On" else "Off",
+                containerColor = (if (state.ready) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant)
+                    .copy(alpha = 0.14f),
+                contentColor = if (state.ready) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Text(
+            text = "When on, only the facts from your CV and this posting are sent to NVIDIA to " +
+                "explain a match or draft text. Your CV file, email and phone are never sent. " +
+                "Every draft is yours to edit before you send it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (!state.ready) {
+            SecondaryButton(
+                text = if (state.configured) "Turn on in settings" else "Set up the assistant",
+                onClick = onOpenSettings,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = Icons.Filled.Settings,
+            )
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                AssistantTaskButton(
+                    label = "Explain match",
+                    task = AssistTask.EXPLAIN_MATCH,
+                    enabled = !state.running,
+                    onRun = onRun,
+                    modifier = Modifier.weight(1f),
+                )
+                AssistantTaskButton(
+                    label = "Cover letter",
+                    task = AssistTask.COVER_LETTER,
+                    enabled = !state.running,
+                    onRun = onRun,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        AnimatedVisibility(visible = state.running) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ProgressBar(
+                    fraction = 0.5f,
+                    color = accent,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    height = 6.dp,
+                )
+            }
+        }
+
+        if (state.error.isNotBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(extendedColors.warning.copy(alpha = 0.12f))
+                    .padding(spacing.sm),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = null,
+                    tint = extendedColors.warning,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = state.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+
+        if (state.output.isNotBlank()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, extendedColors.cardStroke, RoundedCornerShape(14.dp))
+                    .padding(spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (state.outputIsRemote) Icons.Filled.Cloud else Icons.Filled.Lock,
+                        contentDescription = null,
+                        tint = if (state.outputIsRemote) accent else extendedColors.info,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = state.outputTitle.ifBlank { "Assistant output" },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Pill(
+                    text = if (state.outputIsRemote) "Drafted by NVIDIA" else "On-device explanation",
+                    containerColor = (if (state.outputIsRemote) accent else extendedColors.info).copy(alpha = 0.14f),
+                    contentColor = if (state.outputIsRemote) accent else extendedColors.info,
+                )
+                Text(
+                    text = state.output,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssistantTaskButton(
+    label: String,
+    task: AssistTask,
+    enabled: Boolean,
+    onRun: (AssistTask) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = { onRun(task) },
+            )
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
 private fun AiTransparencyCard() {
     val spacing = LocalSpacing.current
     var expanded by remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -415,7 +648,7 @@ private fun AiTransparencyCard() {
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "On-device rules and parsers — no generative model",
+                    text = "Rules and parsers on-device, plus one optional NVIDIA model",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -450,7 +683,7 @@ private fun AiTransparencyCard() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (expanded) "Hide the full breakdown" else "See exactly what runs on your device",
+                text = if (expanded) "Hide the full breakdown" else "See the full breakdown",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -496,7 +729,11 @@ private fun AiCapabilityRow(capability: AiCapability) {
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Filled.Smartphone,
+                if (capability.location == com.aiglobal.jobfinder.data.model.AiProcessingLocation.REMOTE) {
+                    Icons.Filled.Cloud
+                } else {
+                    Icons.Filled.Smartphone
+                },
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(13.dp),

@@ -24,6 +24,9 @@ import com.aiglobal.jobfinder.data.model.ExpatPreferences
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobBenefitTypes
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
+import com.aiglobal.jobfinder.data.model.NvidiaConfig
+import com.aiglobal.jobfinder.data.model.NvidiaResult
+import com.aiglobal.jobfinder.data.model.NvidiaStatus
 import com.aiglobal.jobfinder.data.model.ShortlistState
 import com.aiglobal.jobfinder.data.model.CertificationEntry
 import com.aiglobal.jobfinder.data.model.CvFileType
@@ -58,6 +61,7 @@ import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
 import com.aiglobal.jobfinder.ui.navigation.Destination
 import com.aiglobal.jobfinder.ui.screens.ai.AiScreen
+import com.aiglobal.jobfinder.ui.screens.ai.AssistantState
 import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsContent
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailContent
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
@@ -70,6 +74,7 @@ import com.aiglobal.jobfinder.ui.screens.home.HomeContent
 import com.aiglobal.jobfinder.ui.screens.interview.InterviewContent
 import com.aiglobal.jobfinder.ui.screens.jobs.ApplyLinkSheetBody
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsContent
+import com.aiglobal.jobfinder.ui.screens.profile.AiAssistantCard
 import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
 import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldContent
@@ -230,6 +235,60 @@ class ScreenshotTest {
 
     @Test
     fun aiScreen() = renderBothModes("ai") { AiScreen(onBrowseJobs = {}, onOpenCv = {}, autoRun = false) }
+
+    @Test
+    fun aiAssistantOff() = renderBothModes("ai-assistant-off") {
+        AiScreen(
+            onBrowseJobs = {},
+            onOpenCv = {},
+            autoRun = false,
+            hasCv = true,
+            skillCount = 9,
+            strongMatchCount = 4,
+            assistant = AssistantState(configured = false, ready = false),
+        )
+    }
+
+    @Test
+    fun aiAssistantRemoteOutput() = renderBothModes("ai-assistant-remote") {
+        AiScreen(
+            onBrowseJobs = {},
+            onOpenCv = {},
+            autoRun = false,
+            hasCv = true,
+            skillCount = 9,
+            strongMatchCount = 4,
+            assistant = AssistantState(
+                configured = true,
+                consent = true,
+                ready = true,
+                modelLabel = "GPT-OSS 20B",
+                outputTitle = "Explain my match — Maintenance Technician",
+                outputIsRemote = true,
+                output = "Your CV shows industrial maintenance, hydraulics and CMMS work, which " +
+                    "this posting asks for directly. The strongest signal is the equipment " +
+                    "fault-finding experience. The gap is the local electrical certification, " +
+                    "which the posting lists as preferred rather than required. A concrete next " +
+                    "step is to note the equivalent certification you hold under its English name.",
+            ),
+        )
+    }
+
+    @Test
+    fun nvidiaAssistantCardConfigured() = renderBothModes("nvidia-assistant") {
+        AiAssistantCard(
+            config = NvidiaConfig(
+                apiKey = "nvapi-example",
+                modelId = "openai/gpt-oss-20b",
+                consentGranted = true,
+            ),
+            encrypted = true,
+            onSaveKey = {},
+            onSelectModel = {},
+            onConsentChange = {},
+            onTestKey = { com.aiglobal.jobfinder.data.model.NvidiaResult(com.aiglobal.jobfinder.data.model.NvidiaStatus.OK, text = "ok") },
+        )
+    }
 
     @Test
     fun cvImportEmpty() = renderBothModes("cv-empty") {

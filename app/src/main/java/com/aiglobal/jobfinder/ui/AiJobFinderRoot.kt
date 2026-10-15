@@ -29,6 +29,7 @@ import com.aiglobal.jobfinder.AppContainer
 import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
 import com.aiglobal.jobfinder.ui.navigation.Destination
 import com.aiglobal.jobfinder.ui.screens.ai.AiScreen
+import com.aiglobal.jobfinder.ui.screens.ai.AssistantState
 import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsScreen
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailScreen
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
@@ -192,7 +193,12 @@ fun AiJobFinderRoot(
             }
             composable(Destination.Ai.route) {
                 val vm: AiViewModel = viewModel(
-                    factory = AiViewModelFactory(container.jobRepository, container.cvRepository),
+                    factory = AiViewModelFactory(
+                        repository = container.jobRepository,
+                        cvRepository = container.cvRepository,
+                        aiAssistant = container.aiAssistant,
+                        nvidiaConfig = container.nvidiaConfig,
+                    ),
                 )
                 val state by vm.uiState.collectAsStateWithLifecycle()
                 AiScreen(
@@ -207,6 +213,19 @@ fun AiJobFinderRoot(
                     hasCv = state.hasCv,
                     skillCount = state.skillCount,
                     strongMatchCount = state.strongMatchCount,
+                    assistant = AssistantState(
+                        configured = state.assistantConfigured,
+                        consent = state.assistantConsent,
+                        ready = state.assistantReady,
+                        modelLabel = state.modelLabel,
+                        running = state.assistantRunning,
+                        output = state.assistantOutput,
+                        outputTitle = state.assistantOutputTitle,
+                        outputIsRemote = state.assistantOutputIsRemote,
+                        error = state.assistantError,
+                    ),
+                    onRunAssistant = vm::runAssistant,
+                    onOpenAssistantSettings = { navController.navigateToTab(Destination.Profile) },
                 )
             }
             composable(SecondaryRoutes.CV) {

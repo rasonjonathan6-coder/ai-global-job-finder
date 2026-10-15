@@ -20,15 +20,16 @@ enum class AiCapabilityKind(val label: String) {
     /** A trained machine-learning model running on the device. */
     ON_DEVICE_MODEL("On-device model"),
 
-    /** A remote generative or ML service. None is currently integrated. */
+    /** A remote generative or ML service, reached only when the user configures and enables it. */
     REMOTE_MODEL("Remote AI service"),
 }
 
 /** Where the feature runs, so the privacy claim is explicit rather than implied. */
 enum class AiProcessingLocation(val label: String) {
     ON_DEVICE("On this device"),
-    /** Nothing in the app currently sends data off the device; kept for future clarity. */
-    REMOTE("Remote service"),
+
+    /** Data leaves the device and is processed by NVIDIA. */
+    REMOTE("Sent to NVIDIA"),
 }
 
 /**
@@ -49,16 +50,17 @@ data class AiCapability(
  * The complete, current inventory of what the "AI" in this app does.
  *
  * It is written to be checkable against the source tree: every entry names the mechanism
- * that actually runs. There is no generative model and no remote service in the app, and
- * this catalog says so plainly rather than letting the UI imply otherwise.
+ * that actually runs. The optional drafting assistant is a real remote generative model
+ * (NVIDIA), and it is labelled as such and marked opt-in — it runs only when the user
+ * saves an API key, turns it on, and consents to sending their CV facts.
  */
 object AiCapabilityCatalog {
 
     /** True when the app ships a trained on-device model. It does not, today. */
     const val HAS_ON_DEVICE_MODEL: Boolean = false
 
-    /** True when the app contacts a remote AI service. It does not, today. */
-    const val HAS_REMOTE_MODEL: Boolean = false
+    /** True when the app can contact a remote AI service. It can, once the user configures NVIDIA. */
+    const val HAS_REMOTE_MODEL: Boolean = true
 
     val capabilities: List<AiCapability> = listOf(
         AiCapability(
@@ -117,10 +119,18 @@ object AiCapabilityCatalog {
             description = "Builds practice questions from the posting and your CV and scores your answers on structure.",
             note = "Question templates and a rubric, not a live AI interviewer.",
         ),
+        AiCapability(
+            name = "AI drafting assistant",
+            kind = AiCapabilityKind.REMOTE_MODEL,
+            location = AiProcessingLocation.REMOTE,
+            description = "An optional NVIDIA-hosted language model that explains a match, drafts a cover letter, or rewrites your summary.",
+            note = "Off until you turn it on. When on, only your CV facts and the posting text are sent to NVIDIA — never the CV file, your email, phone or address. Review every draft before you send it.",
+        ),
     )
 
     /** One-line honesty statement for the AI screen header. */
     val summary: String =
-        "Every capability here runs on your device as transparent rules and parsers. " +
-            "No generative AI model is used, and your CV is never uploaded."
+        "Most capabilities run on your device as transparent rules and parsers. " +
+            "One optional drafting assistant uses NVIDIA's hosted model, and only when you " +
+            "turn it on — your CV file is never uploaded."
 }

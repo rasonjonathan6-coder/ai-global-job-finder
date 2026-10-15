@@ -10,12 +10,15 @@ import com.aiglobal.jobfinder.data.model.SalaryPeriod
  *
  * Each configured country is queried in its own request because Adzuna's country is a
  * path segment, and every posting is tagged with the currency of the market it came
- * from so salaries stay comparable.
+ * from so salaries stay comparable. Each market can be paged a few times so a single
+ * strong market is not truncated at the first page.
  */
 class AdzunaProvider(
     private val credentials: () -> AdzunaCredentials,
     private val feed: JsonFeed = HttpJsonFeed,
-    private val countries: List<String> = DEFAULT_COUNTRIES,
+    private val countries: List<String> = AdzunaCountries.defaults,
+    /** Pages requested per market. 1 is the documented default; higher widens one market. */
+    private val pagesPerCountry: Int = 1,
 ) : JobProvider {
 
     override val id: String = "adzuna"
@@ -46,22 +49,29 @@ class AdzunaProvider(
             )
         }
         val what = keywords.firstOrNull()?.takeIf { it.isNotBlank() }
-        val perCountry = (limit / countries.size).coerceAtLeast(5)
+        val effective = countries.ifEmpty { AdzunaCountries.defaults }
+        val perCountry = (limit / effective.size).coerceAtLeast(5)
         val collected = mutableListOf<RawJob>()
         var lastError: Throwable? = null
 
-        for (country in countries) {
-            val url = buildString {
-                append("$BASE_URL/$country/search/1")
-                append("?app_id=${creds.appId}")
-                append("&app_key=${creds.appKey}")
-                append("&results_per_page=$perCountry")
-                append("&content-type=application/json")
-                if (what != null) append("&what=${java.net.URLEncoder.encode(what, "UTF-8")}")
+        for (country in effective) {
+            for (page in 1..pagesPerCountry.coerceAtLeast(1)) {
+                val url = buildString {
+                    append("$BASE_URL/$country/search/$page")
+                    append("?app_id=${creds.appId}")
+                    append("&app_key=${creds.appKey}")
+                    append("&results_per_page=$perCountry")
+                    append("&content-type=application/json")
+                    if (what != null) append("&what=${java.net.URLEncoder.encode(what, "UTF-8")}")
+                }
+                val outcome = runCatching { feed.objectAt(url) }
+                outcome.onSuccess { json -> collected += json.toRawJobs(country) }
+                    .onFailure { lastError = it }
+                // Stop paging a market as soon as a page fails or comes back short; asking
+                // for an empty page just burns quota.
+                val pageSize = outcome.getOrNull()?.optJSONArray("results")?.length() ?: 0
+                if (outcome.isFailure || pageSize == 0) break
             }
-            runCatching { feed.objectAt(url) }
-                .onSuccess { json -> collected += json.toRawJobs(country) }
-                .onFailure { lastError = it }
         }
 
         // Only surface an error when every country failed, so one throttled market
@@ -79,7 +89,7 @@ class AdzunaProvider(
 
     private fun org.json.JSONObject.toRawJobs(country: String): List<RawJob> {
         val results = optJSONArray("results") ?: return emptyList()
-        val currency = CURRENCY_BY_COUNTRY[country]
+        val currency = AdzunaCountries.currencyByCountry[country]
         return buildList {
             for (i in 0 until results.length()) {
                 val item = results.optJSONObject(i) ?: continue
@@ -115,17 +125,6 @@ class AdzunaProvider(
 
     private companion object {
         const val BASE_URL = "https://api.adzuna.com/v1/api/jobs"
-
-        /** Markets most likely to sponsor a Madagascar-based applicant. */
-        val DEFAULT_COUNTRIES = listOf("gb", "ca", "de", "fr", "nl", "us", "au")
-
-        /** Adzuna salaries are stated in the local currency of the market queried. */
-        val CURRENCY_BY_COUNTRY = mapOf(
-            "gb" to "GBP", "us" to "USD", "ca" to "CAD", "de" to "EUR", "fr" to "EUR",
-            "nl" to "EUR", "at" to "EUR", "be" to "EUR", "ch" to "CHF", "es" to "EUR",
-            "it" to "EUR", "au" to "AUD", "nz" to "NZD", "pl" to "PLN", "sg" to "SGD",
-            "za" to "ZAR", "br" to "BRL", "mx" to "MXN", "in" to "INR",
-        )
     }
 }
 
@@ -135,4 +134,51 @@ data class AdzunaCredentials(
     val appKey: String = "",
 ) {
     val isConfigured: Boolean get() = appId.isNotBlank() && appKey.isNotBlank()
+}
+
+/**
+ * The Adzuna markets the app knows how to query, and the currency each one reports salaries
+ * in. Kept in one place so the provider, the settings screen and the country picker cannot
+ * drift apart. The defaults are the markets most likely to sponsor a Madagascar-based
+ * applicant; the user can narrow or widen the set in Profile → Job sources.
+ */
+object AdzunaCountries {
+
+    /** Country code → display label. Order is the display order. */
+    val supported: List<Pair<String, String>> = listOf(
+        "gb" to "United Kingdom",
+        "ca" to "Canada",
+        "de" to "Germany",
+        "fr" to "France",
+        "nl" to "Netherlands",
+        "us" to "United States",
+        "au" to "Australia",
+        "nz" to "New Zealand",
+        "at" to "Austria",
+        "be" to "Belgium",
+        "ch" to "Switzerland",
+        "es" to "Spain",
+        "it" to "Italy",
+        "pl" to "Poland",
+        "sg" to "Singapore",
+        "za" to "South Africa",
+        "br" to "Brazil",
+        "mx" to "Mexico",
+        "in" to "India",
+    )
+
+    /** The markets searched when the user has not chosen any. */
+    val defaults: List<String> = listOf("gb", "ca", "de", "fr", "nl", "us", "au")
+
+    /** Adzuna salaries are stated in the local currency of the market queried. */
+    val currencyByCountry: Map<String, String> = mapOf(
+        "gb" to "GBP", "us" to "USD", "ca" to "CAD", "de" to "EUR", "fr" to "EUR",
+        "nl" to "EUR", "at" to "EUR", "be" to "EUR", "ch" to "CHF", "es" to "EUR",
+        "it" to "EUR", "au" to "AUD", "nz" to "NZD", "pl" to "PLN", "sg" to "SGD",
+        "za" to "ZAR", "br" to "BRL", "mx" to "MXN", "in" to "INR",
+    )
+
+    fun isSupported(code: String): Boolean = supported.any { it.first == code }
+
+    fun labelFor(code: String): String = supported.firstOrNull { it.first == code }?.second ?: code.uppercase()
 }

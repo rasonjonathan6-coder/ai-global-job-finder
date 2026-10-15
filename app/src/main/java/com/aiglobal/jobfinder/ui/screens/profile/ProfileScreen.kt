@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,12 +31,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
@@ -47,6 +53,8 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -54,6 +62,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,11 +75,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCountries
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.BenefitPriority
 import com.aiglobal.jobfinder.data.model.BenefitType
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
 import com.aiglobal.jobfinder.data.model.JobBenefitTypes
+import com.aiglobal.jobfinder.data.model.NvidiaConfig
+import com.aiglobal.jobfinder.data.model.NvidiaModel
+import com.aiglobal.jobfinder.data.model.NvidiaModels
+import com.aiglobal.jobfinder.data.model.NvidiaResult
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.Skill
@@ -93,6 +107,7 @@ import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import com.aiglobal.jobfinder.ui.theme.extendedColors
 import com.aiglobal.jobfinder.viewmodel.AppViewModel
 import com.aiglobal.jobfinder.viewmodel.ProfileViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileScreen(
@@ -106,7 +121,10 @@ fun ProfileScreen(
     val demoMode by viewModel.demoMode.collectAsStateWithLifecycle()
     val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
     val adzunaCredentials by appViewModel.adzunaCredentials.collectAsStateWithLifecycle()
+    val adzunaCountries by appViewModel.adzunaCountries.collectAsStateWithLifecycle()
     val joobleApiKey by appViewModel.joobleApiKey.collectAsStateWithLifecycle()
+    val nvidiaConfig by appViewModel.nvidiaConfig.collectAsStateWithLifecycle()
+    val credentialsEncrypted = appViewModel.credentialsEncrypted
     val expatPreferences by appViewModel.expatPreferences.collectAsStateWithLifecycle()
     val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
 
@@ -220,12 +238,32 @@ fun ProfileScreen(
         item { DemoModeCard(enabled = demoMode, onToggle = viewModel::setDemoMode) }
 
         item {
+            SectionHeader(
+                title = "AI assistant",
+                subtitle = "One optional NVIDIA model, off until you turn it on",
+            )
+        }
+
+        item {
+            AiAssistantCard(
+                config = nvidiaConfig,
+                encrypted = credentialsEncrypted,
+                onSaveKey = appViewModel::saveNvidiaApiKey,
+                onSelectModel = appViewModel::saveNvidiaModelId,
+                onConsentChange = appViewModel::setNvidiaConsent,
+                onTestKey = appViewModel::testNvidiaKey,
+            )
+        }
+
+        item {
             JobSourcesCard(
                 credentials = adzunaCredentials,
                 joobleKey = joobleApiKey,
                 diagnostics = diagnostics,
+                adzunaCountries = adzunaCountries,
                 onSaveAdzuna = appViewModel::saveAdzunaCredentials,
                 onSaveJooble = appViewModel::saveJoobleApiKey,
+                onSaveAdzunaCountries = appViewModel::saveAdzunaCountries,
                 onToggleSource = appViewModel::setSourceEnabled,
                 onRunValidation = viewModel::runValidation,
                 onOpenDiagnostics = onOpenDiagnostics,
@@ -783,14 +821,17 @@ internal fun JobSourcesCard(
     credentials: AdzunaCredentials,
     joobleKey: String,
     diagnostics: ProviderDiagnostics = ProviderDiagnostics(),
+    adzunaCountries: Set<String> = emptySet(),
     onSaveAdzuna: (String, String) -> Unit,
     onSaveJooble: (String) -> Unit,
+    onSaveAdzunaCountries: (Set<String>) -> Unit = {},
     onToggleSource: (String, Boolean) -> Unit = { _, _ -> },
     onRunValidation: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     var expanded by remember { mutableStateOf(false) }
+    var countriesExpanded by remember { mutableStateOf(false) }
     // Saved keys are masked and never echoed back into the fields. The field starts empty;
     // "Replace" reveals it so the old value is only overwritten by deliberate entry.
     var appId by remember(credentials.appId) { mutableStateOf("") }
@@ -801,6 +842,69 @@ internal fun JobSourcesCard(
     var editingJooble by remember(joobleKey) { mutableStateOf(false) }
     val adzunaSaved = credentials.isConfigured
     val joobleSaved = joobleKey.isNotBlank()
+
+    JobSourcesCardContent(
+        spacing = spacing,
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        countriesExpanded = countriesExpanded,
+        onCountriesExpandedChange = { countriesExpanded = it },
+        adzunaCountries = adzunaCountries,
+        onSaveAdzunaCountries = onSaveAdzunaCountries,
+        adzunaSaved = adzunaSaved,
+        joobleSaved = joobleSaved,
+        appId = appId,
+        onAppIdChange = { appId = it },
+        appKey = appKey,
+        onAppKeyChange = { appKey = it },
+        jooble = jooble,
+        onJoobleChange = { jooble = it },
+        editingAppId = editingAppId,
+        onEditingAppIdChange = { editingAppId = it },
+        editingAppKey = editingAppKey,
+        onEditingAppKeyChange = { editingAppKey = it },
+        editingJooble = editingJooble,
+        onEditingJoobleChange = { editingJooble = it },
+        diagnostics = diagnostics,
+        onSaveAdzuna = onSaveAdzuna,
+        onSaveJooble = onSaveJooble,
+        onToggleSource = onToggleSource,
+        onRunValidation = onRunValidation,
+        onOpenDiagnostics = onOpenDiagnostics,
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun JobSourcesCardContent(
+    spacing: com.aiglobal.jobfinder.ui.theme.Spacing,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    countriesExpanded: Boolean,
+    onCountriesExpandedChange: (Boolean) -> Unit,
+    adzunaCountries: Set<String>,
+    onSaveAdzunaCountries: (Set<String>) -> Unit,
+    adzunaSaved: Boolean,
+    joobleSaved: Boolean,
+    appId: String,
+    onAppIdChange: (String) -> Unit,
+    appKey: String,
+    onAppKeyChange: (String) -> Unit,
+    jooble: String,
+    onJoobleChange: (String) -> Unit,
+    editingAppId: Boolean,
+    onEditingAppIdChange: (Boolean) -> Unit,
+    editingAppKey: Boolean,
+    onEditingAppKeyChange: (Boolean) -> Unit,
+    editingJooble: Boolean,
+    onEditingJoobleChange: (Boolean) -> Unit,
+    diagnostics: ProviderDiagnostics,
+    onSaveAdzuna: (String, String) -> Unit,
+    onSaveJooble: (String) -> Unit,
+    onToggleSource: (String, Boolean) -> Unit,
+    onRunValidation: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
+) {
 
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -851,7 +955,7 @@ internal fun JobSourcesCard(
 
             SecondaryButton(
                 text = if (expanded) "Hide" else "Add optional sources",
-                onClick = { expanded = !expanded },
+                onClick = { onExpandedChange(!expanded) },
                 modifier = Modifier.fillMaxWidth(),
                 leadingIcon = Icons.Filled.Key,
             )
@@ -869,28 +973,61 @@ internal fun JobSourcesCard(
                     saved = adzunaSaved,
                     editing = editingAppId,
                     value = appId,
-                    onValueChange = { appId = it },
-                    onReplace = { appId = ""; editingAppId = true },
+                    onValueChange = onAppIdChange,
+                    onReplace = { onAppIdChange(""); onEditingAppIdChange(true) },
                 )
                 CredentialField(
                     label = "Adzuna app key",
                     saved = adzunaSaved,
                     editing = editingAppKey,
                     value = appKey,
-                    onValueChange = { appKey = it },
-                    onReplace = { appKey = ""; editingAppKey = true },
+                    onValueChange = onAppKeyChange,
+                    onReplace = { onAppKeyChange(""); onEditingAppKeyChange(true) },
                     secret = true,
                 )
                 PrimaryButton(
                     text = "Save Adzuna credentials",
                     onClick = {
                         onSaveAdzuna(appId.trim(), appKey.trim())
-                        editingAppId = false
-                        editingAppKey = false
+                        onEditingAppIdChange(false)
+                        onEditingAppKeyChange(false)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = appId.isNotBlank() && appKey.isNotBlank(),
                 )
+
+                SecondaryButton(
+                    text = if (countriesExpanded) "Hide markets" else "Choose Adzuna markets",
+                    onClick = { onCountriesExpandedChange(!countriesExpanded) },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = Icons.Filled.Public,
+                )
+
+                if (countriesExpanded) {
+                    Text(
+                        text = "Adzuna searches each market you pick. Empty means the default set " +
+                            "(${AdzunaCountries.defaults.joinToString(", ") { AdzunaCountries.labelFor(it) }}).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                        verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                    ) {
+                        AdzunaCountries.supported.forEach { (code, label) ->
+                            val selected = adzunaCountries.contains(code)
+                            FilterChip(
+                                label = label,
+                                selected = selected,
+                                onClick = {
+                                    val next = adzunaCountries.toMutableSet()
+                                    if (selected) next.remove(code) else next.add(code)
+                                    onSaveAdzunaCountries(next)
+                                },
+                            )
+                        }
+                    }
+                }
 
                 Spacer(Modifier.height(spacing.xxs))
                 CredentialField(
@@ -898,20 +1035,258 @@ internal fun JobSourcesCard(
                     saved = joobleSaved,
                     editing = editingJooble,
                     value = jooble,
-                    onValueChange = { jooble = it },
-                    onReplace = { jooble = ""; editingJooble = true },
+                    onValueChange = onJoobleChange,
+                    onReplace = { onJoobleChange(""); onEditingJoobleChange(true) },
                     secret = true,
                 )
                 PrimaryButton(
                     text = "Save Jooble key",
                     onClick = {
                         onSaveJooble(jooble.trim())
-                        editingJooble = false
+                        onEditingJoobleChange(false)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = jooble.isNotBlank(),
                 )
             }
+        }
+    }
+}
+
+/**
+ * The optional NVIDIA drafting assistant. This is the only place in the app that can send
+ * data off the device, so the card states exactly what would be sent, keeps the key masked,
+ * and leaves the assistant off until the user both saves a key and flips the consent switch.
+ */
+@Composable
+internal fun AiAssistantCard(
+    config: NvidiaConfig,
+    encrypted: Boolean,
+    onSaveKey: (String) -> Unit,
+    onSelectModel: (String) -> Unit,
+    onConsentChange: (Boolean) -> Unit,
+    onTestKey: suspend (String) -> NvidiaResult,
+) {
+    val spacing = LocalSpacing.current
+    var expanded by remember { mutableStateOf(false) }
+    var key by remember(config.apiKey) { mutableStateOf("") }
+    var editingKey by remember(config.apiKey) { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<NvidiaResult?>(null) }
+    val scope = rememberCoroutineScope()
+    val saved = config.isConfigured
+
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Cloud,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(spacing.sm))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "NVIDIA AI assistant",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = when {
+                            !saved -> "Off — add your API key to enable drafting"
+                            !config.consentGranted -> "Key saved — turn on to allow sending your CV facts"
+                            else -> "On · ${NvidiaModels.labelFor(config.modelId)}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Pill(
+                    text = if (config.isReady) "On" else "Off",
+                    containerColor = (if (config.isReady) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant)
+                        .copy(alpha = 0.14f),
+                    contentColor = if (config.isReady) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Text(
+                text = "This is a real remote generative model. When on, the facts from your CV " +
+                    "and the posting you select are sent to NVIDIA to explain a match or draft a " +
+                    "cover letter. Your CV file, email, phone and address are never sent. " +
+                    "Everything it writes is a draft you review before sending.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (saved) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (encrypted) Icons.Filled.Lock else Icons.Filled.Info,
+                        contentDescription = null,
+                        tint = if (encrypted) extendedColors.success else extendedColors.warning,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (encrypted) {
+                            "Key stored encrypted on this device (Android Keystore)."
+                        } else {
+                            "Key stored on this device. Keystore encryption is unavailable here."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            SecondaryButton(
+                text = if (expanded) "Hide setup" else "Set up the assistant",
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = Icons.Filled.Key,
+            )
+
+            if (expanded) {
+                CredentialField(
+                    label = "NVIDIA API key",
+                    saved = saved,
+                    editing = editingKey,
+                    value = key,
+                    onValueChange = { key = it; testResult = null },
+                    onReplace = { key = ""; editingKey = true },
+                    secret = true,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    PrimaryButton(
+                        text = if (testing) "Testing…" else "Test key",
+                        onClick = {
+                            testing = true
+                            testResult = null
+                            scope.launch {
+                                testResult = onTestKey(key)
+                                testing = false
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = key.isNotBlank() && !testing,
+                        loading = testing,
+                    )
+                    PrimaryButton(
+                        text = "Save key",
+                        onClick = {
+                            onSaveKey(key.trim())
+                            editingKey = false
+                        },
+                        modifier = Modifier.weight(1f),
+                        enabled = key.isNotBlank(),
+                    )
+                }
+
+                testResult?.let { result ->
+                    val ok = result.isSuccess
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background((if (ok) extendedColors.success else extendedColors.warning).copy(alpha = 0.12f))
+                            .padding(spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (ok) Icons.Filled.CheckCircle else Icons.Filled.Info,
+                            contentDescription = null,
+                            tint = if (ok) extendedColors.success else extendedColors.warning,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (ok) "NVIDIA accepted this key." else result.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Model",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                NvidiaModels.known.forEach { model ->
+                    ModelRow(
+                        model = model,
+                        selected = model.id == config.modelId,
+                        onClick = { onSelectModel(model.id) },
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Allow sending my CV facts to NVIDIA",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "Required before any request is made. You can turn this off at any time.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = config.consentGranted,
+                        onCheckedChange = onConsentChange,
+                        enabled = saved,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelRow(model: NvidiaModel, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else extendedColors.cardStroke, shape)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = onClick,
+            colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = model.label,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = model.note,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
