@@ -412,6 +412,28 @@ candidate or invented applications. Sample data now lives behind an explicit dem
   `NavigationTest.TestApp` overrides it to `true` so its fixture container keeps the
   seeded pipeline. `ScreenshotTest` deliberately uses the production default and renders
   screens from explicit fixtures. `ProductionDataTest` pins the invariant.
+- **One demo flow for the whole container.** `AppContainer.demoMode` combines the persisted
+  choice with `seedsSampleData`, and `jobRepository`, `applicationCenter` and
+  `jobAlertsCenter` all read it, so jobs, applications and saved searches can never disagree
+  about whether fixtures are being served.
+- **The auto-apply choice and the bookmarks survive a restart.** `UserPreferencesRepository`
+  gained `auto_apply_enabled` (bool) and `saved_job_ids` (string set); `LiveJobRepository`
+  collects both in `init` and writes them back from `setAutoApply`/`toggleSaved`. Only the
+  ids are stored — the posting itself is re-fetched and re-scored from the feed.
+- **Saved searches are the user's own.** `JobAlertsCenter` takes a `demoMode` flow and only
+  seeds the two curated examples on a fresh install *in demo mode*; outside demo mode the
+  alert list starts empty.
+- **`UserPreferencesRepository` keeps a DataStore seam.** Its `dataStore` parameter defaults
+  to the process-wide `Context.dataStore` delegate. Keep that default: the delegate caches a
+  single DataStore per Context, and constructing one with `PreferenceDataStoreFactory` on
+  every build opens a second store on the same file (`IllegalStateException: multiple
+  DataStores active`). Tests inject a temporary-file store instead.
+- **Release R8 needs the pdfbox `-dontwarn`.** `pdfbox-android` references an optional
+  `com.gemalto.jp2.JP2Decoder`; `proguard-rules.pro` carries the AGP-generated
+  `-dontwarn` so `assembleRelease` links.
+- Tests: `Stage13PersistenceTest` writes with one repository and reads back with a second
+  over the same temporary DataStore (a real restart), covering auto-apply, bookmark and
+  un-bookmark persistence plus demo-gated alert seeding. Suite: 169 tests, 0 failures.
 
 ## Conventions
 

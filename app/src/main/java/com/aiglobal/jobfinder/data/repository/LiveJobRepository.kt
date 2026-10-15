@@ -67,6 +67,14 @@ class LiveJobRepository(
     private val demoMode: Flow<Boolean> = MutableStateFlow(false),
     /** Persists the demo-mode choice; the flow above then reflects it back. */
     private val demoModeSetter: suspend (Boolean) -> Unit = {},
+    /** Persisted auto-apply preference; the flow reflects it back after a restart. */
+    private val autoApplyFlow: Flow<Boolean> = MutableStateFlow(false),
+    /** Persists the auto-apply choice. */
+    private val autoApplySetter: suspend (Boolean) -> Unit = {},
+    /** Persisted set of bookmarked posting ids. */
+    private val savedIdsFlow: Flow<Set<String>> = MutableStateFlow(emptySet()),
+    /** Persists the bookmarked ids. */
+    private val savedIdsSetter: suspend (Set<String>) -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
     private val perProviderLimit: Int = 60,
     /** Hard ceiling on a single source, so one slow feed cannot hold up the whole refresh. */
@@ -116,7 +124,7 @@ class LiveJobRepository(
 
     private val seedNow = clock()
 
-    /** Auto-apply preference; the repository's job of persisting it is unchanged from before. */
+    /** Auto-apply preference; kept in sync with the persisted flow so it survives a restart. */
     private val autoApplyEnabled = MutableStateFlow(false)
 
     /**
@@ -159,6 +167,14 @@ class LiveJobRepository(
         }
         scope.launch {
             providerSettings.collect { incoming -> applySettings(incoming) }
+        }
+        // Restore the bookmarked postings and the auto-apply choice the user made earlier,
+        // so a restart does not silently forget them.
+        scope.launch {
+            savedIdsFlow.collect { stored -> savedIds.value = stored }
+        }
+        scope.launch {
+            autoApplyFlow.collect { enabled -> autoApplyEnabled.value = enabled }
         }
         scope.launch { runLiveValidation() }
     }
@@ -473,7 +489,11 @@ class LiveJobRepository(
         !provider.requiresCredentials || settings.value.configuredCredentialIds.contains(provider.id)
 
     override suspend fun toggleSaved(jobId: String) {
-        savedIds.update { current -> if (current.contains(jobId)) current - jobId else current + jobId }
+        val next = savedIds.value.let { current ->
+            if (current.contains(jobId)) current - jobId else current + jobId
+        }
+        savedIds.value = next
+        savedIdsSetter(next)
     }
 
     override fun jobById(id: String): Job? =
@@ -481,6 +501,7 @@ class LiveJobRepository(
 
     override suspend fun setAutoApply(enabled: Boolean) {
         autoApplyEnabled.value = enabled
+        autoApplySetter(enabled)
     }
 
     override suspend fun setDemoMode(enabled: Boolean) {

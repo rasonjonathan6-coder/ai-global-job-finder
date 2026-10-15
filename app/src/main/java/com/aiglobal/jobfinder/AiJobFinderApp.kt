@@ -86,6 +86,17 @@ open class AppContainer(application: Application) {
     protected open val seedsSampleData: Boolean get() = false
 
     /**
+     * Demo mode as this container sees it: the user's persisted choice, or the test seam
+     * that forces fixtures on. Every fixture-aware component reads this one flow, so jobs,
+     * applications and saved searches always agree on whether sample data is being served.
+     */
+    private val demoMode: Flow<Boolean> by lazy {
+        combine(preferencesRepository.demoMode, MutableStateFlow(seedsSampleData)) { persisted, seeded ->
+            persisted || seeded
+        }
+    }
+
+    /**
      * The application pipeline, cover-letter writer and expat guide. Persisted to
      * app-private storage; nothing here is uploaded anywhere.
      */
@@ -94,7 +105,7 @@ open class AppContainer(application: Application) {
             repository = jobRepository,
             store = ApplicationStore(application),
             candidateProfile = candidateProfile,
-            demoMode = MutableStateFlow(seedsSampleData),
+            demoMode = demoMode,
         )
     }
 
@@ -134,8 +145,12 @@ open class AppContainer(application: Application) {
         cache = JobCache(File(application.filesDir, "job_feed")),
         isOnline = { NetworkMonitor(application).isOnline() },
         providerSettings = providerSettings,
-        demoMode = preferencesRepository.demoMode,
+        demoMode = demoMode,
         demoModeSetter = { enabled -> preferencesRepository.setDemoMode(enabled) },
+        autoApplyFlow = preferencesRepository.autoApplyEnabled,
+        autoApplySetter = { enabled -> preferencesRepository.setAutoApplyEnabled(enabled) },
+        savedIdsFlow = preferencesRepository.savedJobIds,
+        savedIdsSetter = { ids -> preferencesRepository.setSavedJobIds(ids) },
     )
 
     /**
@@ -187,7 +202,11 @@ open class AppContainer(application: Application) {
 
     /** Saved searches evaluated against the live feed. */
     val jobAlertsCenter: JobAlertsCenter by lazy {
-        JobAlertsCenter(repository = jobRepository, store = JobAlertStore(application))
+        JobAlertsCenter(
+            repository = jobRepository,
+            store = JobAlertStore(application),
+            demoMode = demoMode,
+        )
     }
 
     /** Safe auto-apply: prepares drafts and stops before submission. */

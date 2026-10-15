@@ -8,11 +8,13 @@ import com.aiglobal.jobfinder.data.repository.JobRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -30,6 +32,12 @@ class JobAlertsCenter(
     private val engine: JobAlertEngine = JobAlertEngine(),
     private val clock: () -> Long = System::currentTimeMillis,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
+    /**
+     * When true, seed the two curated example searches on a fresh install so the demo has
+     * something to show. Off by default: the alert list is the user's own, and a fresh
+     * install must not invent saved searches they never created.
+     */
+    private val demoMode: Flow<Boolean> = flowOf(false),
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -44,7 +52,9 @@ class JobAlertsCenter(
     init {
         scope.launch {
             store.load()
-            if (!store.hadPersistedDocument) seedDefaultRules()
+            // A fresh install starts with no saved searches. The curated examples are only
+            // seeded in demo mode, so the alert list is never someone else's invented rules.
+            if (!store.hadPersistedDocument && demoMode.first()) seedDefaultRules()
             refresh()
         }
         // Any feed change re-evaluates the rules, so alerts track the live data.
