@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.data.model
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import com.aiglobal.jobfinder.data.jobs.search.RoleFamily
 import kotlinx.serialization.Serializable
 
 /** How well the CV matches the posting, derived from [Job.matchScore]. */
@@ -83,10 +84,28 @@ data class Job(
      * the [ExpatBenefitsAssessment] is derived later, once preferences are known.
      */
     val benefitEvidence: List<BenefitEvidence> = emptyList(),
+    /**
+     * Whether the posting's title is one of the candidate's target roles, the wider
+     * maintenance family, or an unrelated profession. Computed locally because the remote
+     * boards return broad samples; the Jobs screen can hide non-relevant postings with it.
+     */
+    val roleFamily: RoleFamily = RoleFamily.UNKNOWN,
+    /** The canonical target role the title matched, when it is one of them. */
+    val matchedTargetRole: String? = null,
+    /** What the posting appears to require, read from its own text. */
+    val requirements: JobRequirements = JobRequirements(),
+    /** Requirements paired with whether the CV appears to meet them. */
+    val qualificationGaps: List<QualificationGap> = emptyList(),
+    /** Typed, source-linked evidence for every claim the app makes about this posting. */
+    val evidence: List<Evidence> = emptyList(),
     val isSaved: Boolean = false,
     val isNew: Boolean = false,
 ) {
     val tier: MatchTier get() = MatchTier.fromScore(matchScore)
+
+    /** True when the posting's title belongs to the candidate's trade. */
+    val isMaintenanceRelevant: Boolean
+        get() = roleFamily == RoleFamily.TARGET || roleFamily == RoleFamily.MAINTENANCE_FAMILY
 
     /** True when there is a believable path to apply from Madagascar. */
     val applyableFromMadagascar: Boolean

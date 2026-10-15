@@ -77,6 +77,11 @@ data class ProviderDiagnostic(
     val status: ProviderStatus = ProviderStatus.IDLE,
     /** Whether the user has this source switched on. */
     val enabled: Boolean = true,
+    /**
+     * True when this source's API narrows the feed by keyword. Recorded per attempt so the
+     * coverage report can tell a targeted search apart from a broad sample.
+     */
+    val serverSideSearch: Boolean = false,
     /** True when the source needs credentials at all. */
     val requiresCredentials: Boolean = false,
     /** Whether usable credentials are saved. Never the credential value itself. */

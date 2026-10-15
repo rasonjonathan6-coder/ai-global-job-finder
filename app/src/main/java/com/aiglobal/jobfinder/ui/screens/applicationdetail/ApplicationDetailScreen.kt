@@ -27,13 +27,19 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.WorkHistory
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,6 +109,13 @@ internal fun ApplicationDetailContent(
     onDelete: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
+    // Recording an application as sent is the one status change that must not be a single
+    // stray tap: it is the app's record that a real submission happened. Every other step is
+    // a plain local move, so only APPLIED is gated behind a confirmation.
+    var confirmApplied by remember { mutableStateOf(false) }
+    val requestStatus: (ApplicationStatus) -> Unit = { status ->
+        if (status == ApplicationStatus.APPLIED) confirmApplied = true else onSetStatus(status)
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         DetailTopBar(title = state.record?.jobTitle ?: "Application", onBack = onBack)
@@ -121,6 +134,17 @@ internal fun ApplicationDetailContent(
             return@Column
         }
 
+        if (confirmApplied) {
+            AppliedConfirmationDialog(
+                record = record,
+                onConfirm = {
+                    confirmApplied = false
+                    onSetStatus(ApplicationStatus.APPLIED)
+                },
+                onDismiss = { confirmApplied = false },
+            )
+        }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
@@ -132,7 +156,7 @@ internal fun ApplicationDetailContent(
             verticalArrangement = Arrangement.spacedBy(spacing.md),
         ) {
             item { SummaryCard(record = record, nextAction = state.nextAction) }
-            item { StageStepper(record = record, onSelect = onSetStatus) }
+            item { StageStepper(record = record, onSelect = requestStatus) }
             item { NextStepsCard(record = record, onSetFollowUp = onSetFollowUpAt) }
             item { LetterCard(record = record, onOpen = { onOpenCoverLetter(record.jobId) }) }
             item { ExpatCard(country = record.country, onOpen = { onOpenExpat(record.country) }) }
@@ -154,6 +178,47 @@ internal fun ApplicationDetailContent(
             }
         }
     }
+}
+
+/**
+ * Confirms that the user really did submit the application on the employer's own page
+ * before the app records it as sent. Nothing is transmitted here — the app only writes
+ * down what the user tells it happened.
+ */
+@Composable
+private fun AppliedConfirmationDialog(
+    record: ApplicationRecord,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Filled.Send,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        title = { Text("Mark as applied?") },
+        text = {
+            Text(
+                "This records that you sent your application for \"${record.jobTitle}\" at " +
+                    "${record.company}. It does not send anything for you. Only confirm after you " +
+                    "have actually submitted it on the employer's page.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Yes, I applied")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Not yet")
+            }
+        },
+    )
 }
 
 @Composable

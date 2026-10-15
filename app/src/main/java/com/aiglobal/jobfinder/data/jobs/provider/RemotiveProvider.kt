@@ -17,7 +17,17 @@ class RemotiveProvider(
     override val homepage: String = "https://remotive.com"
     override val kind: ProviderKind = ProviderKind.REMOTE_BOARD
     override val documentationUrl: String = "https://remotive.com/remote-jobs/api"
-    override val supportsServerSideSearch: Boolean = true
+    override val capabilities: ProviderCapabilities = ProviderCapabilities(
+        // Remotive documents a `search` parameter, but a live check on the production feed
+        // returns the same newest-first list with or without it, so it is recorded as not
+        // effective rather than claimed as a working filter.
+        serverSideKeyword = false,
+        countryFilter = false,
+        pagination = false,
+        employmentTypeFilter = false,
+        applicationLinks = true,
+        submissionEndpoint = false,
+    )
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val query = keywords.firstOrNull()?.takeIf { it.isNotBlank() }

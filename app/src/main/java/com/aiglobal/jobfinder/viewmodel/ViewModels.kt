@@ -104,6 +104,12 @@ data class JobsUiState(
     val minMatch: Int = 0,
     val sort: JobSort = JobSort.BEST_MATCH,
     val syncState: JobSyncState = JobSyncState(),
+    /**
+     * How the last search was run: which sources could narrow by keyword and which only
+     * returned a broad sample. Shown so a broad remote feed is never called a targeted search.
+     */
+    val coverage: com.aiglobal.jobfinder.data.jobs.search.SearchCoverage =
+        com.aiglobal.jobfinder.data.jobs.search.SearchCoverage(),
     /** Expat Benefits Score per job id. Kept beside the CV match, never blended into it. */
     val expatAssessments: Map<String, ExpatBenefitsAssessment> = emptyMap(),
     /** User priorities and gates, mirrored here so the filter row can show them. */
@@ -112,6 +118,12 @@ data class JobsUiState(
     val minExpatScore: Int = 0,
     /** When true, only postings whose employer documents visa sponsorship are shown. */
     val visaDocumentedOnly: Boolean = false,
+    /**
+     * When true, only postings whose title is the candidate's own trade (or the wider
+     * maintenance family) are shown. The remote boards return broad samples, so this is
+     * how the user sees the targeted result rather than an unrelated global feed.
+     */
+    val tradeOnly: Boolean = false,
     /**
      * Ids the candidate has shortlisted. Mirrored here so a bookmark tap flips the card
      * instantly, even when the underlying feed has not re-emitted the saved flag yet.
@@ -135,7 +147,7 @@ data class JobsUiState(
     val hasActiveFilters: Boolean
         get() = savedOnly || eligibleOnly || sponsoredOnly || country != null ||
             source != null || minMatch > 0 || minExpatScore > 0 || visaDocumentedOnly ||
-            query.isNotBlank()
+            tradeOnly || query.isNotBlank()
 
     /** Expat Benefits Score for one posting, or the honest empty state when unknown. */
     fun expatScore(job: Job): Int? = expatAssessments[job.id]?.score
@@ -161,6 +173,7 @@ data class JobsUiState(
                         it.status == com.aiglobal.jobfinder.data.model.BenefitStatus.CONFIRMED
                 }
             }
+            if (tradeOnly) result = result.filter { it.isMaintenanceRelevant }
             country?.let { selected -> result = result.filter { it.country == selected } }
             source?.let { selected -> result = result.filter { it.providerId == selected } }
             if (minMatch > 0) result = result.filter { it.matchScore >= minMatch }
@@ -213,6 +226,11 @@ class JobsViewModel(
         viewModelScope.launch {
             repository.syncState.collect { sync ->
                 uiStateInternal.update { it.copy(syncState = sync) }
+            }
+        }
+        viewModelScope.launch {
+            repository.coverage.collect { coverage ->
+                uiStateInternal.update { it.copy(coverage = coverage) }
             }
         }
         // Re-score every posting whenever the feed or the user's priorities change, so the
@@ -278,6 +296,7 @@ class JobsViewModel(
             minMatch = 0,
             minExpatScore = 0,
             visaDocumentedOnly = false,
+            tradeOnly = false,
         )
     }
 
@@ -285,6 +304,9 @@ class JobsViewModel(
 
     fun toggleVisaDocumentedFilter() =
         uiStateInternal.update { it.copy(visaDocumentedOnly = !it.visaDocumentedOnly) }
+
+    /** Shows only postings whose title is the candidate's own trade. */
+    fun toggleTradeOnlyFilter() = uiStateInternal.update { it.copy(tradeOnly = !it.tradeOnly) }
 
     /**
      * Flips the saved flag locally first so the bookmark reacts immediately, then persists.
@@ -321,6 +343,11 @@ data class HomeUiState(
     val reminders: List<ApplicationReminder> = emptyList(),
     /** Per-source sync status, so an empty feed can be explained honestly. */
     val syncState: JobSyncState = JobSyncState(),
+    /**
+     * Expat Benefits Score per posting, keyed by job id. Kept separate from the CV match so
+     * the dashboard never conflates "my CV fits" with "the package is good".
+     */
+    val expatAssessments: Map<String, ExpatBenefitsAssessment> = emptyMap(),
 ) {
     /** Application counts, derived so the dashboard and the pipeline never disagree. */
     val activeApplications: Int get() = applications.count {
@@ -331,11 +358,16 @@ data class HomeUiState(
 
     /** Due or overdue reminders, the ones worth surfacing on the dashboard. */
     val dueReminders: List<ApplicationReminder> get() = reminders.filter { it.due }
+
+    /** The Expat Benefits Score for a posting, or null when the posting documents none. */
+    fun expatScore(job: Job): Int? = expatAssessments[job.id]?.takeIf { it.hasEvidence }?.score
 }
 
 class HomeViewModel(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val applicationCenter: com.aiglobal.jobfinder.data.applications.ApplicationCenter,
+    private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> = kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
+    private val expatEngine: ExpatBenefitsEngine = ExpatBenefitsEngine(),
 ) : ViewModel() {
 
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(HomeUiState())
@@ -352,12 +384,21 @@ class HomeViewModel(
             repository.syncState.collect { sync -> _uiState.update { it.copy(syncState = sync) } }
         }
         viewModelScope.launch {
-            repository.jobs.collect { jobs ->
+            kotlinx.coroutines.flow.combine(repository.jobs, expatPreferences) { jobs, prefs ->
+                jobs to prefs
+            }.collect { (jobs, prefs) ->
                 _uiState.update {
                     it.copy(
                         bestMatches = jobs.sortedByDescending { job -> job.matchScore }.take(4),
                         newOpportunities = jobs.filter { job -> job.isNew },
                         totalJobs = jobs.size,
+                        expatAssessments = jobs.associate { job ->
+                            job.id to expatEngine.assess(
+                                benefits = job.benefitEvidence,
+                                preferences = prefs,
+                                salaryEurPerYear = homeEurPerYear(job),
+                            )
+                        },
                     )
                 }
             }
@@ -392,14 +433,22 @@ class HomeViewModel(
     }
 
     fun toggleSave(jobId: String) = viewModelScope.launch { repository.toggleSaved(jobId) }
+
+    /** Advertised salary normalised to EUR/year, or null when the source published none. */
+    private fun homeEurPerYear(job: Job): Int? =
+        if (job.salaryMin <= 0) null
+        else com.aiglobal.jobfinder.data.geo.CurrencyConverter
+            .toEurPerYear(job.salaryMin, job.currencyCode, job.salaryPeriod)
 }
 
 class HomeViewModelFactory(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val applicationCenter: com.aiglobal.jobfinder.data.applications.ApplicationCenter,
+    private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> = kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = HomeViewModel(repository, applicationCenter) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T =
+        HomeViewModel(repository, applicationCenter, expatPreferences) as T
 }
 
 data class ApplicationsUiState(

@@ -36,6 +36,35 @@ data class RawJob(
 enum class ProviderKind { REMOTE_BOARD, GOVERNMENT, AGGREGATOR }
 
 /**
+ * What a source's API actually supports. These are facts about the provider, established
+ * from its documentation and from what the feed does with a parameter, and they drive the
+ * search strategy: a provider that cannot filter server-side is fetched once and filtered
+ * locally, and the UI is told its results are a broad sample rather than a targeted search.
+ */
+@Immutable
+data class ProviderCapabilities(
+    /** The API accepts a free-text keyword and narrows the feed by it. */
+    val serverSideKeyword: Boolean = false,
+    /** The API can be bounded to a country (or is queried per country). */
+    val countryFilter: Boolean = false,
+    /** The API supports paging beyond the first page. */
+    val pagination: Boolean = false,
+    /** The API can filter by employment type (contract, full-time, …). */
+    val employmentTypeFilter: Boolean = false,
+    /** The API returns an application link (almost always the employer's own posting). */
+    val applicationLinks: Boolean = true,
+    /** The API is documented as an authorized application-submission endpoint. */
+    val submissionEndpoint: Boolean = false,
+) {
+    /**
+     * True when a keyword sent to this source genuinely narrows the feed. When false, the
+     * source returns a broad sample and the app must say so instead of implying a targeted
+     * search happened.
+     */
+    val supportsTargetedSearch: Boolean get() = serverSideKeyword
+}
+
+/**
  * A single job source. Implementations are stateless and network-bound; the
  * repository decides when to call them and how to combine the results.
  */
@@ -64,7 +93,14 @@ interface JobProvider {
      * True when the source supports server-side keyword search, so sending the
      * candidate's own title narrows the feed instead of being ignored.
      */
-    val supportsServerSideSearch: Boolean get() = false
+    val supportsServerSideSearch: Boolean get() = capabilities.serverSideKeyword
+
+    /**
+     * What this source's API actually supports. Defaults to "no server-side filtering",
+     * which is the honest default for a feed whose parameters are not documented; concrete
+     * providers override it with what their API really does.
+     */
+    val capabilities: ProviderCapabilities get() = ProviderCapabilities()
 
     /**
      * Fetches the current postings.

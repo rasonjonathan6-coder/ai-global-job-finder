@@ -472,6 +472,56 @@ validates live retrieval against the real feeds.
   failure that alternated between `autoApplyChoiceSurvivesARestart` and
   `unbookmarkingSurvivesARestart`; three consecutive full-suite runs are now clean.
 
+### Targeted global search and AI enhancement (Stage 15)
+
+Stage 14 proved the remote boards return a broad sample, not a maintenance feed. Stage 15
+adds a targeted-search layer on top of the existing feed and makes the honesty of every
+claim machine-checkable.
+
+- **Target-role taxonomy (`data/jobs/search/TargetSearch.kt`).** A static list of the roles
+  the candidate genuinely targets (industrial/mechanical maintenance, pump, fitter, rotating
+  equipment, mining, plant, service, production) with the phrases a board accepts and the
+  title words that mark each one. `keywordPlan()` sends the canonical titles, then the CV's
+  own titles, capped so a keyword provider is not asked for unbounded requests.
+- **`RoleClassifier` (`search/RoleRelevance.kt`)** is title-led and allowlist-first: a
+  canonical target wins; a strong trade word ("maintenance", "mechanic", "fitter") is
+  maintenance-family on its own; a weak word ("technician", "electrician") needs an
+  equipment/industry word in the title or the first 400 chars of the description. A title
+  naming a clearly different profession (`TargetSearch.otherProfessionMarkers`) is rejected
+  even when it also carries a trade word ("Software Engineer — Maintenance Tooling"). The
+  verdict carries the words that produced it. The result is stored on `Job.roleFamily` and
+  drives the **"My trade only"** filter chip on the Jobs screen.
+- **Requirements are read, never invented (`search/RequirementAnalyzer.kt`,
+  `search/RequirementAnalysis.kt`).** Years, certifications and licences are extracted only
+  from phrases actually present. `QualificationMatcher` reports a gap as `met == null`
+  ("cannot tell") when the CV does not mention the thing — it never asserts "you do not have
+  it" from a CV that simply did not say.
+- **Typed, source-linked evidence (`data/model/Evidence.kt`, `jobs/engine/JobEvidenceEngine.kt`).**
+  Every claim about a posting is an `Evidence` item with a kind and a strength: DOCUMENTED
+  (employer's own sentence), REFUSED, INFERRED, NEEDS_VERIFICATION or UNKNOWN. UNKNOWN items
+  are shown, not hidden. The Jobs explanation sheet renders them with the quote and the
+  posting link.
+- **Honest AI catalog (`data/model/AiCapability.kt`).** The AI screen lists each capability
+  with its real mechanism (rule-based, document parser, grounded template) and location
+  (on-device). `HAS_ON_DEVICE_MODEL` and `HAS_REMOTE_MODEL` are both `false`; there is no
+  generative model and no cloud endpoint, and the catalog says so plainly.
+- **Search coverage (`search/SearchStrategy.kt`).** `JobProvider` reports whether a source
+  can narrow by keyword (`serverSideSearch`), and `SearchCoverage` distinguishes a targeted
+  search from a broad sample so a generic remote feed is never labelled targeted.
+- **Assisted, never silent, applications.** `ApplicationStatus.APPLIED` is the only status
+  that stamps the apply time and it is gated behind a confirmation dialog in
+  `ApplicationDetailScreen` ("Mark as applied?"). The auto-apply flow prepares drafts and
+  never submits; there is no silent submission entry point. Tests pin this invariant.
+- **Restart read race fixed in `LiveJobRepository`.** The `profile` and `jobs` read flows are
+  now gated behind a `userStateReady` StateFlow (`restoredGate`), so a reader cannot observe
+  empty defaults before the persisted state is restored. Because a StateFlow replays its
+  value, the gate cannot be missed the way a one-shot flag could. A watchdog opens the gate
+  if the store never emits. This is the same class of bug as the Stage 14 write race.
+- Tests: `Stage15AssistedApplyTest` (20) pins classification, requirement honesty, coverage
+  labelling, the assisted-apply invariants; `Stage15ScreenTest` (5) pins the applied
+  confirmation at `w320dp`; `JobsFilterTest` gains the trade filter. Suite: **196 tests, 0
+  failures**.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

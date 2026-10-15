@@ -34,6 +34,13 @@ interface JobRepository {
     val diagnostics: Flow<ProviderDiagnostics>
 
     /**
+     * How the last search was run: which sources could narrow by keyword, which returned a
+     * broad sample, and how many postings matched a target role. Empty until the first
+     * attempt completes.
+     */
+    val coverage: Flow<com.aiglobal.jobfinder.data.jobs.search.SearchCoverage>
+
+    /**
      * Re-reads every enabled source and records a fresh diagnostic for each. Safe to call
      * repeatedly: a second call while one is running is ignored rather than queued, and a
      * failed source never clears the postings already on screen.

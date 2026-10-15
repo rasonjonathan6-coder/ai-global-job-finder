@@ -150,7 +150,11 @@ fun AiJobFinderRoot(
         ) {
             composable(Destination.Home.route) {
                 val vm: HomeViewModel = viewModel(
-                    factory = HomeViewModelFactory(container.jobRepository, container.applicationCenter),
+                    factory = HomeViewModelFactory(
+                        container.jobRepository,
+                        container.applicationCenter,
+                        appViewModel.expatPreferences,
+                    ),
                 )
                 HomeScreen(
                     viewModel = vm,

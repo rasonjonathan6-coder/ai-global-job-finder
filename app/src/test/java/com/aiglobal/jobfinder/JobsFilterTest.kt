@@ -1,5 +1,6 @@
 package com.aiglobal.jobfinder
 
+import com.aiglobal.jobfinder.data.jobs.search.RoleFamily
 import com.aiglobal.jobfinder.data.model.EmploymentType
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
@@ -36,6 +37,7 @@ class JobsFilterTest {
         salaryMin: Int = 50_000,
         currency: String = "CAD",
         period: SalaryPeriod = SalaryPeriod.YEAR,
+        roleFamily: RoleFamily = RoleFamily.TARGET,
     ) = Job(
         id = id,
         title = title,
@@ -67,6 +69,7 @@ class JobsFilterTest {
         aiInsight = "insight",
         providerId = providerId,
         isSaved = isSaved,
+        roleFamily = roleFamily,
     )
 
     private val jobs = listOf(
@@ -164,6 +167,22 @@ class JobsFilterTest {
         )
         assertEquals(4, cleared.visibleJobs.size)
         assertFalse(cleared.hasActiveFilters)
+    }
+
+    @Test
+    fun tradeFilterKeepsOnlyTheCandidatesTrade() {
+        val mixed = jobs + job(
+            id = "5",
+            title = "Account Executive",
+            roleFamily = RoleFamily.UNRELATED,
+        ) + job(
+            id = "6",
+            title = "Diesel Mechanic",
+            roleFamily = RoleFamily.MAINTENANCE_FAMILY,
+        )
+        val visible = JobsUiState(jobs = mixed, tradeOnly = true).visibleJobs.map { it.id }.toSet()
+        assertEquals(setOf("1", "2", "3", "4", "6"), visible)
+        assertTrue("an unrelated profession must be filtered out", "5" !in visible)
     }
 
     @Test

@@ -14,7 +14,14 @@ class ArbeitnowProvider(
     override val homepage: String = "https://www.arbeitnow.com"
     override val kind: ProviderKind = ProviderKind.AGGREGATOR
     override val documentationUrl: String = "https://www.arbeitnow.com/blog/arbeitnow-api"
-    override val supportsServerSideSearch: Boolean = false
+    override val capabilities: ProviderCapabilities = ProviderCapabilities(
+        serverSideKeyword = false,
+        countryFilter = false,
+        pagination = true,
+        employmentTypeFilter = false,
+        applicationLinks = true,
+        submissionEndpoint = false,
+    )
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val json = try {

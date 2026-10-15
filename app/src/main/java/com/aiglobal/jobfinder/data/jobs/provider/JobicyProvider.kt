@@ -15,6 +15,17 @@ class JobicyProvider(
     override val homepage: String = "https://jobicy.com"
     override val kind: ProviderKind = ProviderKind.REMOTE_BOARD
     override val documentationUrl: String = "https://jobicy.com/jobs-rss-feed"
+    override val capabilities: ProviderCapabilities = ProviderCapabilities(
+        // Jobicy exposes `industry`/`tag`, but a live check shows they only loosely steer
+        // the feed and never narrow it to the candidate's trade, so it is treated as a
+        // broad sample rather than a targeted search.
+        serverSideKeyword = false,
+        countryFilter = false,
+        pagination = false,
+        employmentTypeFilter = false,
+        applicationLinks = true,
+        submissionEndpoint = false,
+    )
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val url = "$BASE_URL?count=${limit.coerceIn(1, 50)}"

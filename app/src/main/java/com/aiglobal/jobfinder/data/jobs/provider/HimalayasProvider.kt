@@ -21,6 +21,16 @@ class HimalayasProvider(
     override val homepage: String = "https://himalayas.app"
     override val kind: ProviderKind = ProviderKind.REMOTE_BOARD
     override val documentationUrl: String = "https://himalayas.app/jobs/api"
+    override val capabilities: ProviderCapabilities = ProviderCapabilities(
+        // Himalayas documents no keyword parameter on its public jobs endpoint; the feed is
+        // a broad newest-first sample, so it is filtered locally.
+        serverSideKeyword = false,
+        countryFilter = false,
+        pagination = false,
+        employmentTypeFilter = false,
+        applicationLinks = true,
+        submissionEndpoint = false,
+    )
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val url = "$BASE_URL?limit=${limit.coerceIn(1, 100)}"

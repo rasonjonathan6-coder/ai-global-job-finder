@@ -27,13 +27,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FilterAltOff
+import androidx.compose.material.icons.filled.HelpCenter
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
@@ -61,9 +67,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
 import com.aiglobal.jobfinder.data.model.BenefitScoreComponent
 import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.EligibilityReason
+import com.aiglobal.jobfinder.data.model.EvidenceStrength
 import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSyncState
@@ -81,6 +89,7 @@ import com.aiglobal.jobfinder.ui.components.JobListSkeleton
 import com.aiglobal.jobfinder.ui.components.MatchChip
 import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
+import com.aiglobal.jobfinder.ui.components.relativeTime
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
@@ -104,6 +113,7 @@ fun JobsScreen(
         onToggleEligible = viewModel::toggleEligibleFilter,
         onToggleSponsored = viewModel::toggleSponsoredFilter,
         onToggleVisaDocumented = viewModel::toggleVisaDocumentedFilter,
+        onToggleTradeOnly = viewModel::toggleTradeOnlyFilter,
         onCountryChange = viewModel::onCountryChange,
         onSourceChange = viewModel::onSourceChange,
         onSortChange = viewModel::onSortChange,
@@ -125,6 +135,7 @@ internal fun JobsContent(
     onToggleEligible: () -> Unit,
     onToggleSponsored: () -> Unit,
     onToggleVisaDocumented: () -> Unit = {},
+    onToggleTradeOnly: () -> Unit = {},
     onCountryChange: (String?) -> Unit,
     onSourceChange: (String?) -> Unit,
     onSortChange: (JobSort) -> Unit,
@@ -145,6 +156,7 @@ internal fun JobsContent(
         JobsHeader(state = state, onQueryChange = onQueryChange)
         SourceStatusStrip(
             syncState = state.syncState,
+            coverage = state.coverage,
             eligibleCount = state.eligibleCount,
             totalCount = state.jobs.size,
             onRefresh = onRefresh,
@@ -157,6 +169,7 @@ internal fun JobsContent(
             onToggleEligible = onToggleEligible,
             onToggleSponsored = onToggleSponsored,
             onToggleVisaDocumented = onToggleVisaDocumented,
+            onToggleTradeOnly = onToggleTradeOnly,
             onMinExpatScoreChange = onMinExpatScoreChange,
         )
 
@@ -364,6 +377,7 @@ private fun JobsFilterRow(
     onToggleEligible: () -> Unit,
     onToggleSponsored: () -> Unit,
     onToggleVisaDocumented: () -> Unit,
+    onToggleTradeOnly: () -> Unit,
     onMinExpatScoreChange: (Int) -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -373,6 +387,14 @@ private fun JobsFilterRow(
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        item {
+            FilterChip(
+                label = "My trade only",
+                selected = state.tradeOnly,
+                onClick = onToggleTradeOnly,
+                leadingIcon = Icons.Filled.Construction,
+            )
+        }
         item {
             FilterChip(
                 label = "Madagascar eligible",
@@ -431,6 +453,7 @@ private fun Modifier.androidClickable(onClick: () -> Unit): Modifier {
 @Composable
 private fun SourceStatusStrip(
     syncState: JobSyncState,
+    coverage: SearchCoverage,
     eligibleCount: Int,
     totalCount: Int,
     onRefresh: () -> Unit,
@@ -438,54 +461,77 @@ private fun SourceStatusStrip(
     filtersActive: Boolean,
 ) {
     val spacing = LocalSpacing.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = spacing.gutter, vertical = spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
-    ) {
-        if (syncState.isRefreshing) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(14.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary,
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.gutter, vertical = spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            if (syncState.isRefreshing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "Checking job sources…",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Icon(
+                    imageVector = if (syncState.errorCount > 0) Icons.Filled.CloudOff else Icons.Filled.CloudDone,
+                    contentDescription = null,
+                    tint = if (syncState.errorCount > 0) extendedColors.warning else extendedColors.success,
+                    modifier = Modifier.size(15.dp),
+                )
+                Text(
+                    text = sourceSummary(syncState, totalCount, eligibleCount),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            IconChipButton(
+                icon = Icons.Filled.Tune,
+                onClick = onOpenFilters,
+                contentDescription = "Filters",
+                tint = if (filtersActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text(
-                text = "Checking job sources…",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-        } else {
-            Icon(
-                imageVector = if (syncState.errorCount > 0) Icons.Filled.CloudOff else Icons.Filled.CloudDone,
-                contentDescription = null,
-                tint = if (syncState.errorCount > 0) extendedColors.warning else extendedColors.success,
-                modifier = Modifier.size(15.dp),
-            )
-            Text(
-                text = sourceSummary(syncState, totalCount, eligibleCount),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            IconChipButton(
+                icon = Icons.Filled.Refresh,
+                onClick = onRefresh,
+                contentDescription = "Refresh jobs",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-
-        IconChipButton(
-            icon = Icons.Filled.Tune,
-            onClick = onOpenFilters,
-            contentDescription = "Filters",
-            tint = if (filtersActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        IconChipButton(
-            icon = Icons.Filled.Refresh,
-            onClick = onRefresh,
-            contentDescription = "Refresh jobs",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (!syncState.isRefreshing && coverage.totalRetrieved > 0) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = spacing.gutter),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                Icon(
+                    imageVector = if (coverage.hasTargetedSource) Icons.Filled.Search else Icons.Filled.Public,
+                    contentDescription = null,
+                    tint = if (coverage.hasTargetedSource) extendedColors.info else extendedColors.warning,
+                    modifier = Modifier.size(15.dp),
+                )
+                Text(
+                    text = coverage.summary,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -496,6 +542,7 @@ private fun sourceSummary(syncState: JobSyncState, total: Int, eligible: Int): S
         append("$total live postings · $eligible open to Madagascar")
         if (ok.isNotEmpty()) append(" · from ${ok.joinToString(", ")}")
         if (failed.isNotEmpty()) append(" · ${failed.joinToString(", ")} unavailable")
+        syncState.lastSyncedAtEpochMillis?.let { append(" · last search ${relativeTime(it)}") }
     }
 }
 
@@ -555,6 +602,10 @@ private fun JobExplanationSheet(
                 subtitle = "Official statements from the posting come first",
             )
             job.eligibilityReasons.forEach { reason -> EligibilityReasonRow(reason) }
+
+            EvidenceSection(job = job)
+
+            RequirementsSection(job = job)
 
             ExpatBenefitsSection(expat)
 
@@ -636,6 +687,146 @@ private fun EligibilityReasonRow(reason: EligibilityReason) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+/**
+ * The typed evidence list: every claim the app makes about this posting, each with its
+ * strength and, when it is documented, the employer's own sentence and a link back.
+ * Unknown items are shown rather than hidden so the user sees what the posting does not say.
+ */
+@Composable
+private fun EvidenceSection(job: Job) {
+    if (job.evidence.isEmpty()) return
+    val spacing = LocalSpacing.current
+    SectionHeader(
+        title = "Evidence",
+        subtitle = "What the posting states, what is only inferred, and what it leaves out",
+    )
+    job.evidence.forEach { item ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            Icon(
+                imageVector = when (item.strength) {
+                    EvidenceStrength.DOCUMENTED -> Icons.Filled.Verified
+                    EvidenceStrength.REFUSED -> Icons.Filled.Block
+                    EvidenceStrength.INFERRED -> Icons.Filled.Insights
+                    EvidenceStrength.NEEDS_VERIFICATION -> Icons.AutoMirrored.Filled.HelpOutline
+                    EvidenceStrength.UNKNOWN -> Icons.Filled.HelpCenter
+                },
+                contentDescription = null,
+                tint = when (item.strength) {
+                    EvidenceStrength.DOCUMENTED -> extendedColors.success
+                    EvidenceStrength.REFUSED -> extendedColors.danger
+                    EvidenceStrength.INFERRED -> extendedColors.info
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(16.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = item.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Pill(
+                        text = item.strength.label,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    text = item.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The posting's stated requirements paired with whether the CV appears to meet them.
+ * A "not confirmed" state is honest about the limit of what the app can read from a CV;
+ * it never claims the candidate is qualified or unqualified when it cannot tell.
+ */
+@Composable
+private fun RequirementsSection(job: Job) {
+    val requirements = job.requirements
+    val gaps = job.qualificationGaps
+    if (requirements.isEmpty && gaps.isEmpty()) return
+    val spacing = LocalSpacing.current
+
+    SectionHeader(
+        title = "What this role asks for",
+        subtitle = "Read from the posting and checked against your CV where possible",
+    )
+    requirements.minYears?.let { years ->
+        Text(
+            text = "About $years+ years of experience requested.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+    (requirements.certifications + requirements.licences).forEach { requirement ->
+        Column {
+            Text(
+                text = requirement.label,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = requirement.evidence,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    gaps.forEach { gap ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            Icon(
+                imageVector = when (gap.met) {
+                    true -> Icons.Filled.CheckCircle
+                    false -> Icons.Filled.Cancel
+                    null -> Icons.AutoMirrored.Filled.HelpOutline
+                },
+                contentDescription = null,
+                tint = when (gap.met) {
+                    true -> extendedColors.success
+                    false -> extendedColors.warning
+                    null -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(16.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = gap.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = when (gap.met) {
+                        true -> "Your CV appears to cover this."
+                        false -> "Your CV does not show this yet."
+                        null -> "The app cannot confirm this from your CV — check it yourself."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

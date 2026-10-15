@@ -198,12 +198,16 @@ internal fun HomeContent(
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
                 state.bestMatches.take(3).forEachIndexed { index, job ->
+                    val expat = state.expatAssessments[job.id]
                     JobCard(
                         job = job,
                         onViewJob = { onOpenJob(job.id) },
                         onApply = { applyJob = job },
                         onToggleSave = { onToggleSaveJob(job.id) },
                         index = index,
+                        expatScore = state.expatScore(job),
+                        expatEvidenceCoverage = expat?.evidenceCoverage ?: 0,
+                        expatLowEvidence = expat?.hasEvidence == true && expat.lowEvidence,
                     )
                 }
             }

@@ -1,5 +1,6 @@
 package com.aiglobal.jobfinder.ui.screens.ai
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -31,12 +32,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,6 +60,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.aiglobal.jobfinder.data.model.AiCapability
+import com.aiglobal.jobfinder.data.model.AiCapabilityCatalog
+import com.aiglobal.jobfinder.data.model.AiCapabilityKind
+import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.ProgressBar
 import com.aiglobal.jobfinder.ui.components.SectionHeader
@@ -151,6 +160,10 @@ fun AiScreen(
                     onClick = onOpenCv,
                 )
             }
+        }
+
+        item {
+            AiTransparencyCard()
         }
 
         item {
@@ -360,6 +373,147 @@ private fun AnalysisStep(label: String, done: Boolean) {
             style = MaterialTheme.typography.bodySmall,
             color = Color.White.copy(alpha = if (done) 0.95f else 0.5f),
         )
+    }
+}
+
+@Composable
+private fun AiTransparencyCard() {
+    val spacing = LocalSpacing.current
+    var expanded by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val shape = RoundedCornerShape(20.dp)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, extendedColors.cardStroke, shape)
+            .padding(spacing.md),
+        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(extendedColors.info.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.VerifiedUser,
+                    contentDescription = null,
+                    tint = extendedColors.info,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "How this app's AI works",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "On-device rules and parsers — no generative model",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Text(
+            text = AiCapabilityCatalog.summary,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        AnimatedVisibility(visible = expanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                Spacer(Modifier.height(2.dp))
+                AiCapabilityCatalog.capabilities.forEach { capability ->
+                    AiCapabilityRow(capability)
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { expanded = !expanded },
+                )
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (expanded) "Hide the full breakdown" else "See exactly what runs on your device",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiCapabilityRow(capability: AiCapability) {
+    val spacing = LocalSpacing.current
+    val accent = when (capability.kind) {
+        AiCapabilityKind.REMOTE_MODEL -> extendedColors.danger
+        AiCapabilityKind.ON_DEVICE_MODEL -> MaterialTheme.colorScheme.primary
+        else -> extendedColors.info
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = capability.name,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Pill(
+                text = capability.kind.label,
+                containerColor = accent.copy(alpha = 0.14f),
+                contentColor = accent,
+            )
+        }
+        Text(
+            text = capability.description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Smartphone,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(13.dp),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = capability.location.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            text = capability.note,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+        )
+        Spacer(Modifier.height(spacing.xs))
     }
 }
 

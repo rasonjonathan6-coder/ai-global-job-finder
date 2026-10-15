@@ -4,11 +4,16 @@ import com.aiglobal.jobfinder.data.jobs.JobCache
 import com.aiglobal.jobfinder.data.jobs.JobMapper
 import com.aiglobal.jobfinder.data.jobs.engine.RecordValidationEngine
 import com.aiglobal.jobfinder.data.jobs.engine.ValidationSummary
+import com.aiglobal.jobfinder.data.jobs.provider.HtmlText
 import com.aiglobal.jobfinder.data.jobs.provider.JobProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JobProviderException
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorCategory
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorClassifier
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
+import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
+import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
+import com.aiglobal.jobfinder.data.jobs.search.SearchStrategy
+import com.aiglobal.jobfinder.data.jobs.search.TargetSearch
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.DashboardStats
 import com.aiglobal.jobfinder.data.model.Job
@@ -32,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -107,21 +113,52 @@ class LiveJobRepository(
     private val _diagnostics = MutableStateFlow(ProviderDiagnostics(providers = baselineDiagnostics()))
     override val diagnostics: StateFlow<ProviderDiagnostics> = _diagnostics.asStateFlow()
 
+    /**
+     * How the last search was actually run: which sources can narrow by keyword and which
+     * only returned a broad sample, plus how many postings matched a target role. The UI
+     * reads this so it never calls a broad remote feed a targeted search.
+     */
+    private val _coverage = MutableStateFlow(SearchCoverage())
+    override val coverage: StateFlow<SearchCoverage> = _coverage.asStateFlow()
+
+    /**
+     * Per-source counts of postings that matched a target role on the last attempt. Kept
+     * beside the feed (not derived from the displayed, filtered list) so the coverage report
+     * describes the search, not the current filter.
+     */
+    private var relevantCountByProvider: Map<String, Int> = emptyMap()
+    private var totalCountByProvider: Map<String, Int> = emptyMap()
+
     private val scoredJobs: StateFlow<List<Job>> =
         combine(rawJobs, candidateProfile) { raw, profile ->
             raw.map { mapper.toJob(it, profile) }
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     /**
-     * Search terms for the providers that support server-side search. Adzuna and Jooble
-     * match on a keyword, so sending the candidate's own title (falling back to a target
-     * role) turns a generic national feed into relevant vacancies. Providers without
-     * server-side search ignore this.
+     * The keyword plan for providers that support server-side search, derived from the
+     * candidate's target roles and their own titles. Providers without server-side search
+     * ignore it and are fetched once, then filtered locally against the target roles.
      */
-    private var searchKeywords: List<String> = emptyList()
+    private var searchKeywordPlan: List<String> = emptyList()
+
+    /**
+     * Flips to true once each startup restore has applied its first persisted value. The
+     * public read flows ([jobs], [profile]) await this so a caller that reads immediately
+     * after construction — a relaunch — sees the restored bookmarks and auto-apply choice
+     * rather than the empty in-memory default. On the very first emission the value is false
+     * for a single scheduling step, which keeps this race-free without dropping any update.
+     */
+    private val userStateReady = MutableStateFlow(false)
+
+    /**
+     * Emits only once [userStateReady] is true. Because a StateFlow replays its current
+     * value to a new collector, a reader that subscribes after the flag has already turned
+     * true still receives the emission immediately, so the gate cannot be missed.
+     */
+    private val restoredGate: Flow<Unit> = userStateReady.filter { it }.map { }
 
     override val jobs: Flow<List<Job>> =
-        combine(scoredJobs, savedIds, demoMode) { jobList, saved, demo ->
+        combine(scoredJobs, savedIds, demoMode, restoredGate) { jobList, saved, demo, _ ->
             val base = if (demo) sampleJobs else jobList
             base.map { if (saved.contains(it.id)) it.copy(isSaved = true) else it }
         }
@@ -139,7 +176,10 @@ class LiveJobRepository(
      * waits for both flags; afterwards the local state is authoritative, so a later
      * collector emission is ignored rather than allowed to clobber a fresh write.
      */
+    @Volatile
     private var savedIdsRestored = false
+
+    @Volatile
     private var autoApplyRestored = false
 
     /**
@@ -148,7 +188,7 @@ class LiveJobRepository(
      * In demo mode the curated sample profile is served instead.
      */
     override val profile: Flow<com.aiglobal.jobfinder.data.model.UserProfile> =
-        combine(cvRecord, autoApplyEnabled, demoMode) { record, auto, demo ->
+        combine(cvRecord, autoApplyEnabled, demoMode, restoredGate) { record, auto, demo, _ ->
             if (demo) SampleData.profile(seedNow)
             else com.aiglobal.jobfinder.data.model.buildUserProfile(record, auto)
         }
@@ -176,8 +216,10 @@ class LiveJobRepository(
         }
         scope.launch {
             candidateProfile.collect { profile ->
-                searchKeywords = profile.currentTitle.takeIf { it.isNotBlank() }?.let { listOf(it) }
-                    ?: profile.preferredRoles.take(1)
+                searchKeywordPlan = TargetSearch.keywordPlan(
+                    profileTitles = (listOf(profile.currentTitle) + profile.previousTitles + profile.preferredRoles)
+                        .filter { it.isNotBlank() },
+                )
             }
         }
         scope.launch {
@@ -202,6 +244,14 @@ class LiveJobRepository(
                     autoApplyRestored = true
                 }
             }
+        }
+        // Open the read gate as soon as both restores have applied, or at the cap so a store
+        // that never emits cannot leave the screens waiting on their skeleton forever.
+        scope.launch {
+            withTimeoutOrNull(RESTORE_WAIT_MS) {
+                while (!(savedIdsRestored && autoApplyRestored)) delay(RESTORE_POLL_MS)
+            }
+            userStateReady.value = true
         }
         scope.launch { runLiveValidation() }
     }
@@ -233,16 +283,30 @@ class LiveJobRepository(
                 enabled.map { provider ->
                     async {
                         val startedAt = clock()
-                        val outcome = runCatching {
-                            withTimeoutOrNull(perProviderTimeoutMillis) {
-                                provider.fetch(keywords = searchKeywords, limit = perProviderLimit)
-                            } ?: throw ProviderTimeoutException()
+                        val plan = SearchStrategy.planFor(provider, searchKeywordPlan)
+                        val fetched = mutableListOf<RawJob>()
+                        var failure: Throwable? = null
+                        // A keyword-capable source is asked for each target role in turn and
+                        // the results are pooled; a source without keyword search is fetched
+                        // once with no keywords and filtered locally afterwards.
+                        for (keywords in plan.keywordSets) {
+                            val outcome = runCatching {
+                                withTimeoutOrNull(perProviderTimeoutMillis) {
+                                    provider.fetch(keywords = keywords, limit = perProviderLimit)
+                                } ?: throw ProviderTimeoutException()
+                            }
+                            outcome.getOrNull()?.let { fetched += it }
+                            if (outcome.isFailure && failure == null) failure = outcome.exceptionOrNull()
+                            // Stop early once we have enough from this source.
+                            if (fetched.size >= perProviderLimit * plan.keywordSets.size) break
                         }
+                        val success = fetched.isNotEmpty() || failure == null
                         ProviderOutcome(
                             provider = provider,
-                            fetched = outcome.getOrNull(),
-                            error = outcome.exceptionOrNull(),
+                            fetched = if (success) fetched else null,
+                            error = if (success) null else failure,
                             durationMillis = (clock() - startedAt).coerceAtLeast(0),
+                            serverSideSearch = plan.serverSideSearch,
                         )
                     }
                 }.awaitAll()
@@ -268,10 +332,12 @@ class LiveJobRepository(
             if (fetched != null) {
                 anySuccess = true
                 collected += fetched
-                diagnostics += successDiagnostic(provider, fetched, outcome.durationMillis, attemptAt)
+                diagnostics += successDiagnostic(provider, fetched, outcome.durationMillis, attemptAt, outcome.serverSideSearch)
             } else {
                 val category = classifyFailure(provider, outcome.error)
-                diagnostics += failureDiagnostic(provider, category, outcome.error, outcome.durationMillis, attemptAt)
+                diagnostics += failureDiagnostic(
+                    provider, category, outcome.error, outcome.durationMillis, attemptAt, outcome.serverSideSearch,
+                )
             }
         }
 
@@ -280,6 +346,30 @@ class LiveJobRepository(
 
         val dedup = validationEngine.deduplicate(collected, now = attemptAt)
         applyValidationCounts(diagnostics, dedup.summaries)
+
+        // Count how many of the postings that actually arrived matched a target role, per
+        // source. This is what lets the coverage report describe the search honestly: a
+        // source that returned forty software jobs and no maintenance role is recorded as
+        // retrieved-but-not-relevant, not hidden.
+        val relevantByProvider = mutableMapOf<String, Int>()
+        val totalByProvider = mutableMapOf<String, Int>()
+        dedup.kept.forEach { raw ->
+            totalByProvider[raw.providerId] = (totalByProvider[raw.providerId] ?: 0) + 1
+            val relevance = RoleClassifier.classify(
+                title = raw.title,
+                descriptionHead = HtmlText.toPlainText(raw.descriptionHtml).take(400),
+            )
+            if (relevance.isMaintenanceFamily) {
+                relevantByProvider[raw.providerId] = (relevantByProvider[raw.providerId] ?: 0) + 1
+            }
+        }
+        relevantCountByProvider = relevantByProvider
+        totalCountByProvider = totalByProvider
+        _coverage.value = SearchStrategy.coverageFrom(
+            diagnostics = diagnostics.filter { !it.status.isDormant || it.enabled },
+            relevantByProvider = relevantByProvider,
+            totalByProvider = totalByProvider,
+        )
 
         val sourceStates = diagnostics.map { diagnostic ->
             JobSource(
@@ -327,6 +417,7 @@ class LiveJobRepository(
         fetched: List<RawJob>,
         durationMillis: Long,
         attemptAt: Long,
+        serverSideSearch: Boolean,
     ): ProviderDiagnostic {
         val status = if (fetched.isEmpty()) ProviderStatus.SUCCESS_EMPTY else ProviderStatus.SUCCESS_WITH_RESULTS
         return ProviderDiagnostic(
@@ -336,6 +427,7 @@ class LiveJobRepository(
             documentationUrl = provider.documentationUrl,
             status = status,
             enabled = true,
+            serverSideSearch = serverSideSearch,
             requiresCredentials = provider.requiresCredentials,
             credentialsConfigured = hasCredentials(provider),
             validJobCount = fetched.size,
@@ -353,6 +445,7 @@ class LiveJobRepository(
         error: Throwable?,
         durationMillis: Long,
         attemptAt: Long,
+        serverSideSearch: Boolean,
     ): ProviderDiagnostic = ProviderDiagnostic(
         providerId = provider.id,
         name = provider.name,
@@ -360,6 +453,7 @@ class LiveJobRepository(
         documentationUrl = provider.documentationUrl,
         status = ProviderStatus.forErrorCategory(category),
         enabled = true,
+        serverSideSearch = serverSideSearch,
         requiresCredentials = provider.requiresCredentials,
         credentialsConfigured = hasCredentials(provider),
         lastAttemptAtEpochMillis = attemptAt,
@@ -449,6 +543,7 @@ class LiveJobRepository(
             ProviderStatus.IDLE
         },
         enabled = !isDisabled(provider.id),
+        serverSideSearch = provider.capabilities.serverSideKeyword,
         requiresCredentials = provider.requiresCredentials,
         credentialsConfigured = !provider.requiresCredentials || hasCredentials(provider),
         message = if (provider.requiresCredentials && !hasCredentials(provider)) {
@@ -556,6 +651,7 @@ class LiveJobRepository(
         val fetched: List<RawJob>?,
         val error: Throwable?,
         val durationMillis: Long,
+        val serverSideSearch: Boolean,
     )
 
     private companion object {

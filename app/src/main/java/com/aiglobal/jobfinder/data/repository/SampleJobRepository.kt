@@ -1,6 +1,8 @@
 package com.aiglobal.jobfinder.data.repository
 
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
+import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
+import com.aiglobal.jobfinder.data.jobs.search.SearchCoverageSource
 import com.aiglobal.jobfinder.data.model.DashboardStats
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSource
@@ -113,6 +115,19 @@ class SampleJobRepository(
             newOpportunities = _jobs.value.count { it.isNew },
             applications = 0,
             interviews = 0,
+        ),
+    ).asStateFlow()
+
+    /** The fixture's sources are keyword-capable national boards, so this reads as targeted. */
+    override val coverage: Flow<SearchCoverage> = MutableStateFlow(
+        SearchCoverage(
+            sources = listOf(
+                SearchCoverageSource("arbeitnow", "Arbeitnow", targeted = true, relevantCount = 3, totalCount = 3),
+                SearchCoverageSource("remotive", "Remotive", targeted = true, relevantCount = 3, totalCount = 3),
+                SearchCoverageSource("jobicy", "Jobicy", targeted = false, relevantCount = 2, totalCount = 2),
+            ),
+            totalRelevant = 8,
+            totalRetrieved = 8,
         ),
     ).asStateFlow()
 

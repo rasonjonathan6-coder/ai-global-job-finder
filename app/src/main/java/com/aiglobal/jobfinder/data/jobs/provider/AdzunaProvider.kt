@@ -24,7 +24,17 @@ class AdzunaProvider(
     override val kind: ProviderKind = ProviderKind.AGGREGATOR
     override val documentationUrl: String = "https://developer.adzuna.com/docs/search"
     override val requiresCredentials: Boolean = true
-    override val supportsServerSideSearch: Boolean = true
+    override val capabilities: ProviderCapabilities = ProviderCapabilities(
+        // Adzuna's /search endpoint accepts `what` (keywords) and `where`/`country`, and it
+        // pages, so it is the one source that can genuinely run a targeted, country-scoped
+        // search. It returns the advertiser's own application URL.
+        serverSideKeyword = true,
+        countryFilter = true,
+        pagination = true,
+        employmentTypeFilter = false,
+        applicationLinks = true,
+        submissionEndpoint = false,
+    )
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val creds = credentials()

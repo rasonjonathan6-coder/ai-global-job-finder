@@ -5,10 +5,14 @@ import com.aiglobal.jobfinder.data.geo.CurrencyConverter
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityEngine
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityInput
+import com.aiglobal.jobfinder.data.jobs.engine.JobEvidenceEngine
 import com.aiglobal.jobfinder.data.jobs.engine.MatchInput
 import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
 import com.aiglobal.jobfinder.data.jobs.provider.HtmlText
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
+import com.aiglobal.jobfinder.data.jobs.search.QualificationMatcher
+import com.aiglobal.jobfinder.data.jobs.search.RequirementAnalyzer
+import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.EmploymentType
 import com.aiglobal.jobfinder.data.model.Job
@@ -31,6 +35,7 @@ class JobMapper(
     private val matchingEngine: MatchingEngine,
     private val eligibilityEngine: EligibilityEngine,
     private val benefitExtractor: ExpatBenefitExtractor = ExpatBenefitExtractor(),
+    private val evidenceEngine: JobEvidenceEngine = JobEvidenceEngine(),
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -72,6 +77,21 @@ class JobMapper(
             tags = raw.tags,
         )
 
+        val relevance = RoleClassifier.classify(
+            title = raw.title,
+            descriptionHead = plainDescription.take(DESCRIPTION_HEAD_CHARS),
+        )
+        val requirements = RequirementAnalyzer.analyze(plainDescription)
+        val gaps = QualificationMatcher.gaps(requirements, profile)
+        val evidence = evidenceEngine.build(
+            eligibility = eligibility.eligibility,
+            visaSupport = eligibility.visaSupport,
+            eligibilityReasons = eligibility.reasons,
+            benefits = benefitEvidence,
+            gaps = gaps,
+            sourceUrl = raw.url,
+        )
+
         return Job(
             id = "${raw.providerId}:${raw.externalId}",
             title = raw.title.ifBlank { "Untitled role" },
@@ -109,6 +129,11 @@ class JobMapper(
             matchReasons = match.reasons,
             eligibilityReasons = eligibility.reasons,
             benefitEvidence = benefitEvidence,
+            roleFamily = relevance.family,
+            matchedTargetRole = relevance.matchedTarget?.canonical,
+            requirements = requirements,
+            qualificationGaps = gaps,
+            evidence = evidence,
             isNew = postedDaysAgo != null && postedDaysAgo <= 3,
         )
     }
@@ -173,5 +198,6 @@ class JobMapper(
     private companion object {
         const val DAY_MS = 24 * 60 * 60 * 1000L
         const val EXCERPT_CHARS = 260
+        const val DESCRIPTION_HEAD_CHARS = 400
     }
 }

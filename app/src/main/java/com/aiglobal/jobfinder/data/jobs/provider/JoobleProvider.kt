@@ -23,7 +23,16 @@ class JoobleProvider(
     override val kind: ProviderKind = ProviderKind.AGGREGATOR
     override val documentationUrl: String = "https://jooble.org/api/about"
     override val requiresCredentials: Boolean = true
-    override val supportsServerSideSearch: Boolean = true
+    override val capabilities: ProviderCapabilities = ProviderCapabilities(
+        // Jooble's API is a JSON POST that takes `keywords` and `location`, so it can run a
+        // genuinely targeted search and returns the advertiser's own apply URL.
+        serverSideKeyword = true,
+        countryFilter = true,
+        pagination = true,
+        employmentTypeFilter = false,
+        applicationLinks = true,
+        submissionEndpoint = false,
+    )
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
         val key = apiKey().trim()
