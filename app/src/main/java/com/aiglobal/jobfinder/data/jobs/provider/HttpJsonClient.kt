@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.data.jobs.provider
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -27,6 +28,14 @@ object HttpJsonClient {
         headers: Map<String, String> = emptyMap(),
     ): JSONObject = withContext(Dispatchers.IO) {
         JSONObject(getText(url, headers))
+    }
+
+    /** GETs [url] and parses the body as a JSON array. Lever's board feed is an array. */
+    suspend fun getArray(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+    ): JSONArray = withContext(Dispatchers.IO) {
+        JSONArray(getText(url, headers))
     }
 
     /** POSTs [body] as JSON to [url] and parses the response as a JSON object. */

@@ -795,6 +795,68 @@ a remote listing pinned to an unmapped city stays `UNCLEAR`; a worldwide remote 
 `ELIGIBLE` and applyable from Madagascar; a recognised country still resolves to its own
 name and flag). Suite: **296 tests, 0 failures** (2 skipped: the opt-in live probes).
 
+## Stage 24 — industrial, mining & expat sources
+
+Stage 23's live probe showed the key-free boards return broad remote samples, not the
+industrial and mining vacancies an expat maintenance candidate actually applies for. Stage 24
+adds sources that reach those roles, in two families:
+
+- **Official state/EU feed.** `EuresProvider` (kind `GOVERNMENT`) queries the European
+  Employment Services public search API (`europa.eu/eures/api/jv-searchengine/public/jv-search/search`).
+  It covers the EEA plus Switzerland. The endpoint takes a keyword list but exposes no
+  per-country query, so the provider sends one target title per request (`MAX_QUERIES = 4`)
+  and pools the results. The full description is inline, and the `locationMap` is turned into
+  a country name via `EuresCountryNames` (ISO-3166 alpha-2 → the canonical name the catalog
+  resolves against) so eligibility can be judged. A vacancy with no description is dropped
+  rather than faked.
+- **Employer applicant-tracking-system boards** (kind `EMPLOYER_BOARD`, new this stage).
+  `WorkdayProvider`, `GreenhouseProvider`, `AshbyProvider` and `LeverProvider` read the
+  *employer's own* careers site — the most trustworthy feed for expat and industrial roles,
+  and the posting applies directly with no middle party. Each holds a curated, verified list
+  of employer sites (`WorkdayBoards`, `GreenhouseBoards`, `AshbyBoards`, `LeverBoards`).
+  Workday's search row carries only a free-text location, so a bounded, concurrent per-posting
+  detail call reads the real country and the description; Greenhouse's list row likewise omits
+  the description, so a bounded concurrent detail call fills it in; Ashby and Lever return the
+  description and all locations inline in one request.
+
+Lever has no server-side keyword search and some boards are very large (Shield AI publishes
+~600 roles, ~9 MB of JSON), so `LeverProvider` reads a bounded number of pages (`PAGE_SIZE`
+100, `MAX_PAGES` 3) and filters locally against the target titles — a role buried deeper in a
+huge board may be missed, accepted in exchange for a bounded mobile download. `JsonFeed`
+gained `arrayAt` because Lever's board is a top-level JSON array rather than an object.
+
+`ProviderKind` gained `EMPLOYER_BOARD` (a single employer's own ATS site) alongside the
+existing `REMOTE_BOARD`, `GOVERNMENT` and `AGGREGATOR`, documented for the trust signals.
+
+`CountryCatalog` was extended so the new coverage actually resolves: the missing EEA members
+(Slovakia, Slovenia, Bulgaria, Croatia, Cyprus, Malta, Estonia, Latvia, Lithuania,
+Liechtenstein) and mining-relevant countries (Guinea, Mali, Burkina Faso, Tanzania, Zambia,
+Botswana, Namibia, DR Congo, Mongolia, Kazakhstan, Chile, Peru, Suriname, Papua New Guinea).
+An unresolved location stays `UNRESOLVED_FLAG`, exactly as Stage 23 fixed.
+
+All three ATS providers treat "no site answered" as a `JobProviderException` (so the sync
+banner shows the source as unavailable) but a *partial* answer — some sites up, some down — as
+a normal result, and a failed detail row is skipped rather than dropping the rest.
+
+Tests: `Stage24IndustrialSourceTest` (11: EURES resolves the ISO country and uses the official
+vacancy link and the record survives validation; EURES drops a description-less record;
+EURES country coverage resolves to real countries; Workday reads country and description from
+the detail call and sends the keyword server-side and its curated sites are well-formed;
+Greenhouse uses the employer link and its inline detail; Ashby reads the inline description
+and joins secondary locations and skips the "don't see your job" placeholder; Lever keeps only
+target titles, reads the inline detail and joins all locations, and pages a board until an
+empty page stops the walk; the industrial titles classify as maintenance family; and each
+provider reports "no answer" as a usable failure, not an empty result). Suite: **307 tests,
+0 failures** (2 skipped: the opt-in live probes).
+
+**Known pre-existing flake (not Stage 24).** `Stage22AuditTest` intermittently fails on the
+suite run (`expected:<IDLE> but was:<LOADING>`, or its sibling
+`anOnlineAttemptListsEachSourceExactlyOnce`) because the repository's constructor launches its
+own first refresh on `Dispatchers.IO` while the test's `awaitSettled` polls a *different* flow
+(`diagnostics`) than the one it then asserts (`syncState`). It reproduces on the untouched
+Stage 23 baseline and passes in isolation. If you touch that area, make the wait key on
+`syncState` itself (or both flows) rather than only `diagnostics`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

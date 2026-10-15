@@ -8,6 +8,7 @@ import com.aiglobal.jobfinder.data.jobs.provider.JoobleProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JsonFeed
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -48,6 +49,9 @@ class JobProviderTest {
             lastBody = body
             return response
         }
+
+        override suspend fun arrayAt(url: String, headers: Map<String, String>): JSONArray =
+            throw UnsupportedOperationException("array feed not used")
     }
 
     // ---- Himalayas ---------------------------------------------------------

@@ -8,6 +8,7 @@ import com.aiglobal.jobfinder.data.jobs.provider.JsonFeed
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorCategory
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorClassifier
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,6 +46,9 @@ class Stage10AdzunaTest {
 
         override suspend fun objectPost(url: String, body: String, headers: Map<String, String>): JSONObject =
             onObject(url)
+
+        override suspend fun arrayAt(url: String, headers: Map<String, String>): JSONArray =
+            throw UnsupportedOperationException("array feed not used")
     }
 
     private fun provider(feed: JsonFeed, countries: List<String> = listOf("gb")) =

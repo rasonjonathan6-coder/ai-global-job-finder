@@ -15,6 +15,7 @@ import com.aiglobal.jobfinder.data.model.NvidiaModels
 import com.aiglobal.jobfinder.data.model.NvidiaStatus
 import com.aiglobal.jobfinder.data.repository.SampleData
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -198,6 +199,9 @@ class Stage16NvidiaTest {
         }
         override suspend fun objectPost(url: String, body: String, headers: Map<String, String>): JSONObject =
             response
+
+        override suspend fun arrayAt(url: String, headers: Map<String, String>): JSONArray =
+            throw UnsupportedOperationException("array feed not used")
     }
 
     @Test

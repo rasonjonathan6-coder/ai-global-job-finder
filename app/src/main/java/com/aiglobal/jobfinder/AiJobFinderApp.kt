@@ -21,11 +21,16 @@ import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCountries
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaProvider
 import com.aiglobal.jobfinder.data.jobs.provider.ArbeitnowProvider
+import com.aiglobal.jobfinder.data.jobs.provider.AshbyProvider
+import com.aiglobal.jobfinder.data.jobs.provider.EuresProvider
+import com.aiglobal.jobfinder.data.jobs.provider.GreenhouseProvider
 import com.aiglobal.jobfinder.data.jobs.provider.HimalayasProvider
 import com.aiglobal.jobfinder.data.jobs.provider.HttpJsonFeed
 import com.aiglobal.jobfinder.data.jobs.provider.JoobleProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JobicyProvider
+import com.aiglobal.jobfinder.data.jobs.provider.LeverProvider
 import com.aiglobal.jobfinder.data.jobs.provider.RemotiveProvider
+import com.aiglobal.jobfinder.data.jobs.provider.WorkdayProvider
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.ProviderSettings
 import com.aiglobal.jobfinder.data.net.NetworkMonitor
@@ -119,9 +124,12 @@ open class AppContainer(application: Application) {
      * Job feed. Real postings from public job boards, scored against the CV profile.
      * The cache directory is app-private, so cached postings never leave the device.
      *
-     * The remote boards need no credentials and cover "hire from anywhere" roles. Adzuna
-     * is added on top because it reaches ordinary national vacancies — where
-     * visa-sponsored work actually lives — but only once the user has entered its key.
+     * The remote boards need no credentials and cover "hire from anywhere" roles. On top
+     * of those, the official EURES feed and a set of employer applicant-tracking-system
+     * boards (Workday, Greenhouse, Ashby) reach the industrial, mining and energy
+     * vacancies where expat roles actually live. Adzuna is added for ordinary national
+     * vacancies — where visa-sponsored work lives — but only once the user has entered
+     * its key.
      */
     protected open fun createJobRepository(): JobRepository = LiveJobRepository(
         providers = buildList {
@@ -129,6 +137,16 @@ open class AppContainer(application: Application) {
             add(RemotiveProvider())
             add(JobicyProvider())
             add(HimalayasProvider())
+            // Official European Employment Services feed: government vacancies across the
+            // EEA and Switzerland, with full descriptions inline.
+            add(EuresProvider(feed = HttpJsonFeed))
+            // Employer applicant-tracking-system boards. These are the employer's own
+            // careers sites, which is where expat industrial, mining and energy roles
+            // actually live and where an application goes directly to the employer.
+            add(WorkdayProvider(feed = HttpJsonFeed))
+            add(GreenhouseProvider(feed = HttpJsonFeed))
+            add(AshbyProvider(feed = HttpJsonFeed))
+            add(LeverProvider(feed = HttpJsonFeed))
             add(adzunaProvider)
             add(
                 JoobleProvider(

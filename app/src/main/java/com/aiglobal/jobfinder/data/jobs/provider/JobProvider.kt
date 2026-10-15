@@ -32,8 +32,17 @@ data class RawJob(
     val salaryPeriod: SalaryPeriod? = null,
 )
 
-/** Broad classification of a source, used for the "official source" trust signals. */
-enum class ProviderKind { REMOTE_BOARD, GOVERNMENT, AGGREGATOR }
+/**
+ * Broad classification of a source, used for the "official source" trust signals.
+ *
+ *  - [REMOTE_BOARD] remote-first boards.
+ *  - [GOVERNMENT] public employment services and other official state/EU feeds.
+ *  - [AGGREGATOR] broad multi-employer search engines.
+ *  - [EMPLOYER_BOARD] a single employer's own applicant-tracking-system careers site.
+ *    These are the most trustworthy feed for expat and industrial roles because the
+ *    posting is the employer's own and applies directly, with no middle party.
+ */
+enum class ProviderKind { REMOTE_BOARD, GOVERNMENT, AGGREGATOR, EMPLOYER_BOARD }
 
 /**
  * What a source's API actually supports. These are facts about the provider, established

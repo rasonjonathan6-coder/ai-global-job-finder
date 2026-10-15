@@ -1,5 +1,6 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -8,6 +9,9 @@ import org.json.JSONObject
  */
 interface JsonFeed {
     suspend fun objectAt(url: String, headers: Map<String, String> = emptyMap()): JSONObject
+
+    /** GETs a JSON *array* body. Lever's board feed is a top-level array. */
+    suspend fun arrayAt(url: String, headers: Map<String, String> = emptyMap()): JSONArray
 
     /** POSTs a JSON body. Only the providers whose source uses POST need this. */
     suspend fun objectPost(
@@ -20,6 +24,9 @@ interface JsonFeed {
 object HttpJsonFeed : JsonFeed {
     override suspend fun objectAt(url: String, headers: Map<String, String>): JSONObject =
         HttpJsonClient.getObject(url, headers)
+
+    override suspend fun arrayAt(url: String, headers: Map<String, String>): JSONArray =
+        HttpJsonClient.getArray(url, headers)
 
     override suspend fun objectPost(
         url: String,

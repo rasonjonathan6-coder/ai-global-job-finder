@@ -20,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -56,6 +57,8 @@ class Stage17ApiConfigTest {
         }
         override suspend fun objectPost(url: String, body: String, headers: Map<String, String>): JSONObject =
             onObject(url)
+        override suspend fun arrayAt(url: String, headers: Map<String, String>): JSONArray =
+            throw UnsupportedOperationException("array feed not used")
     }
 
     private class FakeTransport(private val response: NvidiaHttpResponse) : NvidiaTransport {
