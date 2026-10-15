@@ -695,6 +695,45 @@ the app is closed, without ever inventing freshness or firing a notification the
   layout at 320 dp, interval wiring, off-state copy). Suite: **272 tests, 0 failures**
   (2 skipped: the opt-in live probes).
 
+### Expat job intelligence and application assistant (Stage 21)
+
+Unifies the findings the app already produces about a posting into one honest, ordered plan, and
+rolls the whole feed up into a digest of where the routes in actually are.
+
+- **Per-posting plan (`data/assistant/ApplicationPlanEngine` → `data/model/ApplicationPlan`).**
+  `ApplicationPlanEngine.build(...)` is a pure function of the posting, the `ShortlistEntry`
+  (from `ShortlistEngine`), the CV completeness and the state of the other tools (cover letter,
+  interview rehearsal count, scam verdict, whether it has already been applied for). It returns
+  an ordered `List<PlanStep>` (profile → visa route → tailor CV → cover letter → safety check →
+  interview prep → submit → follow up), the per-posting `CvTailoring` (which of the candidate's
+  *own* skills to lead with, which posting skills the CV does not yet show), the documents to
+  prepare and the single `nextAction`. Nothing is invented: a step with nothing to say says so,
+  and a `RESTRICTED` posting yields a `BLOCKED` visa step with a quoted reason. `weight` is the
+  readiness points a step is withholding, so the checklist reads as impact-ordered.
+- **Whole-feed digest (`data/assistant/ExpatIntelligenceEngine` → `data/model/ExpatIntelligence`).**
+  `build(ShortlistState)` groups the actionable postings by country into `CountryOpportunity`
+  (open count, total seen, best readiness, whether any states an official route), surfaces the
+  recurring `ReadinessBlocker`s and the strongest `topOpportunities`. An empty feed yields a
+  summary that says so rather than implying opportunity.
+- **View models (`viewmodel/Stage21ViewModels.kt`).** `ApplicationPlanViewModel` combines
+  `repository.jobs`, `cvRepository.record`, `expatPreferences`, `applicationCenter.applications`
+  and `interviewStore.attempts`, and re-derives the plan on any change. `ExpatIntelligenceViewModel`
+  combines jobs + CV + preferences and rebuilds the digest. Both factories take the
+  `ExpatPreferences` flow so the plan honours the user's priorities.
+- **UI (`ui/screens/assistant/`).** `ApplicationAssistantScreen` (readiness hero, next-action
+  card, animated step checklist, tailoring, documents, route card, action rows) and
+  `ExpatIntelligenceScreen` (summary hero, country cards with open-share bars, recurring gaps,
+  strongest opportunities). Both keep the thin `XScreen(viewModel)` / `internal XContent(state)`
+  split so tests target the stateless body. Routes: `SecondaryRoutes.EXPAT_INTELLIGENCE` and
+  `SecondaryRoutes.APPLICATION_ASSISTANT` (`assistant/{jobId}`, blank id = best current match).
+  Both are reached from new AI-tab capability cards (`onOpenIntelligence`, `onOpenAssistant`).
+- Tests: `Stage21PipelineTest` (8: blocked route, cover-letter to-do→done, profile gap, progress
+  counting, plan carries posting facts, digest counts only Madagascar-open postings, empty feed,
+  strongest-first) and `Stage21ScreenTest` (4: assistant headline/checklist scroll, assistant
+  empty state, digest sections scroll, digest empty state). `ScreenshotTest` gains
+  `application-assistant` and `expat-intelligence` in both modes. Suite: **286 tests, 0 failures**
+  (2 skipped: the opt-in live probes).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

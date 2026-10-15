@@ -68,6 +68,12 @@ import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
 import com.aiglobal.jobfinder.ui.navigation.Destination
 import com.aiglobal.jobfinder.ui.screens.ai.AiScreen
 import com.aiglobal.jobfinder.ui.screens.ai.AssistantState
+import com.aiglobal.jobfinder.ui.screens.assistant.ApplicationAssistantContent
+import com.aiglobal.jobfinder.ui.screens.assistant.ExpatIntelligenceContent
+import com.aiglobal.jobfinder.data.assistant.ApplicationPlanEngine
+import com.aiglobal.jobfinder.data.assistant.ExpatIntelligenceEngine
+import com.aiglobal.jobfinder.viewmodel.ApplicationPlanUiState
+import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceUiState
 import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsContent
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailContent
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
@@ -692,6 +698,58 @@ class ScreenshotTest {
     fun shortlist() = renderBothModes("shortlist") {
         ShortlistContent(state = shortlistState, onBack = {}, onRefresh = {})
     }
+
+    @Test
+    fun applicationAssistant() = renderBothModes("application-assistant") {
+        ApplicationAssistantContent(state = applicationPlanState, onBack = {}, onRefresh = {})
+    }
+
+    @Test
+    fun expatIntelligence() = renderBothModes("expat-intelligence") {
+        ExpatIntelligenceContent(state = expatIntelligenceState, onBack = {}, onRefresh = {})
+    }
+
+    /** A per-posting plan built from the real engines over the sample feed. */
+    private val applicationPlanState: ApplicationPlanUiState by lazy {
+        val engine = ShortlistEngine(clock = { stage5Now })
+        val planEngine = ApplicationPlanEngine(clock = { stage5Now })
+        val job = runBlocking { repository.jobs.first() }.first { it.matchScore == 95 }
+        val entry = engine.assess(job, sampleProfile, ExpatPreferences.defaults(), 100, 60_000)
+        ApplicationPlanUiState(
+            isLoading = false,
+            job = job,
+            plan = planEngine.build(
+                job = job,
+                entry = entry,
+                profileCompletenessPercent = 100,
+                hasCoverLetter = false,
+            ),
+        )
+    }
+
+    /** The whole-feed digest over the sample feed. */
+    private val expatIntelligenceState: ExpatIntelligenceUiState by lazy {
+        val engine = ShortlistEngine(clock = { stage5Now })
+        val jobs = runBlocking { repository.jobs.first() }
+        val shortlist = engine.build(
+            jobs = jobs,
+            profile = sampleProfile,
+            preferences = ExpatPreferences.defaults(),
+            profileCompletenessPercent = 100,
+            salaryEurPerYear = { 60_000 },
+        )
+        ExpatIntelligenceUiState(
+            isLoading = false,
+            intelligence = ExpatIntelligenceEngine(clock = { stage5Now }).build(shortlist),
+        )
+    }
+
+    private val sampleProfile = CandidateProfile(
+        fullName = "Jonathan Rakoto",
+        currentTitle = "Maintenance Technician",
+        yearsOfExperience = 6,
+        skills = listOf("Preventive maintenance", "Hydraulics", "PLC"),
+    )
 
     /**
      * One setContent per test (the rule forbids more), then the theme is flipped through

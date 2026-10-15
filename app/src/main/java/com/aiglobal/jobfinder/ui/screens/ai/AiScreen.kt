@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.AssignmentTurnedIn
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
@@ -105,6 +107,8 @@ fun AiScreen(
     onOpenAutoApply: () -> Unit = {},
     onOpenShortlist: () -> Unit = {},
     onOpenAdaptation: () -> Unit = {},
+    onOpenIntelligence: () -> Unit = {},
+    onOpenAssistant: () -> Unit = {},
     /** True once the CV has been analysed, so the headline card can tell the truth. */
     hasCv: Boolean = false,
     /** Skills extracted from the analysed CV, used in the analysis headline. */
@@ -227,6 +231,22 @@ fun AiScreen(
                     accent = extendedColors.success,
                     actionLabel = "Open shortlist",
                     onClick = onOpenShortlist,
+                )
+                CapabilityCard(
+                    icon = Icons.Filled.Insights,
+                    title = "Expat intelligence",
+                    body = "Maps which countries are open to you, what keeps blocking you, and the roles to act on first.",
+                    accent = extendedColors.info,
+                    actionLabel = "Open intelligence",
+                    onClick = onOpenIntelligence,
+                )
+                CapabilityCard(
+                    icon = Icons.Filled.AssignmentTurnedIn,
+                    title = "Application assistant",
+                    body = "Builds a step-by-step plan for one posting: route in, CV tailoring, documents and next action.",
+                    accent = MaterialTheme.colorScheme.primary,
+                    actionLabel = "Open assistant",
+                    onClick = onOpenAssistant,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.Translate,

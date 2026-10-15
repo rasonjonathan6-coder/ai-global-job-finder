@@ -30,6 +30,8 @@ import com.aiglobal.jobfinder.ui.navigation.BottomNavBar
 import com.aiglobal.jobfinder.ui.navigation.Destination
 import com.aiglobal.jobfinder.ui.screens.ai.AiScreen
 import com.aiglobal.jobfinder.ui.screens.ai.AssistantState
+import com.aiglobal.jobfinder.ui.screens.assistant.ApplicationAssistantScreen
+import com.aiglobal.jobfinder.ui.screens.assistant.ExpatIntelligenceScreen
 import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsScreen
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailScreen
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
@@ -54,12 +56,16 @@ import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModel
 import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.AiViewModel
 import com.aiglobal.jobfinder.viewmodel.AiViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.ApplicationPlanViewModel
+import com.aiglobal.jobfinder.viewmodel.ApplicationPlanViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.CoverLetterViewModel
 import com.aiglobal.jobfinder.viewmodel.CoverLetterViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.CvAdaptationViewModel
 import com.aiglobal.jobfinder.viewmodel.CvAdaptationViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.CvViewModel
 import com.aiglobal.jobfinder.viewmodel.CvViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceViewModel
+import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModel
 import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.HomeViewModel
@@ -94,7 +100,10 @@ object SecondaryRoutes {
     const val DIAGNOSTICS = "diagnostics"
     const val SHORTLIST = "shortlist"
     const val CV_ADAPTATION = "cvadaptation"
+    const val EXPAT_INTELLIGENCE = "expatintelligence"
+    const val APPLICATION_ASSISTANT = "assistant/{jobId}"
 
+    fun applicationAssistant(jobId: String) = "assistant/$jobId"
     fun applicationDetail(applicationId: String) = "application/$applicationId"
     fun coverLetter(jobId: String) = "coverletter/$jobId"
     fun expat(country: String) = "expat/${android.net.Uri.encode(country)}"
@@ -210,6 +219,8 @@ fun AiJobFinderRoot(
                     onOpenAutoApply = { navController.navigate(SecondaryRoutes.AUTO_APPLY) },
                     onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
                     onOpenAdaptation = { navController.navigate(SecondaryRoutes.CV_ADAPTATION) },
+                    onOpenIntelligence = { navController.navigate(SecondaryRoutes.EXPAT_INTELLIGENCE) },
+                    onOpenAssistant = { navController.navigate(SecondaryRoutes.applicationAssistant("")) },
                     hasCv = state.hasCv,
                     skillCount = state.skillCount,
                     strongMatchCount = state.strongMatchCount,
@@ -384,6 +395,48 @@ fun AiJobFinderRoot(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onOpenCv = { navController.navigate(SecondaryRoutes.CV) },
+                )
+            }
+            composable(SecondaryRoutes.EXPAT_INTELLIGENCE) {
+                val vm: ExpatIntelligenceViewModel = viewModel(
+                    factory = ExpatIntelligenceViewModelFactory(
+                        repository = container.jobRepository,
+                        cvRepository = container.cvRepository,
+                        expatPreferences = appViewModel.expatPreferences,
+                    ),
+                )
+                ExpatIntelligenceScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.applicationAssistant(jobId)) },
+                    onOpenJobs = { navController.navigateToTab(Destination.Jobs) },
+                )
+            }
+            composable(
+                route = SecondaryRoutes.APPLICATION_ASSISTANT,
+                arguments = listOf(navArgument("jobId") { type = NavType.StringType }),
+            ) { entry ->
+                val jobId = entry.arguments?.getString("jobId").orEmpty()
+                val vm: ApplicationPlanViewModel = viewModel(
+                    factory = ApplicationPlanViewModelFactory(
+                        jobId = jobId,
+                        repository = container.jobRepository,
+                        cvRepository = container.cvRepository,
+                        applicationCenter = container.applicationCenter,
+                        interviewCoach = container.interviewCoach,
+                        interviewStore = container.interviewPrepStore,
+                        scamDetector = container.scamDetector,
+                        expatPreferences = appViewModel.expatPreferences,
+                    ),
+                )
+                ApplicationAssistantScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenCoverLetter = { id -> navController.navigate(SecondaryRoutes.coverLetter(id)) },
+                    onOpenInterview = { id -> navController.navigate(SecondaryRoutes.interview(id)) },
+                    onOpenScam = { id -> navController.navigate(SecondaryRoutes.scam(id)) },
+                    onOpenExpat = { country -> navController.navigate(SecondaryRoutes.expat(country)) },
+                    onOpenLink = { url -> context.openExternally(url) },
                 )
             }
         }
