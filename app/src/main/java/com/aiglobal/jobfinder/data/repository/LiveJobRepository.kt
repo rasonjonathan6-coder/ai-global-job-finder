@@ -278,7 +278,11 @@ class LiveJobRepository(
                 return
             }
 
-            val enabled = providers.filter { !isDisabled(it.id) }
+            // A source the user switched off, or one that needs credentials and has none,
+            // is described by the dormant rows below and is never queried: it cannot
+            // succeed, and querying it would add a second row for the same provider id
+            // (a failure row plus a dormant row), which the diagnostics list keys on.
+            val enabled = providers.filter { !isDisabled(it.id) && hasCredentials(it) }
             val results = coroutineScope {
                 enabled.map { provider ->
                     async {
@@ -341,8 +345,11 @@ class LiveJobRepository(
             }
         }
 
-        // Disabled and unconfigured sources still get a row, so the screen is complete.
-        diagnostics += dormantDiagnostics()
+        // Every source gets a row, so the screen is complete even when nothing was queried.
+        // When the attempt never reached the network, results is empty and the rows must
+        // still name each source as waiting — otherwise the diagnostics table goes blank
+        // exactly when the user most needs to know the feed is only showing cached data.
+        diagnostics += if (online) dormantDiagnostics() else offlineDiagnostics()
 
         val dedup = validationEngine.deduplicate(collected, now = attemptAt)
         applyValidationCounts(diagnostics, dedup.summaries)
@@ -481,6 +488,37 @@ class LiveJobRepository(
                     message = ProviderErrorCategory.NOT_CONFIGURED.explanation,
                 )
             else -> null
+        }
+    }
+
+    /**
+     * Rows for an attempt that never reached the network. Each source keeps the honest
+     * distinction between a source the user switched off, one with no key saved yet, and
+     * one that is simply waiting for a connection — none of which is a failure. This is
+     * what keeps the diagnostics table populated offline instead of collapsing to nothing.
+     */
+    private fun offlineDiagnostics(): List<ProviderDiagnostic> = providers.map { provider ->
+        val previous = _diagnostics.value.providers.firstOrNull { it.providerId == provider.id }
+        when {
+            isDisabled(provider.id) -> (previous ?: blankDiagnostic(provider)).copy(
+                status = ProviderStatus.DISABLED,
+                enabled = false,
+                message = "You switched this source off.",
+            )
+            provider.requiresCredentials && !hasCredentials(provider) ->
+                (previous ?: blankDiagnostic(provider)).copy(
+                    status = ProviderStatus.NOT_CONFIGURED,
+                    enabled = true,
+                    requiresCredentials = true,
+                    credentialsConfigured = false,
+                    errorCategory = ProviderErrorCategory.NOT_CONFIGURED,
+                    message = ProviderErrorCategory.NOT_CONFIGURED.explanation,
+                )
+            else -> (previous ?: blankDiagnostic(provider)).copy(
+                status = ProviderStatus.WAITING_FOR_NETWORK,
+                enabled = true,
+                message = "No connection right now; this source will be read on the next refresh.",
+            )
         }
     }
 

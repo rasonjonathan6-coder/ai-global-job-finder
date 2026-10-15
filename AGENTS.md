@@ -734,6 +734,39 @@ rolls the whole feed up into a digest of where the routes in actually are.
   `application-assistant` and `expat-intelligence` in both modes. Suite: **286 tests, 0 failures**
   (2 skipped: the opt-in live probes).
 
+## Stage 22 — audit and validation
+
+Audited the live data path across every provider, the secure credential store and the
+connection states. Two defects were found and fixed in `LiveJobRepository`, both in the
+diagnostics table that the source screen and the live-validation screen render with
+`items(providers, key = { it.providerId })` — so a duplicate id is a hard crash, and an
+empty table hides the very failure the user is looking at.
+
+- **Offline produced an empty table.** `finishAttempt(..., online = false)` passed an empty
+  `results` list, and only the dormant rows were added — but a dormant row is produced only
+  for a disabled or unconfigured source, so with no such source the table was empty and no
+  source was reported as "waiting for network". Added `offlineDiagnostics()`, which emits one
+  row per source and keeps the honest disabled / not-configured / waiting distinction.
+- **An unconfigured credential-gated source was listed twice, online.** The fetch loop took
+  every non-disabled provider, so Jooble (and Adzuna) without a key was queried (failing with
+  `NOT_CONFIGURED`) *and* added as a dormant row. The loop now also requires `hasCredentials`,
+  so such a source is described once, as `NOT_CONFIGURED`, and is never queried — which also
+  saves the pointless request. Providers still guard their own missing key, so this only
+  removes work and a duplicate row.
+
+Verified live against the real endpoints (2026-10): Remotive `remotive.com/api/remote-jobs`,
+Jobicy `jobicy.com/api/v2/remote-jobs`, Himalayas `himalayas.app/jobs/api` all answer;
+Arbeitnow `arbeitnow.com/api/job-board-api` 301-redirects to `www.` and the client's
+`instanceFollowRedirects` handles it. No API key, token or secret is hardcoded anywhere in
+`src/main`; Adzuna/Jooble/NVIDIA credentials are AES-GCM encrypted at rest via
+`data/prefs/SecretCipher` (`AndroidKeystoreSecretCipher`), and a failed Adzuna URL is
+redacted before it can reach a message or a log.
+
+Tests: `Stage22AuditTest` (3: offline names every source and reports waiting, not failure;
+an unconfigured gated source is not-configured/not-broken and is never queried; an online
+attempt lists each source exactly once). Suite: **289 tests, 0 failures** (2 skipped: the
+opt-in live probes).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
