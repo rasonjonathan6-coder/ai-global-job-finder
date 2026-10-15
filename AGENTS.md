@@ -10,6 +10,24 @@ apply for real international roles. Jetpack Compose + Material 3, Kotlin DSL bui
 - Gradle 8.7 via the wrapper (`./gradlew`). `local.properties` points at the SDK.
 - No KVM in this container, so **do not** plan on a booted emulator. Verify UI headlessly instead.
 
+The toolchain lives outside `/workspace`, so an idle cleanup can wipe it while the repo
+survives. If `java` is missing, restore it (this needs the box's `sudo`, which the
+`openhands` user has):
+
+```bash
+sudo apt-get update && sudo apt-get install -y openjdk-21-jdk-headless unzip curl
+mkdir -p /home/openhands/android-sdk/cmdline-tools && cd /home/openhands/android-sdk/cmdline-tools
+curl -L -o c.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+unzip -q c.zip && mv cmdline-tools latest
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ANDROID_HOME=/home/openhands/android-sdk
+yes | ./latest/bin/sdkmanager --licenses
+./latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+```
+
+Run Gradle with `JAVA_HOME` and `ANDROID_HOME` exported and `$JAVA_HOME/bin` on `PATH`. The
+first build downloads Gradle 8.7 and the dependency set (several minutes); run it in the
+background and poll the log rather than blocking on a foreground command.
+
 ## Commands
 
 ```bash
