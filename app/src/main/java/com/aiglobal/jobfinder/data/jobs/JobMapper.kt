@@ -64,9 +64,11 @@ class JobMapper(
                 tags = raw.tags,
                 employmentType = raw.employmentType,
                 isRemote = raw.isRemote,
-                // A remote listing whose location names a country (not "Worldwide") is a
-                // location-restricted remote role: the employer bounded where it may hire.
-                locationRestrictedRemote = raw.isRemote && country.isCountryScoped,
+                // A remote listing whose location names a real country (not "Worldwide",
+                // not a region such as "EMEA") is location-restricted: the employer bounded
+                // where it may hire. `isRecognized` is false for regions, so a region-scoped
+                // remote role is left for the engine's region rules to judge.
+                isRecognizedCountry = raw.isRemote && country.isRecognized,
             ),
         )
 

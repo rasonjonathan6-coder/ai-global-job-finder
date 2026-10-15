@@ -1,6 +1,8 @@
 package com.aiglobal.jobfinder
 
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
+import com.aiglobal.jobfinder.data.expat.ShortlistEngine
+import com.aiglobal.jobfinder.data.geo.CurrencyConverter
 import com.aiglobal.jobfinder.data.jobs.JobMapper
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityEngine
 import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
@@ -177,6 +179,39 @@ class Stage14LiveProbeTest {
 
         val finishedAt = System.currentTimeMillis()
         println("finished_at_epoch_ms=$finishedAt duration_ms=${finishedAt - startedAt}")
+
+        // ---- Stage 19: the real shortlist ranking, on real postings -------------
+        // Runs the shipping ShortlistEngine over the live feed, so the "expat ranking is
+        // explainable and grounded" claim is backed by output rather than a fixture.
+        val shortlist = ShortlistEngine(clock = { startedAt }).build(
+            jobs = scored,
+            profile = profile,
+            preferences = com.aiglobal.jobfinder.data.model.ExpatPreferences.defaults(),
+            profileCompletenessPercent = 100,
+            salaryEurPerYear = { job ->
+                if (job.salaryMin <= 0) null
+                else CurrencyConverter.toEurPerYear(job.salaryMin, job.currencyCode, job.salaryPeriod)
+            },
+        )
+        println("---- STAGE 19 SHORTLIST (real engine, real postings) ----")
+        println("screened=${shortlist.totalJobs} entries=${shortlist.entries.size} " +
+            "actionable=${shortlist.actionableCount} officialRoute=${shortlist.officialRouteCount}")
+        shortlist.entries.take(15).forEach { entry ->
+            val parts = entry.rankComponents.joinToString(" + ") { "${it.points}/${it.maxPoints} ${it.label}" }
+            println(
+                "readiness=${entry.readinessScore}% (${entry.readiness}) match=${entry.matchScore}% " +
+                    "expat=${entry.expatScore}% doc=${entry.expatEvidenceCoverage}% " +
+                    "title=\"${entry.job.title}\" country=\"${entry.job.country}\" " +
+                    "eligibility=${entry.job.eligibility}",
+            )
+            println("    rank: $parts")
+            if (entry.blockers.isNotEmpty()) {
+                println("    blockers: " + entry.orderedBlockers.joinToString("; ") { "${it.label} (-${it.points})" })
+            }
+        }
+        // The components must always sum to the readiness score the user is shown.
+        val mismatched = shortlist.entries.count { e -> e.rankComponents.sumOf { it.points } != e.readinessScore }
+        println("rank_components_sum_mismatches=$mismatched")
         println("==== END STAGE 14 LIVE PROBE ====")
     }
 

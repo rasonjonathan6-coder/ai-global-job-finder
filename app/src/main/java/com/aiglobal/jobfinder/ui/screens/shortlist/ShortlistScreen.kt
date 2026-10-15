@@ -64,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.model.ApplicationReadiness
 import com.aiglobal.jobfinder.data.model.BlockerKind
 import com.aiglobal.jobfinder.data.model.Job
+import com.aiglobal.jobfinder.data.model.RankComponent
 import com.aiglobal.jobfinder.data.model.ReadinessBlocker
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
 import com.aiglobal.jobfinder.data.model.ShortlistEntry
@@ -478,7 +479,11 @@ private fun ShortlistEntryCard(
                 ReadinessBadge(entry.readiness)
                 MatchChip(entry.matchScore)
                 if (entry.expatScore > 0) {
-                    ExpatScoreBadge(score = entry.expatScore, evidenceCoverage = 100, lowEvidence = false)
+                    ExpatScoreBadge(
+                        score = entry.expatScore,
+                        evidenceCoverage = entry.expatEvidenceCoverage,
+                        lowEvidence = entry.expatEvidenceCoverage < 40,
+                    )
                 }
                 if (entry.hasOfficialRoute) {
                     Pill(
@@ -641,6 +646,21 @@ private fun ReadinessExplanationSheet(entry: ShortlistEntry, onDismiss: () -> Un
                 }
             }
 
+            if (entry.rankComponents.isNotEmpty()) {
+                Text(
+                    text = "How this ranks",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = spacing.xs),
+                )
+                Text(
+                    text = "Readiness ${entry.readinessScore}% is these four ingredients added up.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                entry.rankComponents.forEach { component -> RankComponentRow(component) }
+            }
+
             if (entry.blockers.isNotEmpty()) {
                 Text(
                     text = "What is in the way",
@@ -713,6 +733,41 @@ private fun BlockerRow(blocker: ReadinessBlocker) {
                 text = kindLabel,
                 style = MaterialTheme.typography.labelSmall,
                 color = tone,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RankComponentRow(component: RankComponent) {
+    val spacing = LocalSpacing.current
+    val earnedShare = if (component.maxPoints == 0) 0f else component.points.toFloat() / component.maxPoints
+    val tone = when {
+        earnedShare >= 0.75f -> extendedColors.success
+        earnedShare >= 0.4f -> extendedColors.info
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Pill(
+            text = "${component.points}/${component.maxPoints}",
+            containerColor = tone.copy(alpha = 0.14f),
+            contentColor = tone,
+        )
+        Spacer(Modifier.width(spacing.xs))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = component.label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = component.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

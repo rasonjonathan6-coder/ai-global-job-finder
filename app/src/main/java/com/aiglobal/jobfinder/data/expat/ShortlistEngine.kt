@@ -9,6 +9,7 @@ import com.aiglobal.jobfinder.data.model.ExpatPreferences
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobBenefitTypes
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
+import com.aiglobal.jobfinder.data.model.RankComponent
 import com.aiglobal.jobfinder.data.model.ReadinessBlocker
 import com.aiglobal.jobfinder.data.model.ScamRisk
 import com.aiglobal.jobfinder.data.model.ShortlistEntry
@@ -100,6 +101,9 @@ class ShortlistEngine(
 
         val score = (eligibilityPoints + matchPoints + expatPoints + profilePoints).coerceIn(0, 100)
 
+        val documentedBenefits = assessment.components.count { it.status == BenefitStatus.CONFIRMED }
+        val consideredBenefits = assessment.components.count { it.priority.weight > 0 }
+
         return ShortlistEntry(
             job = job,
             matchScore = job.matchScore,
@@ -115,10 +119,78 @@ class ShortlistEngine(
                 expatHasEvidence = expatHasEvidence,
                 expatScore = expatScore,
             ),
-            highlights = buildHighlights(job, expatHasEvidence, assessment.components.count { it.status == BenefitStatus.CONFIRMED }),
+            highlights = buildHighlights(job, expatHasEvidence, documentedBenefits),
             generatedAtEpochMillis = clock(),
+            rankComponents = buildRankComponents(
+                job = job,
+                eligibilityPoints = eligibilityPoints,
+                matchPoints = matchPoints,
+                expatPoints = expatPoints,
+                expatScore = expatScore,
+                expatHasEvidence = expatHasEvidence,
+                profilePoints = profilePoints,
+                profileCompletenessPercent = profileCompletenessPercent,
+            ),
+            expatEvidenceCoverage = assessment.evidenceCoverage,
+            benefitsMatched = documentedBenefits,
+            benefitsConsidered = consideredBenefits,
         )
     }
+
+    /**
+     * The four weighted ingredients of the readiness score, so the number on the card can be
+     * traced to "45 route + 27 CV + 6 benefits + 8 profile". Each component says what the
+     * posting earned and what it could have earned, using the same constants as [assess].
+     */
+    private fun buildRankComponents(
+        job: Job,
+        eligibilityPoints: Int,
+        matchPoints: Int,
+        expatPoints: Int,
+        expatScore: Int,
+        expatHasEvidence: Boolean,
+        profilePoints: Int,
+        profileCompletenessPercent: Int,
+    ): List<RankComponent> = listOf(
+        RankComponent(
+            label = "Route in from Madagascar",
+            detail = when (job.eligibility) {
+                MadagascarEligibility.VISA_SPONSORED ->
+                    "The employer states a route in (visa sponsorship or relocation)."
+                MadagascarEligibility.ELIGIBLE ->
+                    "The posting is open to applicants from Madagascar."
+                MadagascarEligibility.UNCLEAR ->
+                    "The posting does not state whether it accepts applicants from Madagascar."
+                MadagascarEligibility.RESTRICTED ->
+                    "The posting is limited to local applicants; there is no route in."
+            },
+            points = eligibilityPoints,
+            maxPoints = ELIGIBILITY_MAX,
+        ),
+        RankComponent(
+            label = "CV match",
+            detail = "Your CV matches ${job.matchScore}% of this posting.",
+            points = matchPoints,
+            maxPoints = MATCH_WEIGHT,
+        ),
+        RankComponent(
+            label = "Documented benefits",
+            detail = if (expatHasEvidence) {
+                "Benefits you care about score $expatScore% on what the posting documents."
+            } else {
+                "The posting does not document the benefits you care about."
+            },
+            points = expatPoints,
+            maxPoints = EXPAT_WEIGHT,
+        ),
+        RankComponent(
+            label = "Profile completeness",
+            detail = "Your profile is $profileCompletenessPercent% complete, so the CV match is " +
+                if (profileCompletenessPercent >= PROFILE_TARGET) "fully trusted." else "only partly trusted.",
+            points = profilePoints,
+            maxPoints = PROFILE_WEIGHT,
+        ),
+    )
 
     private fun eligibilityPoints(job: Job): Int = when {
         job.eligibility == MadagascarEligibility.VISA_SPONSORED -> 45

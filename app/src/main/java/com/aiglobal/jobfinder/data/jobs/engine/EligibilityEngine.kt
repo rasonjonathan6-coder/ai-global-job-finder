@@ -97,18 +97,29 @@ class EligibilityEngine {
 
         // ---- 4. Remote roles, in priority order: a region that includes Madagascar, then a
         // worldwide/unspecified remote, then a remote bound to a country Madagascar is not in.
+        //
+        // The region test must run before the one-country test. A region such as "EMEA" or
+        // "Africa" is not a country, so it must never be classified as "bound to one country
+        // Madagascar is not in" — that is exactly what let a region-including-Madagascar role
+        // fall through to UNCLEAR before this fix. [input.isRecognizedCountry] is true only
+        // for a location the catalog maps to a real country.
         val locationLower = input.location.lowercase()
 
         // A remote role scoped to a region, not a country (e.g. "Remote — EMEA"). It is not
         // worldwide, but the region does include Madagascar, so it is a stronger signal than
         // silence — still not a promise, hence a heuristic reason.
-        val remoteRegion = input.isRemote && REMOTE_REGIONS.any { (region, countries) ->
-            locationLower.contains(region) && countries.contains("mg")
-        }
+        //
+        // The `!isRecognizedCountry` guard matters: without it a *country* whose name embeds a
+        // region word ("South Africa" contains "africa") would match the Africa region rule and
+        // be rated eligible, letting the region heuristic override a country restriction.
+        val remoteRegion = input.isRemote && !input.isRecognizedCountry &&
+            REMOTE_REGIONS.any { (region, countries) ->
+                locationLower.contains(region) && countries.contains("mg")
+            }
 
         // A remote or worldwide location is a published fact of its own. Excludes a role bound
         // to a single country (the mapper flags that) and any region already matched above.
-        val remoteAnywhere = input.isRemote && !input.locationRestrictedRemote && !remoteRegion &&
+        val remoteAnywhere = input.isRemote && !input.isRecognizedCountry && !remoteRegion &&
             (input.location.isBlank() || REMOTE_WORLDWIDE_LOCATIONS.any { locationLower.contains(it) })
 
         if (remoteRegion) {
@@ -125,7 +136,7 @@ class EligibilityEngine {
                 official = true,
             )
             hasOfficial = true
-        } else if (input.locationRestrictedRemote) {
+        } else if (input.isRemote && input.isRecognizedCountry) {
             // A remote role whose location names a country Madagascar is not in: the employer
             // bounded where it may lawfully hire, so eligibility is not stated.
             reasons += EligibilityReason(
@@ -135,6 +146,16 @@ class EligibilityEngine {
                 official = true,
             )
             hasOfficial = true
+        } else if (input.isRemote && input.location.isNotBlank()) {
+            // A remote role bound to a region or country the catalog does not know. It is not
+            // worldwide and does not include Madagascar, so it is neither a route in nor a
+            // refusal: leave it UNCLEAR and say why.
+            reasons += EligibilityReason(
+                label = "Remote role bound to another region",
+                detail = "The source lists this remote role for \"${input.location}\", which is not " +
+                    "stated to include Madagascar. Confirm the employer can hire there before you rely on it.",
+                official = false,
+            )
         }
 
         val eligibility = when {
@@ -261,9 +282,11 @@ data class EligibilityInput(
     val employmentType: String? = null,
     val isRemote: Boolean = false,
     /**
-     * True for a remote posting whose location names a specific country. Such a role is
-     * not the same as "remote worldwide": the employer may be hiring only where it can
-     * lawfully employ, so eligibility is left UNCLEAR rather than assumed.
+     * True when the posting's location resolves to a country the catalog actually knows.
+     * A remote role bound to one country is not the same as "remote worldwide": the
+     * employer may be hiring only where it can lawfully employ, so eligibility is left
+     * UNCLEAR rather than assumed. A region ("EMEA", "Europe") is deliberately **not** a
+     * recognised country, so a region-scoped role is judged by the region rules instead.
      */
-    val locationRestrictedRemote: Boolean = false,
+    val isRecognizedCountry: Boolean = false,
 )

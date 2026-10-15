@@ -55,6 +55,19 @@ data class ReadinessBlocker(
 }
 
 /**
+ * One ingredient of the readiness score, so the rank can be opened up and read. [points]
+ * is what the posting earned here and [maxPoints] the most it could earn, so the UI shows
+ * "12 of 15" rather than an unexplained total.
+ */
+@Immutable
+data class RankComponent(
+    val label: String,
+    val detail: String,
+    val points: Int,
+    val maxPoints: Int,
+)
+
+/**
  * A posting judged fit for the expat shortlist, with the full reasoning behind its rank.
  *
  * [readinessScore] answers "can I actually apply, and how soon?", which is a different
@@ -71,6 +84,16 @@ data class ShortlistEntry(
     val blockers: List<ReadinessBlocker>,
     val highlights: List<String>,
     val generatedAtEpochMillis: Long,
+    /** The four weighted ingredients of [readinessScore], in display order. */
+    val rankComponents: List<RankComponent> = emptyList(),
+    /**
+     * Share of the posting's listing that documented a benefit (0..100). Shown so the
+     * Expat Benefits Score is never read as a verdict when the listing simply said little.
+     */
+    val expatEvidenceCoverage: Int = 0,
+    /** Benefits the user cares about that the posting documents / that were considered. */
+    val benefitsMatched: Int = 0,
+    val benefitsConsidered: Int = 0,
 ) {
     /** The employer states a route that accepts an applicant already in Madagascar. */
     val hasOfficialRoute: Boolean

@@ -93,6 +93,15 @@ object CountryCatalog {
         .map { Country(it.country, it.flag) }
         .sortedBy { it.name }
 
+    /** Canonical country names the catalog recognises, for a cheap membership check. */
+    private val knownCountryNames: Set<String> = entries.mapTo(mutableSetOf()) { it.country }
+
+    /**
+     * True when [name] is a country the catalog knows. A resolved region ("EMEA"),
+     * [WORLDWIDE] and any unmatched free-text label all return false.
+     */
+    fun isKnownCountry(name: String): Boolean = name in knownCountryNames
+
     /**
      * Resolves a published location to a country. Location strings arrive as
      * "Berlin", "France (Remote)" or "Anywhere in the World", so the longest alias
@@ -135,9 +144,13 @@ data class Country(val name: String, val flag: String) {
     val isWorldwide: Boolean get() = name == CountryCatalog.WORLDWIDE
 
     /**
-     * True when the location names a specific country the catalog recognizes (or an
-     * unrecognized non-blank label), false for worldwide. Used to tell a remote role the
-     * employer bounded to a country apart from one open to applicants anywhere.
+     * True when the label matched a country the catalog actually knows (Canada, Germany,
+     * …). False for [isWorldwide] and for a free-text label that resolved to no known
+     * country — which is also the case for a region such as "EMEA", "Europe" or "Africa".
+     *
+     * This is deliberately stricter than "not worldwide": a region is not a country, and
+     * treating one as a country let the eligibility engine's region rules (which do
+     * recognise regions) be short-circuited before they could run.
      */
-    val isCountryScoped: Boolean get() = !isWorldwide && name.isNotBlank()
+    val isRecognized: Boolean get() = CountryCatalog.isKnownCountry(name)
 }

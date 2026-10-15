@@ -631,6 +631,34 @@ run, and widens eligibility to remote roles scoped to a region that includes Mad
   model-probe card. Suite: **249 tests, 0 failures** (2 skipped: the opt-in `Stage14LiveProbeTest`
   and `Stage17LiveApiProbeTest`).
 
+### Region-vs-country correctness and explainable ranking (Stage 19)
+
+A hardening pass over the live path, driven by running the probe against the real boards
+(Arbeitnow, Remotive, Jobicy, Himalayas — 144 postings, no key needed).
+
+- **A region is not a country (`Country.isRecognized`).** Stage 18's region rule was defeated by
+  its own input: the mapper flagged *any* non-worldwide remote location as restricted, so a
+  region-scoped role ("EMEA", "Africa") was already classified as "bound to one country" before
+  the region rule could run. The flag is now `isRecognizedCountry`, and `CountryCatalog.isKnownCountry`
+  returns true only for a real catalog country — a region resolves to no country, so it is judged
+  by the region rules. The `EligibilityInput` field is renamed `isRecognizedCountry` to match.
+- **Region heuristic can no longer override a restriction.** `remoteRegion` now requires
+  `!isRecognizedCountry`, so a *country* whose name embeds a region word ("South **Africa**"
+  contains "africa") is no longer rated eligible through the Africa region rule.
+- **Explainable rank (`RankComponent`).** `ShortlistEntry` now carries `rankComponents` — the four
+  weighted ingredients (route 45 + CV 30 + benefits 15 + profile 10) with points earned and the
+  ceiling each was scored against — so the readiness number on the card can be traced rather than
+  trusted. The shortlist explanation sheet gains a "How this ranks" breakdown.
+- **Honest expat badge.** `ShortlistEntry` carries the real `expatEvidenceCoverage` (was hardcoded
+  to 100 in the card) plus `benefitsMatched`/`benefitsConsidered`, so a low score caused by a thin
+  listing is labelled "N% documented" rather than read as an employer shortcoming.
+- **Live probe exercises the shipping engine.** `Stage14LiveProbeTest` now runs `ShortlistEngine`
+  over the real feed and prints each entry's components plus a `rank_components_sum_mismatches`
+  counter; on the last run it was 0, i.e. the components sum to the score the user sees.
+- Tests: `Stage19HardeningTest` (6) pins the region/country distinction and that the components sum
+  to the readiness score and never exceed their ceilings. Suite: **254 tests, 0 failures**
+  (2 skipped: the opt-in live probes).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

@@ -141,7 +141,8 @@ class Stage18LiveValidationTest {
                 location = "EMEA",
                 description = "Work remotely within the EMEA region.",
                 isRemote = true,
-                locationRestrictedRemote = true,
+                // "EMEA" is a region, not a country the catalog knows.
+                isRecognizedCountry = false,
             ),
         )
         assertEquals(MadagascarEligibility.ELIGIBLE, assessment.eligibility)
@@ -156,7 +157,7 @@ class Stage18LiveValidationTest {
                 location = "Africa",
                 description = "Open to candidates across Africa.",
                 isRemote = true,
-                locationRestrictedRemote = true,
+                isRecognizedCountry = false,
             ),
         )
         assertEquals(MadagascarEligibility.ELIGIBLE, assessment.eligibility)
@@ -170,7 +171,7 @@ class Stage18LiveValidationTest {
                 location = "United States",
                 description = "Remote role, must be based in the US.",
                 isRemote = true,
-                locationRestrictedRemote = true,
+                isRecognizedCountry = true,
             ),
         )
         assertEquals(MadagascarEligibility.UNCLEAR, assessment.eligibility)
@@ -184,7 +185,7 @@ class Stage18LiveValidationTest {
                 location = "Europe",
                 description = "Remote within the European Union.",
                 isRemote = true,
-                locationRestrictedRemote = true,
+                isRecognizedCountry = false,
             ),
         )
         assertEquals(MadagascarEligibility.UNCLEAR, assessment.eligibility)
@@ -198,7 +199,7 @@ class Stage18LiveValidationTest {
                 location = "EMEA",
                 description = "Local candidates only. Must already hold a work permit.",
                 isRemote = true,
-                locationRestrictedRemote = true,
+                isRecognizedCountry = false,
             ),
         )
         assertEquals(MadagascarEligibility.RESTRICTED, assessment.eligibility)
