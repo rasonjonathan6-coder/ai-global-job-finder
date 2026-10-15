@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -83,6 +85,8 @@ class LiveJobRepository(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val syncMutex = Mutex()
+    /** Serialises the read-modify-write of the persisted user state, so two quick toggles cannot race. */
+    private val userStateMutex = Mutex()
 
     private val rawJobs = MutableStateFlow<List<RawJob>>(emptyList())
     private val savedIds = MutableStateFlow<Set<String>>(emptySet())
@@ -128,6 +132,17 @@ class LiveJobRepository(
     private val autoApplyEnabled = MutableStateFlow(false)
 
     /**
+     * Set once each startup restore has applied its first value. The persisted-flow
+     * collectors are the only thing that seeds the in-memory state on launch, so a toggle
+     * issued before they have delivered would read the empty default and save the wrong
+     * state (for example re-saving a bookmark the user just removed). A write therefore
+     * waits for both flags; afterwards the local state is authoritative, so a later
+     * collector emission is ignored rather than allowed to clobber a fresh write.
+     */
+    private var savedIdsRestored = false
+    private var autoApplyRestored = false
+
+    /**
      * The display profile is derived from the imported CV — never invented. A fresh
      * install therefore has an empty profile and the Profile screen shows its empty state.
      * In demo mode the curated sample profile is served instead.
@@ -169,12 +184,24 @@ class LiveJobRepository(
             providerSettings.collect { incoming -> applySettings(incoming) }
         }
         // Restore the bookmarked postings and the auto-apply choice the user made earlier,
-        // so a restart does not silently forget them.
+        // so a restart does not silently forget them. Only the first value is applied: after
+        // that the local state is authoritative, so a late emission of the pre-write value
+        // cannot undo a toggle the user just made. A refresh still re-reads the store.
         scope.launch {
-            savedIdsFlow.collect { stored -> savedIds.value = stored }
+            savedIdsFlow.collect { stored ->
+                if (!savedIdsRestored) {
+                    savedIds.value = stored
+                    savedIdsRestored = true
+                }
+            }
         }
         scope.launch {
-            autoApplyFlow.collect { enabled -> autoApplyEnabled.value = enabled }
+            autoApplyFlow.collect { enabled ->
+                if (!autoApplyRestored) {
+                    autoApplyEnabled.value = enabled
+                    autoApplyRestored = true
+                }
+            }
         }
         scope.launch { runLiveValidation() }
     }
@@ -488,7 +515,8 @@ class LiveJobRepository(
     private fun hasCredentials(provider: JobProvider): Boolean =
         !provider.requiresCredentials || settings.value.configuredCredentialIds.contains(provider.id)
 
-    override suspend fun toggleSaved(jobId: String) {
+    override suspend fun toggleSaved(jobId: String) = userStateMutex.withLock {
+        awaitUserStateRestored()
         val next = savedIds.value.let { current ->
             if (current.contains(jobId)) current - jobId else current + jobId
         }
@@ -499,9 +527,23 @@ class LiveJobRepository(
     override fun jobById(id: String): Job? =
         (if (demoEnabled) sampleJobs else scoredJobs.value).firstOrNull { it.id == id }
 
-    override suspend fun setAutoApply(enabled: Boolean) {
+    override suspend fun setAutoApply(enabled: Boolean) = userStateMutex.withLock {
+        awaitUserStateRestored()
         autoApplyEnabled.value = enabled
         autoApplySetter(enabled)
+    }
+
+    /**
+     * Waits for the persisted-flow collectors to deliver their first value before a write.
+     * Without this, a toggle issued before startup finishes reads the empty default and
+     * saves the wrong state over the user's real one. If the store never emits (a broken
+     * or absent file), the write proceeds after the cap rather than hanging forever.
+     */
+    private suspend fun awaitUserStateRestored() {
+        if (savedIdsRestored && autoApplyRestored) return
+        withTimeoutOrNull(RESTORE_WAIT_MS) {
+            while (!(savedIdsRestored && autoApplyRestored)) delay(RESTORE_POLL_MS)
+        }
     }
 
     override suspend fun setDemoMode(enabled: Boolean) {
@@ -515,6 +557,12 @@ class LiveJobRepository(
         val error: Throwable?,
         val durationMillis: Long,
     )
+
+    private companion object {
+        /** How long a user write waits for the startup restore before proceeding anyway. */
+        const val RESTORE_WAIT_MS = 5_000L
+        const val RESTORE_POLL_MS = 5L
+    }
 }
 
 /** Internal marker so a per-source timeout is classified as a timeout, not a network error. */

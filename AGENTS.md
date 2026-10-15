@@ -433,7 +433,44 @@ candidate or invented applications. Sample data now lives behind an explicit dem
   `-dontwarn` so `assembleRelease` links.
 - Tests: `Stage13PersistenceTest` writes with one repository and reads back with a second
   over the same temporary DataStore (a real restart), covering auto-apply, bookmark and
-  un-bookmark persistence plus demo-gated alert seeding. Suite: 169 tests, 0 failures.
+  un-bookmark persistence plus demo-gated alert seeding. Suite: 170 tests, 0 failures.
+
+### Real-device QA and live search validation (Stage 14)
+
+Stage 14 separates what the suite actually proves from what it only appears to prove, and
+validates live retrieval against the real feeds.
+
+- **No physical-device or emulator QA is possible in this environment.** There is no
+  `/dev/kvm`, no `$ANDROID_HOME/emulator` binary, no installed system images and no AVDs, and
+  `adb devices` lists nothing. Every UI assertion in the suite is therefore Robolectric
+  (JVM) or Compose UI-test based, not on-device. Do not describe a green suite as
+  "device-verified" — it is not.
+- **Live retrieval probe:** `Stage14LiveProbeTest` hits the real providers and maps every
+  posting through `JobMapper`/`MatchingEngine`/`EligibilityEngine`. It is skipped unless
+  `LIVE_PROBE=1` is set, so the normal suite stays offline. Robolectric is required even
+  though it has no UI, because the providers parse with `org.json` (a stub on a plain JVM).
+  Run it with `LIVE_PROBE=1 ./gradlew :app:testDebugUnitTest --tests '*Stage14LiveProbeTest' --rerun-tasks -i`.
+- **What live retrieval found (one run):** the four key-free sources returned 220 raw / 145
+  unique postings (arbeitnow 60, remotive 90, jobicy 50, himalayas 20); Adzuna reported
+  `NOT_CONFIGURED` because no key is saved. **No posting reached the 60% "matching" bar** and
+  only **one** of 145 titles was a maintenance-family role — the top-scored items were social
+  workers and account executives. This is the same limitation Stage 9 recorded: these boards
+  ignore server-side keywords, so the feed is a broad remote sample, not a maintenance feed.
+  A targeted national source (Adzuna, or Jooble once a key is entered) is what actually
+  surfaces visa-sponsoring trades roles.
+- **Safety invariants re-verified:** no credential is committed (keys live only in DataStore
+  and are redacted from URLs by `HttpJsonClient.redactUrl`); nothing is auto-submitted (the
+  only network POST is Jooble's search endpoint; `AutoApplyCenter.approve` merely marks a
+  draft and tells the user to send it); and no LLM/cloud endpoint exists — all "AI" features
+  are on-device heuristics, so no CV or profile text leaves the device.
+- **Restart race fixed in `LiveJobRepository`.** The persisted `savedIds`/`autoApplyEnabled`
+  collectors are the only thing that seeds the in-memory state on launch. A toggle issued
+  before the first emission read the empty default, so removing a bookmark re-saved it (and a
+  late emission could clobber a fresh write). Writes now await both restore flags
+  (`awaitUserStateRestored`, capped at 5s) and are serialised by `userStateMutex`; the
+  collectors apply only their first value. This was surfaced as a flaky `Stage13PersistenceTest`
+  failure that alternated between `autoApplyChoiceSurvivesARestart` and
+  `unbookmarkingSurvivesARestart`; three consecutive full-suite runs are now clean.
 
 ## Conventions
 
