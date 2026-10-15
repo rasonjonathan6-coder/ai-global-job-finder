@@ -101,18 +101,42 @@ object TargetSearch {
     /**
      * Equipment/industry nouns that add relevance when they appear in a title or the
      * opening of a description (pumps, conveyors, rotating equipment, plant machinery).
+     *
+     * These are deliberately specific: a word that merely names the sector a company works
+     * in ("manufacturing", "industrial") is not enough to claim a lone "technician" title,
+     * because almost every posting at an industrial employer opens by describing that
+     * employer. A concrete machine or a named plant setting is.
      */
     val equipmentTerms: List<String> = listOf(
         "pump", "pumps", "conveyor", "conveyors", "rotating equipment", "rotating machinery",
         "compressor", "gearbox", "bearing", "hydraulic", "hydraulics", "pneumatic",
         "pneumatics", "turbine", "diesel", "generator", "motor", "valve", "pipeline",
         "crusher", "mill", "kiln", "boiler", "chiller", "hvac",
+        "drill rig", "drilling", "excavator", "haul truck", "loader", "shovel",
+        "smelter", "refinery", "blast furnace", "coke oven", "flotation", "thickener",
+        "screening plant", "processing plant", "pump station", "plant machinery",
     )
 
-    /** Industry context words that support a maintenance reading of a posting. */
+    /**
+     * Industry context words that support a maintenance reading of a posting when they
+     * appear in the title. A title that names the plant/production/mining setting is the
+     * employer saying the role is on the shop floor, so a weak trade word there counts.
+     */
     val industryTerms: List<String> = listOf(
         "industrial", "plant", "production", "manufacturing", "mining", "mine", "smelter",
         "refinery", "processing", "factory", "mill", "juice", "beverage", "food processing",
+    )
+
+    /**
+     * The subset of [industryTerms] specific enough to support a weak trade word from the
+     * *description* as well as the title. The broad ones ("industrial", "plant",
+     * "production", "manufacturing", "processing", "factory") are excluded: a long
+     * employer blurb about its factory would otherwise turn every "Lab Technician" or
+     * "Process Technician" into a maintenance role, which is exactly the false positive
+     * this gate exists to stop.
+     */
+    val descriptionIndustryTerms: List<String> = listOf(
+        "mining", "mine", "smelter", "refinery", "juice", "beverage", "food processing",
     )
 
     /**

@@ -52,22 +52,29 @@ data class SearchCoverage(
     /** True when at least one relevant posting was found. */
     val hasRelevantResults: Boolean get() = totalRelevant > 0
 
+    /** Share of retrieved postings that matched the candidate's trade, 0..100. */
+    val relevantSharePercent: Int
+        get() = if (totalRetrieved == 0) 0 else (100.0 * totalRelevant / totalRetrieved).toInt()
+
     /**
-     * A short, plain statement of what this search was. It says "broad sample" rather than
-     * "search" when no source supports keyword narrowing, so the user is not misled.
+     * A short, plain statement of what this search was and how much of it landed. It says
+     * "broad sample" rather than "search" when no source supports keyword narrowing, and it
+     * always states how many of the retrieved postings actually matched the trade, so a
+     * large feed of unrelated roles cannot read as a good result set.
      */
     val summary: String
         get() = when {
             totalRetrieved == 0 -> "No postings were retrieved."
             targetedSourceCount == 0 && totalRelevant == 0 ->
-                "Broad sample from ${sources.size} sources; none matched your target roles."
+                "Broad sample from ${sources.size} sources; none of the $totalRetrieved postings matched your trade."
             targetedSourceCount == 0 ->
-                "Broad sample from ${sources.size} sources; $totalRelevant matched your target roles."
+                "Broad sample from ${sources.size} sources; $totalRelevant of $totalRetrieved postings " +
+                    "matched your trade ($relevantSharePercent%)."
             broadSampleSourceCount == 0 ->
                 "Targeted search across $targetedSourceCount sources; $totalRelevant relevant."
             else ->
                 "Targeted search on $targetedSourceCount source(s), broad sample from " +
-                    "$broadSampleSourceCount; $totalRelevant relevant."
+                    "$broadSampleSourceCount; $totalRelevant of $totalRetrieved postings matched your trade."
         }
 }
 

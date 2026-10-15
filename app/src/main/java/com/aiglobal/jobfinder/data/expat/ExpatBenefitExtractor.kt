@@ -115,7 +115,9 @@ class ExpatBenefitExtractor {
             JobBenefitTypes.VISA_SPONSORSHIP.key to Rules(
                 strong = listOf(
                     "visa sponsorship", "sponsorship available", "sponsorship is available",
-                    "we sponsor visas", "we will sponsor", "sponsor a work visa",
+                    "visa sponsorship available", "visa sponsorship provided",
+                    "work visa sponsorship", "immigration support",
+                    "we sponsor visas", "we will sponsor", "we can sponsor", "sponsor a work visa",
                     "work permit sponsorship", "tier 2 sponsorship", "skilled worker visa",
                     "visa and relocation", "employer-sponsored visa", "sponsor your work visa",
                     "we provide visa", "visa support provided",
@@ -123,12 +125,17 @@ class ExpatBenefitExtractor {
                 hedged = listOf("visa support", "sponsorship considered", "may sponsor"),
                 refusals = listOf(
                     "no visa sponsorship", "we do not sponsor", "we are unable to sponsor",
-                    "cannot sponsor", "without sponsorship", "no sponsorship",
+                    "unable to offer sponsorship", "not able to sponsor", "cannot sponsor",
+                    "without sponsorship", "no sponsorship",
                 ),
             ),
             JobBenefitTypes.RELOCATION_SUPPORT.key to Rules(
                 strong = listOf(
                     "relocation package", "relocation support", "relocation assistance",
+                    "relocation assistance is available", "relocation benefits", "relocation program",
+                    "relocation programme", "relocation reimbursement", "relocation expenses",
+                    "relocation costs", "we offer relocation", "paid relocation",
+                    "help with relocation", "support with relocation", "assistance with relocation",
                     "relocation allowance", "relocation bonus", "we help you relocate",
                     "we will help you relocate", "relocation covered", "settling-in allowance",
                 ),
@@ -139,15 +146,19 @@ class ExpatBenefitExtractor {
                 strong = listOf(
                     "accommodation provided", "company accommodation", "housing provided",
                     "provided accommodation", "free accommodation", "staff accommodation",
+                    "company housing", "staff housing", "camp accommodation", "site accommodation",
+                    "subsidised accommodation", "subsidized accommodation", "living allowance",
                     "accommodation is provided", "furnished accommodation",
                 ),
-                hedged = listOf("housing allowance", "accommodation allowance", "accommodation support"),
+                hedged = listOf("housing allowance", "accommodation allowance", "accommodation support", "lodging"),
                 refusals = listOf("no accommodation", "accommodation not provided"),
             ),
             JobBenefitTypes.FLIGHTS_HOME.key to Rules(
                 strong = listOf(
-                    "annual flight", "annual flights", "flight home", "flights home",
-                    "return flight", "airfare provided", "flight allowance", "repatriation flight",
+                    "annual flight", "annual flights", "annual return flight", "flight home",
+                    "flights home", "return flight", "return flights", "rotation flights",
+                    "airfare", "air ticket", "air tickets", "airfare provided", "flight allowance",
+                    "repatriation flight",
                 ),
                 hedged = listOf("flights provided"),
                 refusals = listOf("no flights", "flight not provided"),
@@ -156,26 +167,33 @@ class ExpatBenefitExtractor {
                 strong = listOf(
                     "health insurance", "medical insurance", "health cover", "healthcare provided",
                     "private medical", "medical cover", "health insurance provided",
+                    "private health insurance", "medical aid", "medical scheme", "health benefits",
+                    "medical benefits",
                 ),
                 hedged = listOf("health care"),
                 refusals = listOf("no health insurance", "no medical insurance"),
             ),
             JobBenefitTypes.MEALS.key to Rules(
-                strong = listOf("meals provided", "free meals", "meal allowance", "food allowance", "canteen"),
+                strong = listOf(
+                    "meals provided", "free meals", "free food", "meal allowance", "food allowance",
+                    "canteen", "site canteen", "subsidised canteen", "three meals",
+                ),
                 hedged = listOf("meal allowance"),
                 refusals = listOf("no meals", "meals not provided"),
             ),
             JobBenefitTypes.TRANSPORT.key to Rules(
                 strong = listOf(
                     "transport provided", "company transport", "transport allowance",
-                    "travel allowance", "shuttle service", "company car",
+                    "travel allowance", "shuttle service", "shuttle", "company car",
+                    "company vehicle", "site transport", "transport to and from",
                 ),
                 hedged = listOf("travel reimbursement"),
                 refusals = listOf("no transport", "transport not provided"),
             ),
             JobBenefitTypes.LANGUAGE_TRAINING.key to Rules(
                 strong = listOf(
-                    "language training", "language course", "german course", "language classes",
+                    "language training", "language course", "language courses", "german course",
+                    "language classes", "language lessons", "language programme", "language program",
                     "paid language", "language support", "language tuition",
                 ),
                 hedged = listOf("language training support"),
@@ -184,7 +202,8 @@ class ExpatBenefitExtractor {
             JobBenefitTypes.FAMILY_SUPPORT.key to Rules(
                 strong = listOf(
                     "family visa", "family sponsorship", "spouse can work", "dependant visa",
-                    "family relocation", "family support", "dependants supported",
+                    "dependent visa", "spouse visa", "family relocation", "family support",
+                    "dependants supported",
                 ),
                 hedged = listOf("dependant visa support"),
                 refusals = listOf("no family support", "family not supported"),

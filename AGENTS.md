@@ -875,6 +875,60 @@ own first refresh on `Dispatchers.IO` while the test's `awaitSettled` polls a *d
 Stage 23 baseline and passes in isolation. If you touch that area, make the wait key on
 `syncState` itself (or both flows) rather than only `diagnostics`.
 
+## Stage 25 — technical job discovery quality & expat evidence
+
+Measured against 277 real postings pulled from the app's own providers (Greenhouse, Ashby,
+Lever, Workday) rather than guessed at. Two findings drove this stage.
+
+**Relevance classifier (`RoleRelevance.kt` / `TargetSearch.kt`).** The "maintenance family"
+gate accepted a weak trade word ("technician") whenever the *description head* carried any
+industry word. Because almost every posting at an industrial employer opens by describing that
+employer, 21 non-trade roles passed on the live corpus — "Process Technician", "EHS
+Technician", "Quality Technician", "Controls Technician", "IT Support Technician" — purely on
+a Form Energy-style blurb ("an American manufacturing and energy technology company"). The
+support words are now split: concrete equipment/machinery (`TargetSearch.equipmentTerms`,
+extended with mining terms: drill rig, excavator, haul truck, smelter, refinery, flotation,
+thickener, pump station, …) and a *named* plant/mining setting count from the title or the
+description head, but the broad sector words (`TargetSearch.industryTerms`: industrial, plant,
+production, manufacturing, processing, factory) count only when they appear in the **title**.
+`TargetSearch.descriptionIndustryTerms` is the narrow subset (mining, mine, smelter, refinery,
+juice, beverage, food processing) allowed from the description. A lone technician title with no
+trade context is still unrelated (Stage 24 rule preserved); a title that names the setting
+("Production Technician") or whose body names a concrete machine still classifies as
+maintenance family. Re-running the simulator: relevant 133 → 124 of 277, with every dropped row
+a genuine false positive and nothing the candidate would want lost.
+
+**Expat evidence (`ExpatBenefitExtractor.kt`).** The strong phrase table missed wording real
+European and FIFO postings use, so a posting that plainly documented a package scored as if it
+documented nothing. Added, from observed postings: visa ("visa sponsorship provided", "work
+visa sponsorship", "immigration support", "we provide visa"), relocation ("relocation
+assistance is available", "relocation benefits", "relocation expenses", "we offer relocation",
+"relocation program"), accommodation ("camp accommodation", "company housing", "living
+allowance", "staff housing"), flights ("air ticket(s)", "return flights", "annual return
+flight", "rotation flights", "airfare"), health ("medical aid", "medical scheme", "health
+benefits", "medical benefits"), transport ("company vehicle", "site transport", "shuttle",
+"transport to and from"), meals ("free food", "site canteen", "three meals"), and family
+("dependent visa", "spouse visa", "family relocation"). The refusal phrasings real employers use
+("unable to offer sponsorship", "not able to sponsor", "cannot sponsor") were added so an
+explicit refusal is still recorded as `NOT_OFFERED`, and the new phrases are all multi-word, so
+incidental prose (a "family-owned" company, "transportation of materials") still yields
+`UNKNOWN` rather than inventing a benefit.
+
+**Coverage honesty (`SearchStrategy.kt`).** `SearchCoverage.summary` now states how many of the
+retrieved postings matched the trade and the percentage (`relevantSharePercent`), so a large
+unrelated remote feed cannot read as a good result set.
+
+Tests: `Stage25DiscoveryQualityTest` (16: a generic technician title at an industrial employer
+and five more live generic-technician titles are rejected despite industrial blurbs; a named
+plant setting or a concrete equipment/mining word still supports a weak trade title; mining
+equipment titles are recognised; genuine trade titles remain maintenance family; a broad sector
+word in the description does not rescue an unrelated technician; European relocation/visa and
+health wording is documented; company vehicle / site shuttle are documented as transport; FIFO
+camp + flights wording is documented; an explicit refusal to sponsor is `NOT_OFFERED`;
+incidental prose invents no benefit; and the broad-sample summary states the trade match count
+and share). Suite: **323 tests, 1 failure** — the documented pre-existing `Stage22AuditTest`
+flake below, which passes in isolation and reproduces on the untouched Stage 24 baseline.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
