@@ -84,6 +84,14 @@ object CountryCatalog {
     const val WORLDWIDE = "Worldwide"
     const val WORLDWIDE_FLAG = "🌍"
 
+    /**
+     * Flag for a location the catalog cannot map to a country — a bare city ("Munich") or a
+     * region ("Europe"). It is deliberately **not** the worldwide globe: the source said a
+     * place, not "anywhere", so badging it as worldwide would misrepresent a local vacancy
+     * as a role open to applicants from anywhere.
+     */
+    const val UNRESOLVED_FLAG = "📍"
+
     private val worldwideWords = listOf(
         "worldwide", "anywhere", "global", "world", "international", "any location", "flexible",
     )
@@ -122,7 +130,7 @@ object CountryCatalog {
         if (longest != null) return Country(longest.country, longest.flag)
 
         val worldwide = worldwideWords.any { normalized.contains(it) }
-        return if (worldwide) Country(WORLDWIDE, WORLDWIDE_FLAG) else Country(raw, WORLDWIDE_FLAG)
+        return if (worldwide) Country(WORLDWIDE, WORLDWIDE_FLAG) else Country(raw, UNRESOLVED_FLAG)
     }
 
     /** Matches [needle] only when it is bounded by non-letters, so "us" ≠ "business". */

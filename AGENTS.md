@@ -767,6 +767,34 @@ an unconfigured gated source is not-configured/not-broken and is never queried; 
 attempt lists each source exactly once). Suite: **289 tests, 0 failures** (2 skipped: the
 opt-in live probes).
 
+## Stage 23 — device journey & Madagascar candidate validation
+
+Validated the real candidate journey end to end with the app's own providers and engines,
+run against the live public endpoints (Remotive, Jobicy, Himalayas, Arbeitnow) via the
+opt-in `Stage14LiveProbeTest` (`LIVE_PROBE=1`). No device or emulator is available in this
+environment (`/dev/kvm` absent, no `emulator` binary, no system images, no AVD), so the
+journey was exercised through the real pipeline and the Compose screenshot/UI test harness
+rather than an attached device; the debug and release APKs build cleanly and lint is clean.
+
+The probe retrieved 144 real postings and surfaced a defect that no fixture had caught:
+**an unresolved location was badged as worldwide.** Arbeitnow publishes a bare city as the
+location (`"Munich"`, `"Kulmbach"`), which `CountryCatalog` cannot map to a country. The
+fallback returned `Country(raw, WORLDWIDE_FLAG)`, so a **local German vacancy wore the 🌍
+globe and passed the worldwide-remote eligibility rules**, presenting a local job as open to
+applicants from anywhere and adding a bare city to the country filter as if it were a country.
+
+- `CountryCatalog.resolve` now returns a distinct `UNRESOLVED_FLAG` ("📍") for a location it
+  cannot map, keeping the worldwide globe only for a genuine "Worldwide" / "Anywhere" /
+  "Global" listing. `isRecognized` was already false for these, so eligibility was never the
+  bug — the globe and the mislabelled local role were. No behaviour changed for a real
+  country, for a genuine worldwide listing, or for a region such as "EMEA" (still `UNCLEAR`).
+
+Tests: `Stage23CandidateJourneyTest` (7: a bare city and a region are not given the globe; a
+genuine worldwide listing keeps it; a local city vacancy is not scored as worldwide-remote;
+a remote listing pinned to an unmapped city stays `UNCLEAR`; a worldwide remote role stays
+`ELIGIBLE` and applyable from Madagascar; a recognised country still resolves to its own
+name and flag). Suite: **296 tests, 0 failures** (2 skipped: the opt-in live probes).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
