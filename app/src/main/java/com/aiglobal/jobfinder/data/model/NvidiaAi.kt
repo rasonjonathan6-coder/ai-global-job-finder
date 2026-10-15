@@ -17,30 +17,54 @@ data class NvidiaModel(
 
 object NvidiaModels {
 
-    /** Models confirmed to answer `/chat/completions` for a personal NVIDIA account. */
+    /**
+     * Suggested starting points. These are long-lived, widely-hosted Meta/NVIDIA models that
+     * answer `/chat/completions` on `integrate.api.nvidia.com`. The list is a convenience,
+     * not a whitelist: NVIDIA retires and adds models often, so the app also discovers the
+     * account's real list at runtime (`/v1/models`) and lets the user type any id. A model
+     * that is not in this list is still valid if the account serves it.
+     */
     val known: List<NvidiaModel> = listOf(
         NvidiaModel(
-            id = "openai/gpt-oss-20b",
-            label = "GPT-OSS 20B",
+            id = "meta/llama-3.1-8b-instruct",
+            label = "Llama 3.1 8B Instruct",
             note = "Fast, low-cost general model. A good default for drafting and explaining.",
         ),
         NvidiaModel(
-            id = "nvidia/nemotron-3-super-120b-a12b",
-            label = "Nemotron 3 Super 120B",
-            note = "Larger reasoning model. Higher quality, slower and more quota per call.",
+            id = "meta/llama-3.3-70b-instruct",
+            label = "Llama 3.3 70B Instruct",
+            note = "Larger model. Higher quality writing, slower and more quota per call.",
         ),
         NvidiaModel(
-            id = "z-ai/glm-5.3",
-            label = "GLM 5.3",
+            id = "nvidia/llama-3.3-nemotron-super-49b-v1",
+            label = "Nemotron Super 49B",
+            note = "NVIDIA reasoning model. Strong at explanation, slower.",
+        ),
+        NvidiaModel(
+            id = "mistralai/mistral-nemo-12b-instruct",
+            label = "Mistral NeMo 12B",
             note = "General-purpose alternative if a preferred model is unavailable.",
         ),
     )
 
     val defaultModelId: String = known.first().id
 
+    /** The label for an id: the known label, else the id itself so a custom id is legible. */
     fun labelFor(id: String): String = known.firstOrNull { it.id == id }?.label ?: id
 
+    /** True when the id is one of the suggested models. */
     fun isKnown(id: String): Boolean = known.any { it.id == id }
+
+    /**
+     * True when the id is usable at all. Any non-blank id is accepted, because the account's
+     * `/v1/models` list is the real source of truth and a hard whitelist would silently
+     * reject a model the user's account genuinely serves.
+     */
+    fun isSelectable(id: String): Boolean = id.isNotBlank()
+
+    /** A model entry for an id discovered from the account, with a readable label. */
+    fun discovered(id: String): NvidiaModel = known.firstOrNull { it.id == id }
+        ?: NvidiaModel(id = id, label = id, note = "Discovered on your NVIDIA account.")
 }
 
 /**

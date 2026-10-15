@@ -87,6 +87,115 @@ class AdzunaProvider(
         return collected.take(limit)
     }
 
+    /**
+     * Verifies the saved credentials against Adzuna's real endpoints without touching the
+     * feed or inventing anything. It first calls the cheap `/version` endpoint to tell a bad
+     * key apart from a bad search, then runs one small real search in the first market that
+     * answers. The returned [AdzunaCheckResult] carries a plain-language outcome and, on
+     * success, a sample of what Adzuna actually returned so the user can confirm the market
+     * is live.
+     */
+    suspend fun checkConnection(): AdzunaCheckResult {
+        val creds = credentials()
+        if (!creds.isConfigured) {
+            return AdzunaCheckResult(
+                status = AdzunaCheckStatus.NOT_CONFIGURED,
+                message = "Add your Adzuna app id and key first.",
+            )
+        }
+        val markets = countries.ifEmpty { AdzunaCountries.defaults }
+        var lastFailure: AdzunaCheckResult? = null
+        for (country in markets) {
+            val result = checkMarket(country, creds)
+            if (result.isSuccess) return result
+            // A rejected key will be rejected by every market, so stop at the first one.
+            if (result.status == AdzunaCheckStatus.INVALID_CREDENTIALS) return result
+            lastFailure = result
+        }
+        return lastFailure ?: AdzunaCheckResult(
+            status = AdzunaCheckStatus.INVALID_RESPONSE,
+            message = "Adzuna returned no usable response.",
+        )
+    }
+
+    private suspend fun checkMarket(country: String, creds: AdzunaCredentials): AdzunaCheckResult {
+        val label = AdzunaCountries.labelFor(country)
+        return try {
+            val version = feed.objectAt("$VERSION_URL?app_id=${creds.appId}&app_key=${creds.appKey}")
+            val apiVersion = version.optString("api_version").ifBlank { "?" }
+            val body = feed.objectAt(
+                "$BASE_URL/$country/search/1?app_id=${creds.appId}&app_key=${creds.appKey}" +
+                    "&results_per_page=1&content-type=application/json",
+            )
+            val results = body.optJSONArray("results")
+            val total = body.optInt("count", results?.length() ?: 0)
+            val sample = results?.optJSONObject(0)?.optString("title")?.takeIf { it.isNotBlank() }
+            AdzunaCheckResult(
+                status = AdzunaCheckStatus.OK,
+                market = country,
+                sampleTitle = sample,
+                totalResults = total,
+                message = buildString {
+                    append("Adzuna accepted the credentials (API v$apiVersion). ")
+                    append(
+                        if (sample != null) {
+                            "Market $label returned ads, e.g. \"$sample\"."
+                        } else {
+                            "Market $label is reachable but returned no ads right now."
+                        },
+                    )
+                },
+            )
+        } catch (t: Throwable) {
+            classifyCheck(t, country)
+        }
+    }
+
+    private fun classifyCheck(t: Throwable, country: String): AdzunaCheckResult {
+        val label = AdzunaCountries.labelFor(country)
+        if (t is org.json.JSONException) {
+            return AdzunaCheckResult(
+                AdzunaCheckStatus.INVALID_RESPONSE,
+                country,
+                message = "Adzuna replied, but its response could not be understood.",
+            )
+        }
+        return when (ProviderErrorClassifier.classify(id, t)) {
+            ProviderErrorCategory.AUTHENTICATION -> AdzunaCheckResult(
+                AdzunaCheckStatus.INVALID_CREDENTIALS, country,
+                message = "Adzuna rejected the credentials. Check the app id and key, then save them again.",
+            )
+            ProviderErrorCategory.RATE_LIMITED -> AdzunaCheckResult(
+                AdzunaCheckStatus.RATE_LIMITED, country,
+                message = "Adzuna is rate limiting requests. Wait a minute, then test again.",
+            )
+            ProviderErrorCategory.TIMEOUT -> AdzunaCheckResult(
+                AdzunaCheckStatus.TIMEOUT, country,
+                message = "Adzuna did not answer in time. Try again.",
+            )
+            ProviderErrorCategory.NETWORK -> AdzunaCheckResult(
+                AdzunaCheckStatus.NETWORK, country,
+                message = "Adzuna could not be reached. Check your internet connection.",
+            )
+            ProviderErrorCategory.INVALID_RESPONSE -> AdzunaCheckResult(
+                AdzunaCheckStatus.INVALID_RESPONSE, country,
+                message = "Adzuna replied, but its response could not be understood.",
+            )
+            ProviderErrorCategory.HTTP_ERROR -> AdzunaCheckResult(
+                AdzunaCheckStatus.SERVICE_UNAVAILABLE, country,
+                message = "Adzuna answered with an error status for $label: ${t.message}",
+            )
+            ProviderErrorCategory.NOT_CONFIGURED -> AdzunaCheckResult(
+                AdzunaCheckStatus.NOT_CONFIGURED, country,
+                message = "Add your Adzuna app id and key first.",
+            )
+            ProviderErrorCategory.UNKNOWN -> AdzunaCheckResult(
+                AdzunaCheckStatus.NETWORK, country,
+                message = "The request to Adzuna failed: ${t.javaClass.simpleName}.",
+            )
+        }
+    }
+
     private fun org.json.JSONObject.toRawJobs(country: String): List<RawJob> {
         val results = optJSONArray("results") ?: return emptyList()
         val currency = AdzunaCountries.currencyByCountry[country]
@@ -125,6 +234,7 @@ class AdzunaProvider(
 
     private companion object {
         const val BASE_URL = "https://api.adzuna.com/v1/api/jobs"
+        const val VERSION_URL = "https://api.adzuna.com/v1/api/version"
     }
 }
 
@@ -134,6 +244,34 @@ data class AdzunaCredentials(
     val appKey: String = "",
 ) {
     val isConfigured: Boolean get() = appId.isNotBlank() && appKey.isNotBlank()
+}
+
+/** How an Adzuna connection test ended. Coarse and explicit so the UI can be specific. */
+enum class AdzunaCheckStatus {
+    OK,
+    NOT_CONFIGURED,
+    INVALID_CREDENTIALS,
+    RATE_LIMITED,
+    TIMEOUT,
+    NETWORK,
+    INVALID_RESPONSE,
+    SERVICE_UNAVAILABLE,
+}
+
+/**
+ * The outcome of a real Adzuna connection test. On success it carries what Adzuna actually
+ * returned (the market, a sample ad title and the reported total), so the user can tell a
+ * live key from a plausible-looking failure. No posting is ever fabricated: an empty market
+ * is reported as empty, not filled in.
+ */
+data class AdzunaCheckResult(
+    val status: AdzunaCheckStatus,
+    val market: String = "",
+    val sampleTitle: String? = null,
+    val totalResults: Int = 0,
+    val message: String = "",
+) {
+    val isSuccess: Boolean get() = status == AdzunaCheckStatus.OK
 }
 
 /**

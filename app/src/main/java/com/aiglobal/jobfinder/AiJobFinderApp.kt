@@ -125,14 +125,7 @@ open class AppContainer(application: Application) {
             add(RemotiveProvider())
             add(JobicyProvider())
             add(HimalayasProvider())
-            add(
-                AdzunaProvider(
-                    credentials = { adzunaCredentialsValue },
-                    feed = HttpJsonFeed,
-                    countries = adzunaCountriesValue.toList().ifEmpty { AdzunaCountries.defaults },
-                    pagesPerCountry = 2,
-                ),
-            )
+            add(adzunaProvider)
             add(
                 JoobleProvider(
                     apiKey = { joobleApiKeyValue },
@@ -187,6 +180,21 @@ open class AppContainer(application: Application) {
     /** Last-known Jooble API key, read synchronously by the provider factory. */
     @Volatile
     private var joobleApiKeyValue: String = ""
+
+    /**
+     * The Adzuna provider instance, shared with the feed and used directly by the in-app
+     * connection test so a "Test connection" tap exercises the same request path the feed
+     * uses (real endpoints, real parsing) rather than a separate approximation. It is lazy so
+     * it is built on first use, after the country collector has populated the last-known set.
+     */
+    val adzunaProvider: AdzunaProvider by lazy {
+        AdzunaProvider(
+            credentials = { adzunaCredentialsValue },
+            feed = HttpJsonFeed,
+            countries = adzunaCountriesValue.toList().ifEmpty { AdzunaCountries.defaults },
+            pagesPerCountry = 2,
+        )
+    }
 
     init {
         appScope.launch {

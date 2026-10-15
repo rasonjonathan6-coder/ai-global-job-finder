@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
 import com.aiglobal.jobfinder.data.model.BenefitEvidence
@@ -51,6 +53,8 @@ import com.aiglobal.jobfinder.data.model.JobAlertRule
 import com.aiglobal.jobfinder.data.model.JobAlertsState
 import com.aiglobal.jobfinder.data.repository.SampleData
 import com.aiglobal.jobfinder.data.repository.SampleJobRepository
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckStatus
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.apply.ApplicationUrlInspector
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
@@ -262,7 +266,7 @@ class ScreenshotTest {
                 configured = true,
                 consent = true,
                 ready = true,
-                modelLabel = "GPT-OSS 20B",
+                modelLabel = "Llama 3.1 8B Instruct",
                 outputTitle = "Explain my match — Maintenance Technician",
                 outputIsRemote = true,
                 output = "Your CV shows industrial maintenance, hydraulics and CMMS work, which " +
@@ -279,7 +283,7 @@ class ScreenshotTest {
         AiAssistantCard(
             config = NvidiaConfig(
                 apiKey = "nvapi-example",
-                modelId = "openai/gpt-oss-20b",
+                modelId = "meta/llama-3.1-8b-instruct",
                 consentGranted = true,
             ),
             encrypted = true,
@@ -287,6 +291,45 @@ class ScreenshotTest {
             onSelectModel = {},
             onConsentChange = {},
             onTestKey = { com.aiglobal.jobfinder.data.model.NvidiaResult(com.aiglobal.jobfinder.data.model.NvidiaStatus.OK, text = "ok") },
+        )
+    }
+
+    /** The discovery and custom-model controls, which only appear once setup is expanded. */
+    @Test
+    fun nvidiaAssistantCardExpanded() = renderBothModes(
+        name = "nvidia-assistant-expanded",
+        beforeCapture = { composeRule.onNodeWithText("Set up the assistant").performClick() },
+    ) {
+        AiAssistantCard(
+            config = NvidiaConfig(apiKey = "nvapi-example", modelId = "meta/llama-3.1-8b-instruct"),
+            encrypted = true,
+            onSaveKey = {},
+            onSelectModel = {},
+            onConsentChange = {},
+            onTestKey = { com.aiglobal.jobfinder.data.model.NvidiaResult(com.aiglobal.jobfinder.data.model.NvidiaStatus.OK) },
+            onDiscoverModels = { emptyList() },
+        )
+    }
+
+    /** The Adzuna card with its connection test, expanded so the new control is visible. */
+    @Test
+    fun jobSourcesConnectionTest() = renderBothModes(
+        name = "job-sources-test",
+        beforeCapture = { composeRule.onNodeWithText("Add optional sources").performClick() },
+    ) {
+        JobSourcesCard(
+            credentials = AdzunaCredentials(appId = "abc123", appKey = "def456"),
+            joobleKey = "",
+            diagnostics = ProviderDiagnostics(),
+            onSaveAdzuna = { _, _ -> },
+            onSaveJooble = {},
+            onTestAdzuna = {
+                AdzunaCheckResult(
+                    status = AdzunaCheckStatus.OK,
+                    market = "gb",
+                    message = "Adzuna accepted the credentials (API v1.0.0). Market United Kingdom returned ads, e.g. \"Maintenance Technician\".",
+                )
+            },
         )
     }
 
@@ -630,7 +673,11 @@ class ScreenshotTest {
      * One setContent per test (the rule forbids more), then the theme is flipped through
      * state so both colour schemes are captured from the same, already-settled tree.
      */
-    private fun renderBothModes(name: String, content: @Composable () -> Unit) {
+    private fun renderBothModes(
+        name: String,
+        beforeCapture: () -> Unit = {},
+        content: @Composable () -> Unit,
+    ) {
         val mode = mutableStateOf(ThemeMode.Light)
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
@@ -641,6 +688,8 @@ class ScreenshotTest {
             }
         }
 
+        settle()
+        beforeCapture()
         settle()
         capture("$name-light")
 

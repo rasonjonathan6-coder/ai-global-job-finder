@@ -140,6 +140,38 @@ class NvidiaAiClient(
         }
     }
 
+    /**
+     * Asks NVIDIA which models the account can actually use. Unlike [validateKey] this returns
+     * the ids, so the user can pick a real one instead of guessing. On success [NvidiaResult.text]
+     * is a newline-separated list of ids; the failure classification is the same as elsewhere.
+     */
+    suspend fun listModelIds(apiKey: String): NvidiaResult {
+        if (apiKey.isBlank()) return failure(NvidiaStatus.NOT_CONFIGURED, "Enter an API key first.")
+        val response = try {
+            transport.listModels(apiKey, timeoutMillis)
+        } catch (t: Throwable) {
+            return classifyThrowable(t)
+        }
+        if (response.statusCode !in 200..299) return interpretError(response)
+        val ids = extractModelIds(response.body)
+        return if (ids.isEmpty()) {
+            failure(NvidiaStatus.BAD_RESPONSE, "NVIDIA returned no models for this account.")
+        } else {
+            NvidiaResult(NvidiaStatus.OK, text = ids.joinToString("\n"))
+        }
+    }
+
+    /** Reads `data[].id` from a `/v1/models` body, tolerating any ordering or extra fields. */
+    internal fun extractModelIds(body: String): List<String> = runCatching {
+        val data = JSONObject(body).optJSONArray("data") ?: return emptyList()
+        buildList {
+            for (i in 0 until data.length()) {
+                val id = data.optJSONObject(i)?.optString("id")?.takeIf { it.isNotBlank() }
+                if (id != null) add(id)
+            }
+        }.distinct().sorted()
+    }.getOrDefault(emptyList())
+
     internal fun interpret(response: NvidiaHttpResponse): NvidiaResult {
         if (response.statusCode !in 200..299) return interpretError(response)
         val text = extractContent(response.body)

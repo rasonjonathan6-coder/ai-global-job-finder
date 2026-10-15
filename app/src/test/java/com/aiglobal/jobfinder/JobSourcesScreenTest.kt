@@ -8,10 +8,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckStatus
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.NvidiaConfig
 import com.aiglobal.jobfinder.data.model.NvidiaResult
@@ -163,9 +169,9 @@ class JobSourcesScreenTest {
             }
         }
         composeRule.onNodeWithText("Add optional sources").performClick()
-        composeRule.onNodeWithText("Choose Adzuna markets").performClick()
-        composeRule.onNodeWithText("Canada").performClick()
-        composeRule.onNodeWithText("Germany").performClick()
+        composeRule.onNodeWithText("Choose Adzuna markets").performScrollTo().performClick()
+        composeRule.onNodeWithText("Canada").performScrollTo().performClick()
+        composeRule.onNodeWithText("Germany").performScrollTo().performClick()
         assert(lastSaved == setOf("ca", "de")) { "expected the two tapped markets, got $lastSaved" }
     }
 
@@ -188,5 +194,61 @@ class JobSourcesScreenTest {
         composeRule.onNodeWithText("NVIDIA AI assistant").assertIsDisplayed()
         composeRule.onNodeWithText("Off — add your API key to enable drafting").assertIsDisplayed()
         composeRule.onNodeWithText("Set up the assistant").assertIsDisplayed()
+    }
+
+    @Test
+    fun adzunaConnectionTestShowsTheRealOutcome() {
+        var called = false
+        composeRule.setContent {
+            AiJobFinderTheme {
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    JobSourcesCard(
+                        credentials = AdzunaCredentials(appId = "id", appKey = "key"),
+                        joobleKey = "",
+                        diagnostics = ProviderDiagnostics(),
+                        onSaveAdzuna = { _, _ -> },
+                        onSaveJooble = {},
+                        onTestAdzuna = {
+                            called = true
+                            AdzunaCheckResult(
+                                status = AdzunaCheckStatus.OK,
+                                market = "gb",
+                                sampleTitle = "Maintenance Technician",
+                                message = "Adzuna accepted the credentials (API v1.0.0).",
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Add optional sources").performClick()
+        composeRule.onNodeWithText("Test Adzuna connection").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assert(called) { "the connection test callback was never invoked" }
+        composeRule.onNodeWithText("Adzuna accepted the credentials (API v1.0.0).").assertIsDisplayed()
+    }
+
+    @Test
+    fun aCustomModelIdCanBeTypedAndSelected() {
+        var selected: String? = null
+        composeRule.setContent {
+            AiJobFinderTheme {
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    AiAssistantCard(
+                        config = NvidiaConfig(apiKey = "saved-key"),
+                        encrypted = true,
+                        onSaveKey = {},
+                        onSelectModel = { selected = it },
+                        onConsentChange = {},
+                        onTestKey = { NvidiaResult(NvidiaStatus.OK) },
+                    )
+                }
+            }
+        }
+        composeRule.onNodeWithText("Set up the assistant").performClick()
+        composeRule.onNodeWithText("Or type a model id").performScrollTo()
+        composeRule.onAllNodes(hasSetTextAction()).onLast().performTextInput("some/vendor-brand-new-model")
+        composeRule.onNodeWithText("Use this model").performScrollTo().performClick()
+        assert(selected == "some/vendor-brand-new-model") { "expected the typed id, got $selected" }
     }
 }

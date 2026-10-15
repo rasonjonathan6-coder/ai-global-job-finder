@@ -168,9 +168,9 @@ class UserPreferencesRepository(
         dataStore.edit { it[nvidiaApiKeyKey] = secretCipher.encrypt(key.trim()) }
     }
 
-    /** The selected NVIDIA model id, validated against the known list on read. */
+    /** The selected NVIDIA model id. Any non-blank id is kept; the account list is the truth. */
     val nvidiaModelId: Flow<String> = dataStore.data.map { prefs ->
-        prefs[nvidiaModelKey]?.takeIf { NvidiaModels.isKnown(it) } ?: NvidiaModels.defaultModelId
+        prefs[nvidiaModelKey]?.takeIf { NvidiaModels.isSelectable(it) } ?: NvidiaModels.defaultModelId
     }
 
     suspend fun setNvidiaModelId(modelId: String) {
@@ -193,7 +193,7 @@ class UserPreferencesRepository(
     val nvidiaConfig: Flow<NvidiaConfig> = dataStore.data.map { prefs ->
         NvidiaConfig(
             apiKey = secretCipher.decrypt(prefs[nvidiaApiKeyKey].orEmpty()),
-            modelId = prefs[nvidiaModelKey]?.takeIf { NvidiaModels.isKnown(it) }
+            modelId = prefs[nvidiaModelKey]?.takeIf { NvidiaModels.isSelectable(it) }
                 ?: NvidiaModels.defaultModelId,
             consentGranted = prefs[nvidiaConsentKey] ?: false,
         )

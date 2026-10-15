@@ -561,6 +561,44 @@ choose which Adzuna national markets to query.
   picker and the assistant card at `w320dp`. Suite: **212 tests, 0 failures** (1 skipped:
   the opt-in `Stage14LiveProbeTest`).
 
+### Real API configuration and testing (Stage 17)
+
+Stage 16 wired the endpoints but left two gaps for actually testing them from the app: there
+was no way to prove an Adzuna key worked, and the NVIDIA model list was a hardcoded guess.
+
+- **Adzuna connection test (`AdzunaProvider.checkConnection`).** Tapping "Test Adzuna
+  connection" calls the cheap `/v1/api/version` endpoint first — which separates a bad key
+  from a bad search — then runs one real `results_per_page=1` search in the first configured
+  market that answers. The result (`AdzunaCheckStatus`/`AdzunaCheckResult`) is a plain-language
+  outcome that names the failure: rejected credentials, rate limited, timed out, unreachable,
+  unreadable body, service error. It carries what Adzuna actually returned (market, a sample
+  title, the reported total), so a live key is distinguishable from a plausible-looking
+  failure. An empty market is reported as empty — nothing is fabricated. A rejected key stops
+  the loop after one attempt; a market that is merely down falls through to the next.
+- **NVIDIA model discovery (`NvidiaAiClient.listModelIds`).** The same `/v1/models` call that
+  `validateKey` uses now also returns the ids the account can use, read from `data[].id`. The
+  Profile card shows them as selectable rows and offers a free-text field for any id, so the
+  user never has to trust the suggested list.
+- **The model list is no longer a whitelist.** NVIDIA retires and adds models constantly, so
+  `NvidiaModels.isSelectable` accepts any non-blank id and the suggestions are just starting
+  points. `UserPreferencesRepository` keeps whatever id the user picked instead of silently
+  reverting an unknown one to the default. The suggested ids were also corrected to
+  current, widely-hosted models (`meta/llama-3.1-8b-instruct` and friends) rather than the
+  retired placeholders Stage 16 guessed at.
+- **One request path, not two.** The in-app test and the feed share the same `AdzunaProvider`
+  instance (`AppContainer.adzunaProvider`), so "Test connection" exercises the real request
+  and parse rather than a separate approximation.
+- **Key handling is unchanged.** Keys stay encrypted on-device via `SecretCipher`; the test
+  sends them only to the source they belong to, and Adzuna's query-string key is still
+  redacted from any failure message by `HttpJsonClient.redactUrl`.
+- Tests: `Stage17ApiConfigTest` (17) pins the Adzuna check (success, not-configured, rejected
+  key, rate limit vs timeout, unreadable body, empty market, stop-on-bad-key, fall-through,
+  key-as-query-param) and NVIDIA discovery (sort/dedupe, rejected key, blank key, bad body,
+  assistant passthrough, custom-id persistence across a restart). `JobSourcesScreenTest`
+  gains the connection-test result and the custom-model flow; `ScreenshotTest` gains the
+  expanded assistant card and the connection-test card. Suite: **232 tests, 0 failures**
+  (2 skipped: the opt-in `Stage14LiveProbeTest` and `Stage17LiveApiProbeTest`).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

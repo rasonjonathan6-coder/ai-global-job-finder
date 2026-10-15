@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aiglobal.jobfinder.AppContainer
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.ApplicationRecord
 import com.aiglobal.jobfinder.data.model.ApplicationReminder
@@ -15,6 +16,7 @@ import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSyncState
+import com.aiglobal.jobfinder.data.model.NvidiaResult
 import com.aiglobal.jobfinder.data.model.UserProfile
 import com.aiglobal.jobfinder.data.model.isTerminal
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
@@ -91,8 +93,23 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
      * Validates a candidate key against NVIDIA without touching the saved one, so the user
      * can confirm it works before committing. Returns the classified result to the caller.
      */
-    suspend fun testNvidiaKey(candidateKey: String): com.aiglobal.jobfinder.data.model.NvidiaResult =
+    suspend fun testNvidiaKey(candidateKey: String): NvidiaResult =
         container.aiAssistant.testConnection(candidateKey.trim())
+
+    /**
+     * Lists the model ids the NVIDIA account can actually use, using the candidate key. No
+     * profile data is sent — this is only the account's model catalog.
+     */
+    suspend fun discoverNvidiaModels(candidateKey: String): List<String> =
+        container.aiAssistant.discoverModels(candidateKey.trim())
+
+    /**
+     * Runs a real Adzuna connection test with the saved credentials: the version endpoint
+     * plus one small search in a configured market. Nothing is fabricated — an empty market
+     * is reported as empty.
+     */
+    suspend fun testAdzunaConnection(): AdzunaCheckResult =
+        container.adzunaProvider.checkConnection()
 
     /** Switches a job source on or off; the feed honours it on the next validation run. */
     fun setSourceEnabled(sourceId: String, enabled: Boolean) {

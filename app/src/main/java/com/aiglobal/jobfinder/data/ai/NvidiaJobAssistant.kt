@@ -28,6 +28,12 @@ class NvidiaJobAssistant(
     /** Validates the key by asking NVIDIA for the model list. No profile data is sent. */
     suspend fun testConnection(apiKey: String): NvidiaResult = client.validateKey(apiKey)
 
+    /** Lists the model ids the account can use, so the user can pick a real one. */
+    suspend fun discoverModels(apiKey: String): List<String> {
+        val result = client.listModelIds(apiKey)
+        return if (result.isSuccess) result.text.lines().filter { it.isNotBlank() } else emptyList()
+    }
+
     /**
      * Runs [task] for [job] against [profile]. Returns [NvidiaStatus.CONSENT_REQUIRED] when
      * consent has not been granted, and never sends anything in that case.

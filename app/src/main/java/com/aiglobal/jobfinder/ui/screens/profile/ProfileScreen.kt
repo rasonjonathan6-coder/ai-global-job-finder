@@ -75,6 +75,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckStatus
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCountries
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.BenefitPriority
@@ -252,6 +254,7 @@ fun ProfileScreen(
                 onSelectModel = appViewModel::saveNvidiaModelId,
                 onConsentChange = appViewModel::setNvidiaConsent,
                 onTestKey = appViewModel::testNvidiaKey,
+                onDiscoverModels = appViewModel::discoverNvidiaModels,
             )
         }
 
@@ -267,6 +270,7 @@ fun ProfileScreen(
                 onToggleSource = appViewModel::setSourceEnabled,
                 onRunValidation = viewModel::runValidation,
                 onOpenDiagnostics = onOpenDiagnostics,
+                onTestAdzuna = appViewModel::testAdzunaConnection,
             )
         }
 
@@ -828,6 +832,7 @@ internal fun JobSourcesCard(
     onToggleSource: (String, Boolean) -> Unit = { _, _ -> },
     onRunValidation: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
+    onTestAdzuna: suspend () -> AdzunaCheckResult = { AdzunaCheckResult(AdzunaCheckStatus.NOT_CONFIGURED) },
 ) {
     val spacing = LocalSpacing.current
     var expanded by remember { mutableStateOf(false) }
@@ -871,6 +876,7 @@ internal fun JobSourcesCard(
         onToggleSource = onToggleSource,
         onRunValidation = onRunValidation,
         onOpenDiagnostics = onOpenDiagnostics,
+        onTestAdzuna = onTestAdzuna,
     )
 }
 
@@ -904,7 +910,11 @@ private fun JobSourcesCardContent(
     onToggleSource: (String, Boolean) -> Unit,
     onRunValidation: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onTestAdzuna: suspend () -> AdzunaCheckResult,
 ) {
+    val scope = rememberCoroutineScope()
+    var testingAdzuna by remember { mutableStateOf(false) }
+    var adzunaCheck by remember { mutableStateOf<AdzunaCheckResult?>(null) }
 
     AppCard(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
@@ -991,10 +1001,34 @@ private fun JobSourcesCardContent(
                         onSaveAdzuna(appId.trim(), appKey.trim())
                         onEditingAppIdChange(false)
                         onEditingAppKeyChange(false)
+                        adzunaCheck = null
                     },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = appId.isNotBlank() && appKey.isNotBlank(),
                 )
+
+                SecondaryButton(
+                    text = if (testingAdzuna) "Testing…" else "Test Adzuna connection",
+                    onClick = {
+                        testingAdzuna = true
+                        adzunaCheck = null
+                        scope.launch {
+                            adzunaCheck = onTestAdzuna()
+                            testingAdzuna = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = Icons.Filled.Bolt,
+                    enabled = adzunaSaved && !testingAdzuna,
+                )
+                if (!adzunaSaved) {
+                    Text(
+                        text = "Save the app id and key first, then test the connection.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                adzunaCheck?.let { check -> ConnectionResultRow(check.isSuccess, check.message) }
 
                 SecondaryButton(
                     text = if (countriesExpanded) "Hide markets" else "Choose Adzuna markets",
@@ -1066,6 +1100,7 @@ internal fun AiAssistantCard(
     onSelectModel: (String) -> Unit,
     onConsentChange: (Boolean) -> Unit,
     onTestKey: suspend (String) -> NvidiaResult,
+    onDiscoverModels: suspend (String) -> List<String> = { emptyList() },
 ) {
     val spacing = LocalSpacing.current
     var expanded by remember { mutableStateOf(false) }
@@ -1073,6 +1108,9 @@ internal fun AiAssistantCard(
     var editingKey by remember(config.apiKey) { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<NvidiaResult?>(null) }
+    var discovering by remember { mutableStateOf(false) }
+    var discovered by remember { mutableStateOf<List<String>>(emptyList()) }
+    var customModel by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val saved = config.isConfigured
 
@@ -1228,6 +1266,77 @@ internal fun AiAssistantCard(
                         onClick = { onSelectModel(model.id) },
                     )
                 }
+                // A model the user's account serves but the suggested list does not know about
+                // is still selectable: the account's own list is the source of truth.
+                if (config.modelId.isNotBlank() && !NvidiaModels.isKnown(config.modelId)) {
+                    ModelRow(
+                        model = NvidiaModels.discovered(config.modelId),
+                        selected = true,
+                        onClick = {},
+                    )
+                }
+
+                SecondaryButton(
+                    text = if (discovering) "Reading your model list…" else "Refresh models from my account",
+                    onClick = {
+                        discovering = true
+                        scope.launch {
+                            // A saved key can list models without being retyped; a typed one wins.
+                            discovered = onDiscoverModels(key.ifBlank { config.apiKey })
+                            discovering = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = Icons.Filled.Hub,
+                    enabled = (saved || key.isNotBlank()) && !discovering,
+                )
+                if (discovered.isNotEmpty()) {
+                    Text(
+                        text = "${discovered.size} model${if (discovered.size == 1) "" else "s"} " +
+                            "available on your account. Tap one to use it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    discovered.forEach { id ->
+                        ModelRow(
+                            model = NvidiaModels.discovered(id),
+                            selected = id == config.modelId,
+                            onClick = { onSelectModel(id) },
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Or type a model id",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                BasicTextField(
+                    value = customModel,
+                    onValueChange = { customModel = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                )
+                SecondaryButton(
+                    text = "Use this model",
+                    onClick = {
+                        val id = customModel.trim()
+                        if (id.isNotEmpty()) {
+                            onSelectModel(id)
+                            customModel = ""
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = customModel.isNotBlank(),
+                )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -1323,6 +1432,34 @@ private fun DiagnosticRow(
             checked = enabled,
             onCheckedChange = onToggle,
             colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary),
+        )
+    }
+}
+
+/** A compact success/failure line used under the two "test connection" buttons. */
+@Composable
+private fun ConnectionResultRow(success: Boolean, message: String) {
+    val container = if (success) extendedColors.successContainer else extendedColors.dangerContainer
+    val content = if (success) extendedColors.success else extendedColors.danger
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(container)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = if (success) Icons.Filled.CheckCircle else Icons.Filled.Info,
+            contentDescription = null,
+            tint = content,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = content,
         )
     }
 }
