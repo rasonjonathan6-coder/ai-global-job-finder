@@ -53,7 +53,10 @@ data class Job(
     val eligibility: MadagascarEligibility,
     val visaSupport: VisaSupport,
     val scamRisk: ScamRisk,
-    val postedAtEpochMillis: Long,
+    /** When the source published the posting, or null when it did not state a date. */
+    val postedAtEpochMillis: Long?,
+    /** When the app retrieved this posting. Null only for records built before Stage 13. */
+    val retrievedAtEpochMillis: Long? = null,
     val source: String,
     val sourceUrl: String,
     val workMode: WorkMode,

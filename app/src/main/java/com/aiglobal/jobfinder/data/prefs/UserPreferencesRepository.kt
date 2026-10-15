@@ -33,10 +33,23 @@ class UserPreferencesRepository(private val context: Context) {
     private val expatMinExpatScoreKey = intPreferencesKey("expat_min_expat_score")
     private val expatMinMatchScoreKey = intPreferencesKey("expat_min_match_score")
     private val expatRequireVisaKey = booleanPreferencesKey("expat_require_visa")
+    private val demoModeKey = booleanPreferencesKey("demo_mode_enabled")
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
         runCatching { ThemeMode.valueOf(prefs[themeKey] ?: ThemeMode.System.name) }
             .getOrDefault(ThemeMode.System)
+    }
+
+    /**
+     * Demo mode. Off by default, so a fresh install starts with an empty personal workspace
+     * and never shows the sample candidate or the sample applications. When on, the app
+     * serves curated fixture data so the UI can be explored without a CV or a network.
+     */
+    val demoMode: Flow<Boolean> = context.dataStore.data
+        .map { prefs -> prefs[demoModeKey] ?: false }
+
+    suspend fun setDemoMode(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[demoModeKey] = enabled }
     }
 
     /**

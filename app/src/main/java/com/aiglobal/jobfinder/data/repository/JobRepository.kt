@@ -44,4 +44,10 @@ interface JobRepository {
     suspend fun toggleSaved(jobId: String)
     fun jobById(id: String): Job?
     suspend fun setAutoApply(enabled: Boolean)
+
+    /**
+     * Switches the repository between the live feeds and the deterministic demo fixtures.
+     * Off by default; an explicit user choice, so a fresh install never shows sample data.
+     */
+    suspend fun setDemoMode(enabled: Boolean)
 }

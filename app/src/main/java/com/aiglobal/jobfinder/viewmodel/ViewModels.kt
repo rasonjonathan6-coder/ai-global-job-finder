@@ -319,6 +319,8 @@ data class HomeUiState(
     val totalJobs: Int = 0,
     val applications: List<ApplicationRecord> = emptyList(),
     val reminders: List<ApplicationReminder> = emptyList(),
+    /** Per-source sync status, so an empty feed can be explained honestly. */
+    val syncState: JobSyncState = JobSyncState(),
 ) {
     /** Application counts, derived so the dashboard and the pipeline never disagree. */
     val activeApplications: Int get() = applications.count {
@@ -345,6 +347,9 @@ class HomeViewModel(
         }
         viewModelScope.launch {
             repository.stats.collect { stats -> _uiState.update { it.copy(stats = stats) } }
+        }
+        viewModelScope.launch {
+            repository.syncState.collect { sync -> _uiState.update { it.copy(syncState = sync) } }
         }
         viewModelScope.launch {
             repository.jobs.collect { jobs ->
@@ -468,11 +473,18 @@ class ApplicationsViewModelFactory(
 
 class ProfileViewModel(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
+    demoMode: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false),
 ) : ViewModel() {
 
     val profile: StateFlow<UserProfile?> = repository.profile
         .map { it as UserProfile? }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Whether the optional demo fixtures are being served instead of the live feeds. */
+    val demoMode: StateFlow<Boolean> = demoMode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setDemoMode(enabled: Boolean) = viewModelScope.launch { repository.setDemoMode(enabled) }
 
     /** Per-source health, shown in the Job sources diagnostics section. */
     val diagnostics: StateFlow<com.aiglobal.jobfinder.data.model.ProviderDiagnostics> = repository.diagnostics
@@ -485,9 +497,10 @@ class ProfileViewModel(
 
 class ProfileViewModelFactory(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
+    private val demoMode: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false),
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = ProfileViewModel(repository) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = ProfileViewModel(repository, demoMode) as T
 }
 
 /** What the AI workspace needs to describe the current state honestly. */

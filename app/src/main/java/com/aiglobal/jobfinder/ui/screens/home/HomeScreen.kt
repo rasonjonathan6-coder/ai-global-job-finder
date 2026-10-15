@@ -56,7 +56,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.model.Job
+import com.aiglobal.jobfinder.data.model.SourceState
 import com.aiglobal.jobfinder.ui.components.ErrorState
+import com.aiglobal.jobfinder.ui.components.EmptyState
 import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.components.JobCardCompact
 import com.aiglobal.jobfinder.ui.components.JobListSkeleton
@@ -86,9 +88,28 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
+    // First launch with no CV and no completed sync: nothing has failed yet, the user
+    // simply has not imported a CV. Any real source error falls through to the error state.
+    val isFirstRun = state.profile?.cvImported != true &&
+        state.syncState.sources.none { it.state == SourceState.SUCCESS || it.state == SourceState.ERROR }
+
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         if (state.isLoading && state.bestMatches.isEmpty()) {
             HomeLoadingContent()
+        } else if (state.bestMatches.isEmpty() && isFirstRun) {
+            EmptyState(
+                title = "Let's find your opportunities",
+                message = "Import your CV so the AI can rank roles abroad that accept applicants from Madagascar.",
+                emoji = "🚀",
+                action = {
+                    PrimaryButton(
+                        text = "Import your CV",
+                        onClick = onOpenJobs,
+                        leadingIcon = Icons.Filled.Description,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+            )
         } else if (state.bestMatches.isEmpty()) {
             ErrorState(
                 title = "No opportunities loaded",

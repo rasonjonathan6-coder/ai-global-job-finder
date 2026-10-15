@@ -207,7 +207,7 @@ fun JobCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     FreshnessLabel(
-                        text = relativeTime(job.postedAtEpochMillis),
+                        text = postedAgeLabel(job.postedAtEpochMillis),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -303,7 +303,7 @@ fun JobCardCompact(
                 MatchChip(job.matchScore)
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = relativeTime(job.postedAtEpochMillis),
+                    text = postedAgeLabel(job.postedAtEpochMillis),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

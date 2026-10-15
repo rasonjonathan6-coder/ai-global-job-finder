@@ -23,6 +23,8 @@ data class RawJob(
     val tags: List<String> = emptyList(),
     val employmentType: String? = null,
     val postedAtEpochMillis: Long? = null,
+    /** When the app fetched this posting, so an offline cache can report its real age. */
+    val retrievedAtEpochMillis: Long? = null,
     val isRemote: Boolean = false,
     val salaryMin: Int? = null,
     val salaryMax: Int? = null,

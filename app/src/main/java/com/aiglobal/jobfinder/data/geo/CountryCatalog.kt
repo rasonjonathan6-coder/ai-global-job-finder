@@ -133,4 +133,11 @@ object CountryCatalog {
 /** A resolved country with its flag emoji. */
 data class Country(val name: String, val flag: String) {
     val isWorldwide: Boolean get() = name == CountryCatalog.WORLDWIDE
+
+    /**
+     * True when the location names a specific country the catalog recognizes (or an
+     * unrecognized non-blank label), false for worldwide. Used to tell a remote role the
+     * employer bounded to a country apart from one open to applicants anywhere.
+     */
+    val isCountryScoped: Boolean get() = !isWorldwide && name.isNotBlank()
 }

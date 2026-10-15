@@ -30,6 +30,7 @@ class NavigationTest {
     class TestApp : AiJobFinderApp() {
         override fun createContainer(): AppContainer = object : AppContainer(this) {
             override fun createJobRepository(): JobRepository = SampleJobRepository(refreshDelayMillis = 0)
+            override val seedsSampleData: Boolean get() = true
         }
     }
 

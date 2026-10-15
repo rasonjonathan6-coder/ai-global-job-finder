@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Icon
@@ -102,6 +103,7 @@ fun ProfileScreen(
     onOpenDiagnostics: () -> Unit = {},
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
+    val demoMode by viewModel.demoMode.collectAsStateWithLifecycle()
     val themeMode by appViewModel.themeMode.collectAsStateWithLifecycle()
     val adzunaCredentials by appViewModel.adzunaCredentials.collectAsStateWithLifecycle()
     val joobleApiKey by appViewModel.joobleApiKey.collectAsStateWithLifecycle()
@@ -215,6 +217,8 @@ fun ProfileScreen(
 
         item { AutoApplyCard(enabled = current.autoApplyEnabled, onToggle = viewModel::setAutoApply) }
 
+        item { DemoModeCard(enabled = demoMode, onToggle = viewModel::setDemoMode) }
+
         item {
             JobSourcesCard(
                 credentials = adzunaCredentials,
@@ -291,7 +295,7 @@ private fun ProfileHeaderCard(profile: UserProfile) {
         Spacer(Modifier.width(spacing.md))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = profile.fullName,
+                text = profile.fullName.ifBlank { "Your profile" },
                 style = MaterialTheme.typography.titleLarge,
                 color = Color.White,
                 maxLines = 1,
@@ -299,29 +303,40 @@ private fun ProfileHeaderCard(profile: UserProfile) {
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                text = profile.headline,
+                text = profile.headline.ifBlank { "Import a CV to build your profile" },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White.copy(alpha = 0.78f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Pill(
-                    text = profile.location,
-                    containerColor = Color.White.copy(alpha = 0.14f),
-                    contentColor = Color.White,
-                    leadingIcon = Icons.Filled.Place,
-                )
+            if (profile.location.isNotBlank()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Pill(
+                        text = profile.location,
+                        containerColor = Color.White.copy(alpha = 0.14f),
+                        contentColor = Color.White,
+                        leadingIcon = Icons.Filled.Place,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
             }
-            Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Pill(
-                    text = "${profile.yearsOfExperience} yrs experience",
-                    containerColor = Color.White.copy(alpha = 0.14f),
-                    contentColor = Color.White,
-                    leadingIcon = Icons.Filled.WorkOutline,
-                )
+                if (profile.yearsOfExperience > 0) {
+                    Pill(
+                        text = "${profile.yearsOfExperience} yrs experience",
+                        containerColor = Color.White.copy(alpha = 0.14f),
+                        contentColor = Color.White,
+                        leadingIcon = Icons.Filled.WorkOutline,
+                    )
+                } else if (!profile.cvImported) {
+                    Pill(
+                        text = "No CV imported",
+                        containerColor = Color.White.copy(alpha = 0.14f),
+                        contentColor = Color.White,
+                        leadingIcon = Icons.Filled.Description,
+                    )
+                }
             }
         }
     }
@@ -704,6 +719,55 @@ private fun AutoApplyCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Optional demo mode. Off by default: the live app never shows the curated sample
+ * candidate or applications. Turning it on serves deterministic fixtures so the UI
+ * can be explored without a network — clearly labelled, never mistaken for real data.
+ */
+@Composable
+private fun DemoModeCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    val spacing = LocalSpacing.current
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Science,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Demo mode",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = if (enabled) "On — showing sample jobs and a sample profile" else "Off — showing real job feeds",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                    checkedTrackColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
         }
     }
 }

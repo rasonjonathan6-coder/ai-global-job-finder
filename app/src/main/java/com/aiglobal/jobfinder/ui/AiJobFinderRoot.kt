@@ -223,7 +223,9 @@ fun AiJobFinderRoot(
                 )
             }
             composable(Destination.Profile.route) {
-                val vm: ProfileViewModel = viewModel(factory = ProfileViewModelFactory(container.jobRepository))
+                val vm: ProfileViewModel = viewModel(
+                    factory = ProfileViewModelFactory(container.jobRepository, container.preferencesRepository.demoMode),
+                )
                 ProfileScreen(
                     viewModel = vm,
                     appViewModel = appViewModel,

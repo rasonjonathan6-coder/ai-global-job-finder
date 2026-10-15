@@ -132,4 +132,7 @@ class SampleJobRepository(
     override suspend fun setAutoApply(enabled: Boolean) {
         _profile.update { it.copy(autoApplyEnabled = enabled) }
     }
+
+    /** The fixture is already sample data, so demo mode has nothing to switch. */
+    override suspend fun setDemoMode(enabled: Boolean) = Unit
 }

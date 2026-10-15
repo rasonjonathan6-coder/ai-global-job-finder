@@ -59,6 +59,9 @@ class JobMapper(
                 tags = raw.tags,
                 employmentType = raw.employmentType,
                 isRemote = raw.isRemote,
+                // A remote listing whose location names a country (not "Worldwide") is a
+                // location-restricted remote role: the employer bounded where it may hire.
+                locationRestrictedRemote = raw.isRemote && country.isCountryScoped,
             ),
         )
 
@@ -85,7 +88,10 @@ class JobMapper(
             eligibility = eligibility.eligibility,
             visaSupport = eligibility.visaSupport,
             scamRisk = scamRiskFor(raw),
-            postedAtEpochMillis = raw.postedAtEpochMillis ?: now,
+            // Never invent a publication date: a month-old posting shown as "just now"
+            // misleads the candidate. Keep null when the source did not state one.
+            postedAtEpochMillis = raw.postedAtEpochMillis,
+            retrievedAtEpochMillis = raw.retrievedAtEpochMillis ?: now,
             source = raw.providerName,
             sourceUrl = raw.url,
             workMode = if (raw.isRemote) WorkMode.REMOTE else WorkMode.ONSITE,

@@ -381,8 +381,37 @@ be trusted as a real job-application tool.
 - **`AutoApplyCenter` honours the saved threshold.** It builds a fresh
   `AutoApplyEngine(threshold = store.threshold.value)` per run instead of a default-threshold
   engine, so the queue matches the number the settings screen shows.
-- Tests: the full suite (`./gradlew :app:testDebugUnitTest`) is green at 159 tests, 0
+- Tests: the full suite (`./gradlew :app:testDebugUnitTest`) is green at 162 tests, 0
   failures, covering navigation, both themes and narrow layouts.
+
+### Production data hygiene and demo mode (Stage 13)
+
+The app is a real tool for one candidate, so a fresh install must never show an invented
+candidate or invented applications. Sample data now lives behind an explicit demo switch.
+
+- **Demo mode is opt-in and persisted.** `UserPreferencesRepository.demoMode`
+  (`demo_mode_enabled`, default `false`) is read into `LiveJobRepository.demoMode` and
+  `ApplicationCenter.demoMode`. Nothing sample-shaped reaches the screen while it is off.
+- **The dashboard profile is derived, never seeded.** `LiveJobRepository` no longer sets
+  `_profile = SampleData.profile(...)`. Its `profile` flow combines the imported `CvRecord`
+  (`cvRepository.record`) with the auto-apply flag through `buildUserProfile(record, auto)`
+  (`data/model/UserProfile.kt`). With no CV the profile is empty and `ProfileScreen` shows
+  "Your profile" / "Import a CV to build your profile" instead of a fabricated name.
+- **Applications start empty.** `ApplicationCenter` only calls `seedFromSample()` when
+  `demoMode` emits `true` on a store with no persisted document; it collects the flow
+  (`store.load()` first) rather than reading it once, so toggling demo mode later still
+  seeds. In production the Applications tab is empty until the user creates a record.
+- **Posting dates are never invented.** `Job.postedAtEpochMillis` is nullable and
+  `JobMapper` keeps it null when the source omits a date; `Job.retrievedAtEpochMillis`
+  records when the app fetched it. `postedAgeLabel(...)` (`ui/components/Formatters.kt`)
+  renders a missing date as "Date not stated" rather than a fake "just now".
+- **`JobRepository.setDemoMode(Boolean)`** is the seam; the live repo delegates to the
+  persisted setter, `SampleJobRepository` is a no-op (it is already a fixture). Switching
+  demo off triggers a live refresh so the user is not left with an empty list.
+- **Test seam:** `AppContainer.seedsSampleData` (default `false`) feeds `ApplicationCenter`;
+  `NavigationTest.TestApp` overrides it to `true` so its fixture container keeps the
+  seeded pipeline. `ScreenshotTest` deliberately uses the production default and renders
+  screens from explicit fixtures. `ProductionDataTest` pins the invariant.
 
 ## Conventions
 

@@ -95,9 +95,21 @@ class EligibilityEngine {
             hasOfficial = true
         }
 
-        // ---- 4. A remote or worldwide location is a published fact of its own.
-        val remoteAnywhere = input.isRemote && (input.location.isBlank() ||
-            REMOTE_WORLDWIDE_LOCATIONS.any { input.location.lowercase().contains(it) })
+        // ---- 4. A remote role whose location names a country is bounded to it.
+        if (input.locationRestrictedRemote) {
+            reasons += EligibilityReason(
+                label = "Remote role limited to one country",
+                detail = "The source lists this remote role for \"${input.location}\", so the employer " +
+                    "may only hire where it has a legal entity. Eligibility from Madagascar is not stated.",
+                official = true,
+            )
+            hasOfficial = true
+        }
+
+        // ---- 5. A remote or worldwide location is a published fact of its own.
+        val locationLower = input.location.lowercase()
+        val remoteAnywhere = input.isRemote && !input.locationRestrictedRemote &&
+            (input.location.isBlank() || REMOTE_WORLDWIDE_LOCATIONS.any { locationLower.contains(it) })
         if (remoteAnywhere) {
             reasons += EligibilityReason(
                 label = "Location listed as remote or worldwide",
@@ -212,4 +224,10 @@ data class EligibilityInput(
     val tags: List<String> = emptyList(),
     val employmentType: String? = null,
     val isRemote: Boolean = false,
+    /**
+     * True for a remote posting whose location names a specific country. Such a role is
+     * not the same as "remote worldwide": the employer may be hiring only where it can
+     * lawfully employ, so eligibility is left UNCLEAR rather than assumed.
+     */
+    val locationRestrictedRemote: Boolean = false,
 )

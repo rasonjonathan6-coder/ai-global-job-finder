@@ -49,6 +49,8 @@ class ApplicationCenter(
     private val generator: CoverLetterGenerator = CoverLetterGenerator(),
     private val clock: () -> Long = System::currentTimeMillis,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
+    /** When true, seed the curated sample applications so the demo can be explored. Off by default. */
+    private val demoMode: Flow<Boolean> = flowOf(false),
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -65,7 +67,17 @@ class ApplicationCenter(
     init {
         scope.launch {
             store.load()
-            if (!store.hadPersistedDocument) seedFromSample()
+            // A fresh install starts empty. Sample applications are only ever seeded in
+            // demo mode, so the pipeline never shows a fabricated record as the user's own.
+            if (!store.hadPersistedDocument) {
+                var seeded = false
+                demoMode.collect { enabled ->
+                    if (enabled && !seeded && !store.hadPersistedDocument) {
+                        seeded = true
+                        seedFromSample()
+                    }
+                }
+            }
         }
     }
 

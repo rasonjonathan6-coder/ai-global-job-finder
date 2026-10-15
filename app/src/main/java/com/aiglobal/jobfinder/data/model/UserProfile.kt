@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.model
 
 import androidx.compose.runtime.Immutable
+import com.aiglobal.jobfinder.data.cv.CvCompleteness
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -102,4 +103,42 @@ data class UserProfile(
             .take(2)
             .joinToString("") { it.first().uppercase() }
             .ifEmpty { "JG" }
+}
+
+/**
+ * Builds the display profile from what the app actually knows: the imported CV and the
+ * user's auto-apply preference. Nothing is invented — every empty field stays empty, and
+ * the UI shows an empty state until the candidate imports a CV.
+ */
+fun buildUserProfile(record: CvRecord?, autoApplyEnabled: Boolean): UserProfile {
+    val profile = record?.profile ?: CandidateProfile()
+
+    val skills = buildList {
+        profile.skills.forEach { add(Skill(it, SkillCategory.TECHNICAL, Proficiency.ADVANCED)) }
+        profile.certifications.forEach {
+            add(Skill(it.name, SkillCategory.CERTIFICATION, Proficiency.INTERMEDIATE))
+        }
+        profile.languages.forEach { add(Skill(it.name, SkillCategory.LANGUAGE, Proficiency.INTERMEDIATE)) }
+    }
+
+    return UserProfile(
+        fullName = profile.fullName,
+        headline = profile.currentTitle,
+        location = profile.location,
+        email = profile.email,
+        phone = profile.phone,
+        summary = profile.summary,
+        yearsOfExperience = profile.yearsOfExperience ?: 0,
+        skills = skills,
+        experience = emptyList(),
+        education = profile.education,
+        languages = profile.languages.map { it.name },
+        targetCountries = profile.preferredCountries,
+        targetRoles = profile.preferredRoles,
+        cvImported = record != null && record.status == CvStatus.ANALYZED,
+        cvFileName = record?.fileName,
+        cvUpdatedAtEpochMillis = record?.analyzedAtEpochMillis,
+        autoApplyEnabled = autoApplyEnabled,
+        profileCompletion = CvCompleteness.of(profile).percent,
+    )
 }

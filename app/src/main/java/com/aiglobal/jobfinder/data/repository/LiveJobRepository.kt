@@ -55,11 +55,18 @@ class LiveJobRepository(
     private val providers: List<JobProvider>,
     private val mapper: JobMapper,
     private val candidateProfile: Flow<CandidateProfile>,
+    /** The imported CV record; the display profile is derived from it, never invented. */
+    private val cvRecord: Flow<com.aiglobal.jobfinder.data.model.CvRecord?> =
+        MutableStateFlow(null),
     private val cache: JobCache,
     private val validationEngine: RecordValidationEngine = RecordValidationEngine(),
     /** Returns true when the device currently has a usable connection. */
     private val isOnline: () -> Boolean = { true },
     providerSettings: Flow<ProviderSettings> = MutableStateFlow(ProviderSettings()),
+    /** When true, the repository serves the deterministic sample fixtures instead of the feeds. */
+    private val demoMode: Flow<Boolean> = MutableStateFlow(false),
+    /** Persists the demo-mode choice; the flow above then reflects it back. */
+    private val demoModeSetter: suspend (Boolean) -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis,
     private val perProviderLimit: Int = 60,
     /** Hard ceiling on a single source, so one slow feed cannot hold up the whole refresh. */
@@ -72,6 +79,13 @@ class LiveJobRepository(
     private val rawJobs = MutableStateFlow<List<RawJob>>(emptyList())
     private val savedIds = MutableStateFlow<Set<String>>(emptySet())
     private val settings = MutableStateFlow(ProviderSettings())
+
+    /** Latest demo-mode value, kept in sync with [demoMode] so the refresh path can read it. */
+    @Volatile
+    private var demoEnabled: Boolean = false
+
+    /** The curated fixtures, used only while demo mode is on. */
+    private val sampleJobs: List<Job> by lazy { SampleData.jobs(clock()) }
 
     private val _syncState = MutableStateFlow(
         JobSyncState(sources = providers.map { JobSource(it.id, it.name, it.homepage, SourceState.IDLE) }),
@@ -94,13 +108,27 @@ class LiveJobRepository(
      */
     private var searchKeywords: List<String> = emptyList()
 
-    override val jobs: Flow<List<Job>> = combine(scoredJobs, savedIds) { jobList, saved ->
-        jobList.map { if (saved.contains(it.id)) it.copy(isSaved = true) else it }
-    }
+    override val jobs: Flow<List<Job>> =
+        combine(scoredJobs, savedIds, demoMode) { jobList, saved, demo ->
+            val base = if (demo) sampleJobs else jobList
+            base.map { if (saved.contains(it.id)) it.copy(isSaved = true) else it }
+        }
 
     private val seedNow = clock()
-    private val _profile = MutableStateFlow(SampleData.profile(seedNow))
-    override val profile: Flow<com.aiglobal.jobfinder.data.model.UserProfile> = _profile.asStateFlow()
+
+    /** Auto-apply preference; the repository's job of persisting it is unchanged from before. */
+    private val autoApplyEnabled = MutableStateFlow(false)
+
+    /**
+     * The display profile is derived from the imported CV — never invented. A fresh
+     * install therefore has an empty profile and the Profile screen shows its empty state.
+     * In demo mode the curated sample profile is served instead.
+     */
+    override val profile: Flow<com.aiglobal.jobfinder.data.model.UserProfile> =
+        combine(cvRecord, autoApplyEnabled, demoMode) { record, auto, demo ->
+            if (demo) SampleData.profile(seedNow)
+            else com.aiglobal.jobfinder.data.model.buildUserProfile(record, auto)
+        }
 
     override val stats: Flow<DashboardStats> =
         jobs.map { jobList ->
@@ -116,6 +144,13 @@ class LiveJobRepository(
         // Serve the cache immediately so the first frame has content, then refresh.
         val cached = cache.read()
         if (cached.isNotEmpty()) rawJobs.value = cached
+        scope.launch {
+            demoMode.collect { enabled ->
+                demoEnabled = enabled
+                // Leaving demo mode must not strand the user with an empty list.
+                if (!enabled) runLiveValidation()
+            }
+        }
         scope.launch {
             candidateProfile.collect { profile ->
                 searchKeywords = profile.currentTitle.takeIf { it.isNotBlank() }?.let { listOf(it) }
@@ -214,10 +249,13 @@ class LiveJobRepository(
             )
         }
 
-        // Keep the last good list when the attempt produced nothing usable.
+        // Keep the last good list when the attempt produced nothing usable. Stamp the
+        // retrieval time on each record so a later offline launch reports the true age
+        // instead of presenting cached postings as freshly fetched.
         if (anySuccess && dedup.kept.isNotEmpty()) {
-            rawJobs.value = dedup.kept
-            cache.write(dedup.kept)
+            val stamped = dedup.kept.map { if (it.retrievedAtEpochMillis == null) it.copy(retrievedAtEpochMillis = attemptAt) else it }
+            rawJobs.value = stamped
+            cache.write(stamped)
         }
 
         val lastSuccess = if (anySuccess) attemptAt else _diagnostics.value.lastSuccessAtEpochMillis
@@ -438,10 +476,15 @@ class LiveJobRepository(
         savedIds.update { current -> if (current.contains(jobId)) current - jobId else current + jobId }
     }
 
-    override fun jobById(id: String): Job? = scoredJobs.value.firstOrNull { it.id == id }
+    override fun jobById(id: String): Job? =
+        (if (demoEnabled) sampleJobs else scoredJobs.value).firstOrNull { it.id == id }
 
     override suspend fun setAutoApply(enabled: Boolean) {
-        _profile.update { it.copy(autoApplyEnabled = enabled) }
+        autoApplyEnabled.value = enabled
+    }
+
+    override suspend fun setDemoMode(enabled: Boolean) {
+        demoModeSetter(enabled)
     }
 
     /** One provider's attempt, carried from the concurrent fetch to the recording step. */

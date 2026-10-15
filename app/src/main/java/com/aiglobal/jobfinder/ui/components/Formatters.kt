@@ -65,6 +65,13 @@ fun relativeTime(epochMillis: Long, now: Long = System.currentTimeMillis()): Str
     }
 }
 
+/**
+ * Freshness label for a posting whose source may not have stated a date. Never invents one:
+ * a missing date reads "Date not stated" rather than a fabricated "just now".
+ */
+fun postedAgeLabel(postedAtEpochMillis: Long?, now: Long = System.currentTimeMillis()): String =
+    postedAtEpochMillis?.let { relativeTime(it, now) } ?: "Date not stated"
+
 fun formatShortDate(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).format(dateFormat)
 

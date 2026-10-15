@@ -79,6 +79,13 @@ open class AppContainer(application: Application) {
     val jobRepository: JobRepository by lazy { createJobRepository() }
 
     /**
+     * What the deterministic test fixtures stand in for. In production the sample candidate
+     * and sample applications are only ever shown in demo mode — never on a fresh install.
+     * Tests that swap in fixture data can override this to keep the demo behaviour.
+     */
+    protected open val seedsSampleData: Boolean get() = false
+
+    /**
      * The application pipeline, cover-letter writer and expat guide. Persisted to
      * app-private storage; nothing here is uploaded anywhere.
      */
@@ -87,6 +94,7 @@ open class AppContainer(application: Application) {
             repository = jobRepository,
             store = ApplicationStore(application),
             candidateProfile = candidateProfile,
+            demoMode = MutableStateFlow(seedsSampleData),
         )
     }
 
@@ -122,9 +130,12 @@ open class AppContainer(application: Application) {
             eligibilityEngine = EligibilityEngine(),
         ),
         candidateProfile = candidateProfile,
+        cvRecord = cvRepository.record,
         cache = JobCache(File(application.filesDir, "job_feed")),
         isOnline = { NetworkMonitor(application).isOnline() },
         providerSettings = providerSettings,
+        demoMode = preferencesRepository.demoMode,
+        demoModeSetter = { enabled -> preferencesRepository.setDemoMode(enabled) },
     )
 
     /**
