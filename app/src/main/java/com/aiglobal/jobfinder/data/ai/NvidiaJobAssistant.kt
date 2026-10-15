@@ -34,6 +34,10 @@ class NvidiaJobAssistant(
         return if (result.isSuccess) result.text.lines().filter { it.isNotBlank() } else emptyList()
     }
 
+    /** Runs the cheapest real inference on the chosen model to prove it can be used. */
+    suspend fun testModel(apiKey: String, modelId: String): NvidiaResult =
+        client.testModel(apiKey, modelId)
+
     /**
      * Runs [task] for [job] against [profile]. Returns [NvidiaStatus.CONSENT_REQUIRED] when
      * consent has not been granted, and never sends anything in that case.

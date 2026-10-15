@@ -97,6 +97,7 @@ enum class NvidiaStatus(val label: String) {
     TIMEOUT("Timed out"),
     NETWORK("Network error"),
     MODEL_UNAVAILABLE("Model unavailable"),
+    UNSUPPORTED_MODEL("Model unsupported"),
     BAD_RESPONSE("Unexpected response"),
     DISABLED("Turned off"),
 }

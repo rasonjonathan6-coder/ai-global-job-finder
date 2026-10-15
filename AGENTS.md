@@ -599,6 +599,38 @@ was no way to prove an Adzuna key worked, and the NVIDIA model list was a hardco
   expanded assistant card and the connection-test card. Suite: **232 tests, 0 failures**
   (2 skipped: the opt-in `Stage14LiveProbeTest` and `Stage17LiveApiProbeTest`).
 
+### Live API validation and international job search (Stage 18)
+
+Stage 17 could list models and test keys; Stage 18 proves the selected model can actually
+run, and widens eligibility to remote roles scoped to a region that includes Madagascar.
+
+- **Model inference probe (`NvidiaAiClient.testModel`).** "Test the selected model" sends the
+  cheapest possible request — a two-word prompt at the smallest output budget the client
+  allows — and classifies the outcome. It proves the account can *run* the model, not merely
+  list it, which is the gap that let a listed-but-unusable model look fine. The answer is
+  discarded; only the verdict is kept. Exposed through `NvidiaJobAssistant.testModel` and
+  `AppViewModel.testSelectedNvidiaModel`, surfaced as a result chip under the model list.
+- **Unsupported model ids are named, not guessed (`NvidiaStatus.UNSUPPORTED_MODEL`).** A model
+  id that is not `vendor/name` shape cannot resolve at NVIDIA, so `complete` and `testModel`
+  reject it before spending a request and say so in plain language, instead of surfacing an
+  opaque HTTP error.
+- **Region-scoped remote eligibility (`EligibilityEngine`).** A remote role bound to a region
+  that normally includes Madagascar (EMEA, Africa, Indian Ocean, UTC+1/2/3, …) now resolves to
+  ELIGIBLE with a heuristic reason, rather than falling through to UNCLEAR. This matters because
+  the mapper flags *any* non-worldwide remote location as `locationRestrictedRemote`, so the
+  region case used to be swallowed by the one-country case. Priority is now: hard restriction →
+  sponsorship → explicit international → region-including-Madagascar → worldwide remote →
+  remote-bound-to-a-foreign-country (UNCLEAR). A region that does *not* include Madagascar
+  ("Europe") and a remote role bound to one foreign country both stay UNCLEAR.
+- **Nothing is fabricated.** The region reason is marked `official = false`; the probe sends no
+  CV facts (asserted in tests); eligibility still never reads silence as sponsorship.
+- Tests: `Stage18LiveValidationTest` (15) pins the probe (blank key/model, malformed id, success
+  with a parsed model field, empty-body bad response, unknown model, rejected key, no profile
+  data in the probe body) and the region verdicts (EMEA/Africa eligible, Europe/US unclear,
+  restriction still wins, mapper carries the verdict to the `Job`). `ScreenshotTest` gains the
+  model-probe card. Suite: **249 tests, 0 failures** (2 skipped: the opt-in `Stage14LiveProbeTest`
+  and `Stage17LiveApiProbeTest`).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

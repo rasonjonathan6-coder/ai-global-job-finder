@@ -95,8 +95,39 @@ class EligibilityEngine {
             hasOfficial = true
         }
 
-        // ---- 4. A remote role whose location names a country is bounded to it.
-        if (input.locationRestrictedRemote) {
+        // ---- 4. Remote roles, in priority order: a region that includes Madagascar, then a
+        // worldwide/unspecified remote, then a remote bound to a country Madagascar is not in.
+        val locationLower = input.location.lowercase()
+
+        // A remote role scoped to a region, not a country (e.g. "Remote — EMEA"). It is not
+        // worldwide, but the region does include Madagascar, so it is a stronger signal than
+        // silence — still not a promise, hence a heuristic reason.
+        val remoteRegion = input.isRemote && REMOTE_REGIONS.any { (region, countries) ->
+            locationLower.contains(region) && countries.contains("mg")
+        }
+
+        // A remote or worldwide location is a published fact of its own. Excludes a role bound
+        // to a single country (the mapper flags that) and any region already matched above.
+        val remoteAnywhere = input.isRemote && !input.locationRestrictedRemote && !remoteRegion &&
+            (input.location.isBlank() || REMOTE_WORLDWIDE_LOCATIONS.any { locationLower.contains(it) })
+
+        if (remoteRegion) {
+            reasons += EligibilityReason(
+                label = "Remote role scoped to a region that includes Madagascar",
+                detail = "The posting scopes this remote role to \"${input.location}\", a region " +
+                    "that normally includes Madagascar. Confirm the employer can hire there before you rely on it.",
+                official = false,
+            )
+        } else if (remoteAnywhere) {
+            reasons += EligibilityReason(
+                label = "Location listed as remote or worldwide",
+                detail = "The source lists this role for \"${input.location.ifBlank { "remote" }}\", so there is no local work-permit requirement stated.",
+                official = true,
+            )
+            hasOfficial = true
+        } else if (input.locationRestrictedRemote) {
+            // A remote role whose location names a country Madagascar is not in: the employer
+            // bounded where it may lawfully hire, so eligibility is not stated.
             reasons += EligibilityReason(
                 label = "Remote role limited to one country",
                 detail = "The source lists this remote role for \"${input.location}\", so the employer " +
@@ -106,23 +137,11 @@ class EligibilityEngine {
             hasOfficial = true
         }
 
-        // ---- 5. A remote or worldwide location is a published fact of its own.
-        val locationLower = input.location.lowercase()
-        val remoteAnywhere = input.isRemote && !input.locationRestrictedRemote &&
-            (input.location.isBlank() || REMOTE_WORLDWIDE_LOCATIONS.any { locationLower.contains(it) })
-        if (remoteAnywhere) {
-            reasons += EligibilityReason(
-                label = "Location listed as remote or worldwide",
-                detail = "The source lists this role for \"${input.location.ifBlank { "remote" }}\", so there is no local work-permit requirement stated.",
-                official = true,
-            )
-            hasOfficial = true
-        }
-
         val eligibility = when {
             sponsorship != null -> MadagascarEligibility.VISA_SPONSORED
             international != null || remoteAnywhere -> MadagascarEligibility.ELIGIBLE
             relocation != null -> MadagascarEligibility.ELIGIBLE
+            remoteRegion -> MadagascarEligibility.ELIGIBLE
             else -> MadagascarEligibility.UNCLEAR
         }
 
@@ -211,6 +230,23 @@ class EligibilityEngine {
             "global",
             "remote",
             "any location",
+        )
+
+        /**
+         * Regions that normally include Madagascar. A remote role scoped to one of these is
+         * treated as a signal (not proof) of eligibility, unlike a role scoped to a country
+         * Madagascar is not in. Only regions that genuinely contain Madagascar are listed.
+         */
+        val REMOTE_REGIONS: List<Pair<String, Set<String>>> = listOf(
+            "emea" to setOf("mg", "fr", "de"),
+            "europe, middle east and africa" to setOf("mg"),
+            "middle east and africa" to setOf("mg"),
+            "sub-saharan africa" to setOf("mg"),
+            "africa" to setOf("mg"),
+            "indian ocean" to setOf("mg"),
+            "utc+1" to setOf("mg"),
+            "utc+2" to setOf("mg"),
+            "utc+3" to setOf("mg"),
         )
     }
 }

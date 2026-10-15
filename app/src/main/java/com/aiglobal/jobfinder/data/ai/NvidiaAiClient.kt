@@ -101,6 +101,14 @@ class NvidiaAiClient(
     ): NvidiaResult {
         if (apiKey.isBlank()) return failure(NvidiaStatus.NOT_CONFIGURED, "Add your NVIDIA API key in Profile.")
         if (modelId.isBlank()) return failure(NvidiaStatus.MODEL_UNAVAILABLE, "No NVIDIA model is selected.")
+        // A model id that is not in `vendor/name` shape cannot resolve at NVIDIA, so reject it
+        // before spending a request rather than surfacing an opaque HTTP error.
+        if (!looksLikeModelId(modelId)) {
+            return failure(
+                NvidiaStatus.UNSUPPORTED_MODEL,
+                "That does not look like a model id. Use the form vendor/model, e.g. meta/llama-3.1-8b-instruct.",
+            )
+        }
 
         val body = buildRequestBody(modelId, systemPrompt, userPrompt, maxTokens)
         val response = try {
@@ -110,6 +118,46 @@ class NvidiaAiClient(
         }
         return interpret(response)
     }
+
+    /**
+     * The cheapest possible end-to-end inference check: a two-word prompt at the smallest
+     * output budget the client allows. It proves the account can actually run the selected
+     * model — not just list it — before the user relies on it. The answer is thrown away;
+     * only the classified outcome matters.
+     */
+    suspend fun testModel(apiKey: String, modelId: String): NvidiaResult {
+        if (apiKey.isBlank()) return failure(NvidiaStatus.NOT_CONFIGURED, "Add your NVIDIA API key first.")
+        if (modelId.isBlank()) return failure(NvidiaStatus.MODEL_UNAVAILABLE, "Select a model first.")
+        if (!looksLikeModelId(modelId)) {
+            return failure(
+                NvidiaStatus.UNSUPPORTED_MODEL,
+                "That does not look like a model id. Use the form vendor/model.",
+            )
+        }
+        val body = buildRequestBody(
+            modelId = modelId,
+            systemPrompt = "You are a connectivity check. Reply with the single word: ok",
+            userPrompt = "ok",
+            maxTokens = 1,
+        )
+        val response = try {
+            transport.chatCompletions(apiKey, body, timeoutMillis)
+        } catch (t: Throwable) {
+            return classifyThrowable(t)
+        }
+        if (response.statusCode !in 200..299) return interpretError(response)
+        // A reachable model that answers is a success even if the token limit truncated the
+        // text; an empty body on HTTP 200 is the only real "bad response" case.
+        return if (response.body.isBlank()) {
+            failure(NvidiaStatus.BAD_RESPONSE, "NVIDIA returned an empty response for this model.")
+        } else {
+            NvidiaResult(NvidiaStatus.OK, text = "The model answered. It can be used for drafting.")
+        }
+    }
+
+    /** True for a plausible NVIDIA model id (`vendor/name`), the only shape the API resolves. */
+    internal fun looksLikeModelId(modelId: String): Boolean =
+        MODEL_ID.matches(modelId.trim())
 
     /** Validates a key by listing models. Used by the "Test connection" action. */
     suspend fun validateKey(apiKey: String): NvidiaResult {
@@ -268,5 +316,8 @@ class NvidiaAiClient(
         const val DEFAULT_MAX_TOKENS = 700
         const val MAX_TOKENS_CEILING = 2_000
         private val AUTH_FAILURE = setOf(401, 403)
+
+        /** NVIDIA model ids are always `vendor/name`, e.g. `meta/llama-3.1-8b-instruct`. */
+        private val MODEL_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
     }
 }

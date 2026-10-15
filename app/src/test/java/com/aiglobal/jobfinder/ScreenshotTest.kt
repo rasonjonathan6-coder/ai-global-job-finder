@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -309,6 +311,28 @@ class ScreenshotTest {
             onTestKey = { com.aiglobal.jobfinder.data.model.NvidiaResult(com.aiglobal.jobfinder.data.model.NvidiaStatus.OK) },
             onDiscoverModels = { emptyList() },
         )
+    }
+
+    /** Stage 18: the model inference probe and its result, shown once setup is expanded. */
+    @Test
+    fun nvidiaModelTestResult() = renderBothModes(
+        name = "nvidia-model-test",
+        beforeCapture = { composeRule.onNodeWithText("Set up the assistant").performClick() },
+    ) {
+        // Start scrolled to the bottom so the probe control is in frame; the harness uses a
+        // paused clock, so an animated scroll would never settle.
+        Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState(initial = 4_000))) {
+            AiAssistantCard(
+                config = NvidiaConfig(apiKey = "nvapi-example", modelId = "meta/llama-3.1-8b-instruct", consentGranted = true),
+                encrypted = true,
+                onSaveKey = {},
+                onSelectModel = {},
+                onConsentChange = {},
+                onTestKey = { com.aiglobal.jobfinder.data.model.NvidiaResult(com.aiglobal.jobfinder.data.model.NvidiaStatus.OK) },
+                onDiscoverModels = { emptyList() },
+                onTestModel = { com.aiglobal.jobfinder.data.model.NvidiaResult(com.aiglobal.jobfinder.data.model.NvidiaStatus.OK, text = "ok") },
+            )
+        }
     }
 
     /** The Adzuna card with its connection test, expanded so the new control is visible. */

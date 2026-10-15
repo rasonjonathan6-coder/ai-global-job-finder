@@ -87,6 +87,7 @@ import com.aiglobal.jobfinder.data.model.NvidiaConfig
 import com.aiglobal.jobfinder.data.model.NvidiaModel
 import com.aiglobal.jobfinder.data.model.NvidiaModels
 import com.aiglobal.jobfinder.data.model.NvidiaResult
+import com.aiglobal.jobfinder.data.model.NvidiaStatus
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.Skill
@@ -255,6 +256,7 @@ fun ProfileScreen(
                 onConsentChange = appViewModel::setNvidiaConsent,
                 onTestKey = appViewModel::testNvidiaKey,
                 onDiscoverModels = appViewModel::discoverNvidiaModels,
+                onTestModel = appViewModel::testSelectedNvidiaModel,
             )
         }
 
@@ -1101,6 +1103,7 @@ internal fun AiAssistantCard(
     onConsentChange: (Boolean) -> Unit,
     onTestKey: suspend (String) -> NvidiaResult,
     onDiscoverModels: suspend (String) -> List<String> = { emptyList() },
+    onTestModel: suspend () -> NvidiaResult = { NvidiaResult(NvidiaStatus.OK) },
 ) {
     val spacing = LocalSpacing.current
     var expanded by remember { mutableStateOf(false) }
@@ -1111,6 +1114,8 @@ internal fun AiAssistantCard(
     var discovering by remember { mutableStateOf(false) }
     var discovered by remember { mutableStateOf<List<String>>(emptyList()) }
     var customModel by remember { mutableStateOf("") }
+    var modelTesting by remember { mutableStateOf(false) }
+    var modelTestResult by remember { mutableStateOf<NvidiaResult?>(null) }
     val scope = rememberCoroutineScope()
     val saved = config.isConfigured
 
@@ -1337,6 +1342,46 @@ internal fun AiAssistantCard(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = customModel.isNotBlank(),
                 )
+
+                // Proves the saved key can actually run the selected model, not merely list it.
+                SecondaryButton(
+                    text = if (modelTesting) "Asking the model…" else "Test the selected model",
+                    onClick = {
+                        modelTesting = true
+                        modelTestResult = null
+                        scope.launch {
+                            modelTestResult = onTestModel()
+                            modelTesting = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = Icons.Filled.Bolt,
+                    enabled = saved && config.modelId.isNotBlank() && !modelTesting,
+                )
+                modelTestResult?.let { result ->
+                    val ok = result.isSuccess
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background((if (ok) extendedColors.success else extendedColors.warning).copy(alpha = 0.12f))
+                            .padding(spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (ok) Icons.Filled.CheckCircle else Icons.Filled.Info,
+                            contentDescription = null,
+                            tint = if (ok) extendedColors.success else extendedColors.warning,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (ok) "This model answered. It is ready to draft for you." else result.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {

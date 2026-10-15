@@ -97,6 +97,19 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         container.aiAssistant.testConnection(candidateKey.trim())
 
     /**
+     * Runs the cheapest real inference on the saved key and the saved model id, proving the
+     * account can actually use the selected model — not merely that it appears in the list.
+     */
+    suspend fun testSelectedNvidiaModel(): NvidiaResult {
+        val config = nvidiaConfig.value
+        return container.aiAssistant.testModel(config.apiKey, config.modelId)
+    }
+
+    /** Runs the same inference check against an explicitly supplied key and model id. */
+    suspend fun testNvidiaModel(candidateKey: String, modelId: String): NvidiaResult =
+        container.aiAssistant.testModel(candidateKey.trim(), modelId.trim())
+
+    /**
      * Lists the model ids the NVIDIA account can actually use, using the candidate key. No
      * profile data is sent — this is only the account's model catalog.
      */
