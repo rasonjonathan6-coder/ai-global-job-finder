@@ -132,6 +132,12 @@ enum class SubmissionOutcome(val label: String, val simulated: Boolean) {
 
     /** A real send was requested but the channel cannot be driven by the app. */
     BLOCKED_INCOMPATIBLE("Channel not supported — blocked", simulated = true),
+
+    /**
+     * The posting's identity is close to one already recorded, but not provably the same.
+     * Nothing is sent and nothing is merged: the attempt is parked for the user to confirm.
+     */
+    NEEDS_VERIFICATION("Needs your verification", simulated = true),
 }
 
 /**
@@ -146,6 +152,10 @@ data class SubmissionEntry(
     val jobTitle: String,
     val company: String,
     val country: String,
+    /** The source record id (`providerId:externalId`) the identity was built from. */
+    val providerRecordId: String = "",
+    /** The canonical posting URL the identity was built from, tracking stripped. */
+    val canonicalUrl: String = "",
     /** The source the application was actually made through, for attribution. */
     val source: String,
     val channel: SubmissionChannel,
@@ -157,9 +167,23 @@ data class SubmissionEntry(
     val firstRequestedAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
     val reason: String,
+    /**
+     * When the identity was ambiguous, the fingerprint of the close-but-not-identical entry
+     * the user is being asked to compare against. Blank otherwise.
+     */
+    val pendingReview: String = "",
+    /**
+     * Extra identity signals (source record ids and canonical URLs) this entry is known by,
+     * after the user confirmed that a near-identical posting was the same opening. They are
+     * indexed alongside the primary signals so the confirmed duplicate is recognised later.
+     */
+    val aliases: List<String> = emptyList(),
 ) {
     /** True when a real application has already gone out — the hard stop for a resend. */
     val isCommitted: Boolean get() = sent
+
+    /** True when the user must confirm whether this is the same posting or a new one. */
+    val awaitsVerification: Boolean get() = outcome == SubmissionOutcome.NEEDS_VERIFICATION
 }
 
 /** The registry's answer to "may this be applied to?". */

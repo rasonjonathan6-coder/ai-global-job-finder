@@ -119,6 +119,8 @@ class AutoApplyCenter(
                     "Approved — simulated. Nothing was sent; open the posting to send it yourself."
                 SubmissionOutcome.BLOCKED_DUPLICATE, SubmissionOutcome.BLOCKED_CONCURRENT ->
                     "Already handled — not submitted again. ${decision.reason}"
+                SubmissionOutcome.NEEDS_VERIFICATION ->
+                    "Close to an entry you already have — nothing was sent. Confirm it in the submission history."
                 else -> "Approved. Open the posting to send it yourself."
             }
             store.updateItem(jobId) { it.copy(status = AutoApplyStatus.APPROVED, reason = reason) }

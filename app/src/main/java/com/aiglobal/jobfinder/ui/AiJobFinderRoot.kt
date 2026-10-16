@@ -39,6 +39,7 @@ import com.aiglobal.jobfinder.ui.screens.autoapply.AutoApplyScreen
 import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterScreen
 import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
 import com.aiglobal.jobfinder.ui.screens.diagnostics.LiveSearchValidationScreen
+import com.aiglobal.jobfinder.ui.screens.submissions.SubmissionHistoryScreen
 import com.aiglobal.jobfinder.ui.screens.expat.ExpatScreen
 import com.aiglobal.jobfinder.ui.screens.adaptation.CvAdaptationScreen
 import com.aiglobal.jobfinder.ui.screens.home.HomeScreen
@@ -54,6 +55,8 @@ import com.aiglobal.jobfinder.viewmodel.ApplicationsViewModel
 import com.aiglobal.jobfinder.viewmodel.ApplicationsViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModel
 import com.aiglobal.jobfinder.viewmodel.AutoApplyViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.SubmissionHistoryViewModel
+import com.aiglobal.jobfinder.viewmodel.SubmissionHistoryViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.AiViewModel
 import com.aiglobal.jobfinder.viewmodel.AiViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ApplicationPlanViewModel
@@ -102,6 +105,7 @@ object SecondaryRoutes {
     const val CV_ADAPTATION = "cvadaptation"
     const val EXPAT_INTELLIGENCE = "expatintelligence"
     const val APPLICATION_ASSISTANT = "assistant/{jobId}"
+    const val SUBMISSIONS = "submissions"
 
     fun applicationAssistant(jobId: String) = "assistant/$jobId"
     fun applicationDetail(applicationId: String) = "application/$applicationId"
@@ -266,6 +270,7 @@ fun AiJobFinderRoot(
                     onOpenAi = { navController.navigateToTab(Destination.Ai) },
                     onOpenExpat = { country -> navController.navigate(SecondaryRoutes.expat(country)) },
                     onOpenDiagnostics = { navController.navigate(SecondaryRoutes.DIAGNOSTICS) },
+                    onOpenSubmissionHistory = { navController.navigate(SecondaryRoutes.SUBMISSIONS) },
                 )
             }
             composable(
@@ -361,6 +366,12 @@ fun AiJobFinderRoot(
                     onBack = { navController.popBackStack() },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                 )
+            }
+            composable(SecondaryRoutes.SUBMISSIONS) {
+                val vm: SubmissionHistoryViewModel = viewModel(
+                    factory = SubmissionHistoryViewModelFactory(container.submissionRegistry),
+                )
+                SubmissionHistoryScreen(viewModel = vm, onBack = { navController.popBackStack() })
             }
             composable(SecondaryRoutes.DIAGNOSTICS) {
                 val vm: SourceDiagnosticsViewModel = viewModel(

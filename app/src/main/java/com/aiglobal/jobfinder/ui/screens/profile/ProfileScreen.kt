@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
@@ -127,6 +128,7 @@ fun ProfileScreen(
     onOpenAi: () -> Unit,
     onOpenExpat: (String) -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
+    onOpenSubmissionHistory: () -> Unit = {},
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val demoMode by viewModel.demoMode.collectAsStateWithLifecycle()
@@ -247,6 +249,40 @@ fun ProfileScreen(
         }
 
         item { AutoApplyCard(enabled = current.autoApplyEnabled, onToggle = viewModel::setAutoApply) }
+
+        item {
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                val itemSpacing = LocalSpacing.current
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(itemSpacing.sm))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Submission history",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "See simulated attempts, blocked duplicates and postings to verify",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(itemSpacing.sm))
+                SecondaryButton(
+                    text = "Open submission history",
+                    onClick = onOpenSubmissionHistory,
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = Icons.Filled.History,
+                )
+            }
+        }
 
         item {
             SectionHeader(

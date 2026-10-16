@@ -1152,6 +1152,78 @@ support; the channel is inferred from the URL; and identity ignores case/punctua
 distinct roles apart. Suite **388 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1` probes).
 `lintDebug`, `assembleDebug` and `assembleRelease` all succeed. No emulator run (no KVM here).
 
+## Stage 31 — deduplication audit and user verification
+
+Stage 30 reduced identity to a single key (`employer + normalised title + country`). That is
+enough to collapse a repost across boards, but it silently merges two genuinely different
+openings whose employer and title are close ("Maintenance Technician" vs "Maintenance
+Technician II", "Northline Industrial" vs "Northline Industries"), and it cannot use the
+canonical signals each listing actually carries. Stage 31 replaces the single key with a
+layered, confidence-based identity and hands the genuinely undecidable cases to the user.
+
+**New `data/submissions/SubmissionIdentity.kt`.**
+
+- `SubmissionIdentity` holds three signals in order of reliability: `providerRecordId`
+  (`job.id` = `providerId:externalId`), `canonicalUrl`, and `fingerprint`
+  (employer + title + country, normalised). `relationTo` maps them to `SAME` / `AMBIGUOUS` /
+  `DISTINCT`:
+  - `SAME` — a shared record id, a shared canonical URL, or an identical fingerprint.
+  - `AMBIGUOUS` — same country and both employer and title very similar (Jaro-Winkler /
+    token-set similarity ≥ 0.90 and 0.85), yet not provably the same.
+  - `DISTINCT` — anything else.
+- `CanonicalUrl.of` strips scheme, leading `www.`, the fragment, a trailing slash and known
+  tracking parameters, then sorts the surviving query parameters, so tracking noise collapses
+  to one value while different hosts never collide.
+- `TextSimilarity` combines Jaro-Winkler and a token-set ratio (takes the stronger), so word
+  order and small suffixes do not create false differences.
+
+**Rewritten `SubmissionRegistry.kt`.**
+
+1. **Same posting is still refused, now via reliable signals first** — shared record id or
+   canonical URL short-circuits to `BLOCKED_DUPLICATE`; the fingerprint is the fallback, so an
+   Adzuna listing and the employer's own page still collapse when nothing else matches.
+2. **Ambiguous postings are never merged and never allowed.** They are recorded as
+   `SubmissionOutcome.NEEDS_VERIFICATION` with `pendingReview` pointing at the entry to compare
+   against, and the reason names both sides. Nothing is sent.
+3. **The user settles it.** `confirmSame` folds the parked entry into the original (moving its
+   record id and URL into the original's `aliases`, indexed alongside the primary signals, so
+   the confirmed duplicate is recognised later) and reports `BLOCKED_DUPLICATE`. `confirmDistinct`
+   promotes the parked entry to a normal receipt and indexes its signals so it cannot be recorded
+   twice. Both rebuild the identity index from the surviving entries.
+4. **Re-submitting a parked posting stays pending, not duplicate**, so the same unresolved
+   posting is never re-parked and the user is never told they "already applied" to something
+   they have not confirmed.
+5. **Safety posture unchanged** — `sendingEnabled` still defaults to `false`, no channel claims
+   real-send support, and `SENT` remains unreachable. All mutations stay behind the registry's
+   `Mutex`, and persistence keeps its atomic-write contract.
+
+**UI.** `SubmissionHistoryViewModel` + `ui/screens/submissions/SubmissionHistoryScreen.kt`
+(`SubmissionHistoryContent`, stateless for tests) list every entry with its outcome badge
+(Simulated / Already applied — blocked / Needs your verification), the plain-language reason,
+a registry summary (attempts, duplicates blocked, need verification), and — for parked entries —
+"Same posting" / "Different" actions. Reached from **Profile → Submission history** via
+`SecondaryRoutes.SUBMISSIONS`. The screen is read-only about sending: it only records the user's
+verdict. `AutoApplyCenter` surfaces the registry decision (`DRY_RUN` or a duplicate refusal).
+
+**Tests (21 new).** `Stage31DedupAuditTest` covers URL canonicalisation (tracking noise and
+fragments collapse, different hosts stay different); the same opening with different URLs, a
+shared canonical URL, and a shared record id are all refused; two roles at one employer and one
+role in two countries stay distinct; a near-identical title and a slightly different employer
+name are parked for verification (and the parked attempt is not sent); confirming "same" folds
+the entry and still refuses a resubmission; confirming "different" keeps both and refuses a
+second record of the new one; a re-submitted parked posting stays pending; `relationTo` is
+unit-tested for SAME/AMBIGUOUS/DISTINCT; an ambiguous decision survives a restart; 12 concurrent
+submissions of one opening record exactly one; and sending stays off with no channel able to
+really send. `Stage31SubmissionHistoryScreenTest` renders the screen at `w320dp` and scrolls to
+every important string in each state. `ScreenshotTest` gained a `submission-history` render
+(light + dark, 411×891 dp). Suite **410 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1`
+probes). `lintDebug`, `assembleDebug` and `assembleRelease` all succeed. No emulator run (no KVM).
+
+**Note on the Stage 30 test.** One Stage 30 identity test shared a single default `sourceUrl`
+across its fixtures; with URLs now decisive that made two "different" roles collide. The fixtures
+were given their own board ids and URLs (and one an explicit cross-board case) so the test still
+checks what it always did — case/punctuation collapse, distinct roles stay apart.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

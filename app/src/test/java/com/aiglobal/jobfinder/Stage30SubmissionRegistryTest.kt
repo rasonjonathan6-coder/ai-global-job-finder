@@ -233,14 +233,29 @@ class Stage30SubmissionRegistryTest {
         val messy = job(id = "a", company = "Northline  Industrial,", title = "Maintenance  Technician")
         assertEquals(SubmissionOutcome.DRY_RUN, registry.submit(SubmissionRequest(messy)).outcome)
 
-        val tidy = job(id = "b", company = "northline industrial", title = "maintenance technician")
+        // A different board and URL, so the only thing linking it to `messy` is the normalised
+        // employer + title + country fingerprint: case and punctuation must not create a second
+        // application.
+        val tidy = job(
+            id = "b",
+            company = "northline industrial",
+            title = "maintenance technician",
+            source = "Jooble",
+            sourceUrl = "https://jooble.org/desc/b",
+        )
         assertEquals(
             "Case and punctuation must not create a second application",
             SubmissionOutcome.BLOCKED_DUPLICATE,
             registry.submit(SubmissionRequest(tidy)).outcome,
         )
 
-        val differentRole = job(id = "c", title = "Welder")
+        // A genuinely different role: its own board id and posting URL, so nothing about it
+        // shares identity with the maintenance technician above.
+        val differentRole = job(
+            id = "c",
+            title = "Welder",
+            sourceUrl = "https://www.adzuna.ca/land/ad/c",
+        )
         assertEquals(
             "A different role at the same employer is a different application",
             SubmissionOutcome.DRY_RUN,

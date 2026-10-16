@@ -91,6 +91,10 @@ import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
 import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldContent
 import com.aiglobal.jobfinder.ui.screens.shortlist.ShortlistContent
+import com.aiglobal.jobfinder.ui.screens.submissions.SubmissionHistoryContent
+import com.aiglobal.jobfinder.data.submissions.SubmissionChannel
+import com.aiglobal.jobfinder.data.submissions.SubmissionEntry
+import com.aiglobal.jobfinder.data.submissions.SubmissionOutcome
 import com.aiglobal.jobfinder.ui.theme.AiJobFinderTheme
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import com.aiglobal.jobfinder.viewmodel.AppViewModel
@@ -690,6 +694,51 @@ class ScreenshotTest {
                     ),
                 ),
             ),
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun submissionHistory() = renderBothModes("submission-history") {
+        SubmissionHistoryContent(
+            entries = listOf(
+                SubmissionEntry(
+                    key = "northline industrial|maintenance technician|canada",
+                    jobId = "adzuna:100",
+                    jobTitle = "Maintenance Technician",
+                    company = "Northline Industrial",
+                    country = "Canada",
+                    providerRecordId = "adzuna:100",
+                    canonicalUrl = "adzuna.ca/land/ad/100",
+                    source = "Adzuna",
+                    channel = SubmissionChannel.EMPLOYER_PORTAL,
+                    outcome = SubmissionOutcome.DRY_RUN,
+                    sent = false,
+                    seenSources = listOf("Adzuna"),
+                    firstRequestedAtEpochMillis = stage5Now,
+                    updatedAtEpochMillis = stage5Now,
+                    reason = "Simulated: the full application was walked through, but nothing was sent.",
+                ),
+                SubmissionEntry(
+                    key = "northline industrial|maintenance technicians|canada",
+                    jobId = "jooble:7",
+                    jobTitle = "Maintenance Technicians",
+                    company = "Northline Industries",
+                    country = "Canada",
+                    providerRecordId = "jooble:7",
+                    canonicalUrl = "jooble.org/desc/7",
+                    source = "Jooble",
+                    channel = SubmissionChannel.UNKNOWN,
+                    outcome = SubmissionOutcome.NEEDS_VERIFICATION,
+                    sent = false,
+                    seenSources = listOf("Jooble"),
+                    firstRequestedAtEpochMillis = stage5Now,
+                    updatedAtEpochMillis = stage5Now,
+                    reason = "This looks close to an existing entry — Maintenance Technician at Northline Industrial (from Adzuna) — but the employer or title differs slightly. Nothing was sent. Confirm whether it is the same posting.",
+                    pendingReview = "northline industrial|maintenance technician|canada",
+                ),
+            ),
+            sendingEnabled = false,
             onBack = {},
         )
     }
