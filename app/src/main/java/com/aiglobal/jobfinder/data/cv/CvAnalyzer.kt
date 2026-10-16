@@ -70,31 +70,31 @@ class HeuristicCvAnalyzer : CvAnalyzer {
 
         val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }
         val sections = CvTextStructure.segment(lines)
-        val lowerText = text.lowercase()
+        // Matching runs on an accent-folded copy; values shown to the user keep their accents.
+        val foldedText = CvTextNormalizer.fold(text)
 
         val email = EMAIL.find(text)?.value
         val phone = findPhone(text)
-        val name = findName(lines)
+        val name = findName(lines, sections)
         val location = findLocation(lines, sections)
         val titles = findTitles(sections, lines)
         val years = findYearsOfExperience(text, sections)
-        val skills = matchSkills(lowerText)
+        val skills = matchSkills(foldedText)
         val languages = findLanguages(sections, lines)
         val education = findEducation(sections)
         val certifications = findCertifications(sections, lines)
-        val countries = findCountries(text)
+        val countries = findCountries(foldedText)
         val salary = findSalaryExpectation(text)
-        val relocation = findRelocation(lowerText)
-        val visaNotes = findVisaNotes(lowerText)
-        val industries = findIndustries(lowerText, skills)
+        val relocation = findRelocation(foldedText)
+        val visaNotes = findVisaNotes(foldedText)
+        val industries = findIndustries(foldedText, skills)
         val summary = findSummary(sections, lines)
+
+        warnings += sectionWarnings(sections, skills, education, languages)
 
         if (email == null) warnings += "No email address was found. Add one so applications can be sent."
         if (phone == null) warnings += "No phone number was found."
         if (name == null) warnings += "The candidate name could not be identified. Check the document header."
-        if (skills.isEmpty()) warnings += "No recognisable skills were found. Add a skills section to improve matching."
-        if (education.isEmpty()) warnings += "No education entries were found."
-        if (languages.isEmpty()) warnings += "No languages were listed. Many international roles require a language level."
 
         val extracted = CandidateProfile(
             fullName = name ?: "",
@@ -149,33 +149,109 @@ class HeuristicCvAnalyzer : CvAnalyzer {
 
     // ---------------------------------------------------------------- extraction
 
-    private fun findName(lines: List<String>): String? {
-        // The name is normally one of the first lines, before any section heading.
-        return lines.take(6).firstOrNull { line ->
-            val words = line.split(Regex("\\s+"))
-            words.size in 2..5 &&
-                line.length in 5..40 &&
-                !line.contains('@') &&
-                !line.any { it.isDigit() } &&
-                !line.contains("http", ignoreCase = true) &&
-                !line.contains('|') &&
-                !line.contains(':') &&
-                words.all { word -> word.first().isLetter() } &&
-                CvLexicon.titleMarkers.none { line.lowercase().contains(it) }
-        }?.trim()
+    /**
+     * Finds the candidate name. The header area is searched first, then a Contact section,
+     * because many CVs put the name under "Contact" rather than at the very top.
+     *
+     * A line only qualifies when its shape really looks like a person's name: no digits,
+     * no e-mail, no web address, not a heading, not a job title, and every word starting
+     * with a letter. Nothing is invented — if no line qualifies, the field stays empty.
+     */
+    private fun findName(
+        lines: List<String>,
+        sections: Map<CvLexicon.Section, List<String>>,
+    ): String? {
+        val header = lines.take(8)
+        val contact = sections[CvLexicon.Section.CONTACT].orEmpty().take(4)
+        return (header + contact).firstOrNull { isNameLike(it) }?.trim()
+    }
+
+    private fun isNameLike(line: String): Boolean {
+        val trimmed = line.trim()
+        if (CvTextStructure.headingFor(trimmed) != null) return false
+        if (trimmed.any { it.isDigit() }) return false
+        if (trimmed.contains('@') || trimmed.contains("http", ignoreCase = true)) return false
+        if (trimmed.contains('|') || trimmed.contains(':') || trimmed.contains(',')) return false
+        if (CvTextNormalizer.isBullet(trimmed)) return false
+
+        val words = trimmed.split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (words.size !in 2..5) return false
+        if (trimmed.length !in 5..44) return false
+        // Every word must start with a letter; this removes "Ref: 2024", "Tél:", etc.
+        if (!words.all { it.first().isLetter() }) return false
+        // A job-title line is a headline, not a name.
+        val folded = CvTextNormalizer.fold(trimmed)
+        if (CvLexicon.titleMarkers.any { folded.contains(it) }) return false
+        if (CvLexicon.sectionKeywords.containsKey(folded)) return false
+        // A name has at least two capitalised words and no all-caps sentence words.
+        val capitalised = words.count { it.first().isUpperCase() }
+        return capitalised >= 2
+    }
+
+    /**
+     * Warnings that distinguish a genuinely absent section from one that is present but
+     * could not be read. The user sees "we could not read" only when the document actually
+     * contained a matching section, which tells them it is worth correcting by hand.
+     */
+    private fun sectionWarnings(
+        sections: Map<CvLexicon.Section, List<String>>,
+        skills: List<String>,
+        education: List<Any>,
+        languages: List<Any>,
+    ): List<String> {
+        val out = mutableListOf<String>()
+
+        // A section exists when a heading introduces content that follows it. A lone heading
+        // with nothing under it is treated as absent, so the message stays truthful.
+        fun linesUnder(section: CvLexicon.Section): List<String> {
+            val body = sections[section].orEmpty().filter { it.isNotBlank() }
+            val headings = body.count { CvTextStructure.headingFor(it) != null }
+            return if (body.size > headings) body else emptyList()
+        }
+
+        if (skills.isEmpty()) {
+            out += if (linesUnder(CvLexicon.Section.SKILLS).isNotEmpty()) {
+                "A skills section was found but no known skills were recognised in it. Add yours by hand."
+            } else {
+                "No skills section was found. Add your skills to improve matching."
+            }
+        }
+        if (education.isEmpty()) {
+            out += if (linesUnder(CvLexicon.Section.EDUCATION).isNotEmpty()) {
+                "A training section was found but no degree or diploma could be read from it."
+            } else {
+                "No education or training section was found."
+            }
+        }
+        if (languages.isEmpty()) {
+            out += if (linesUnder(CvLexicon.Section.LANGUAGES).isNotEmpty()) {
+                "A languages section was found but no known language was recognised in it."
+            } else {
+                "No languages were listed. Many international roles require a language level."
+            }
+        }
+        return out
     }
 
     private fun findLocation(lines: List<String>, sections: Map<CvLexicon.Section, List<String>>): String? {
         // Prefer a contact section line, then the header area.
-        val pool = (sections[CvLexicon.Section.CONTACT].orEmpty() + lines.take(8))
-        val cityCountry = pool.firstOrNull { line ->
-            CvLexicon.countries.any { country -> line.contains(country, ignoreCase = true) }
-        }
-        if (cityCountry != null) return cityCountry.trim().take(60)
+        val pool = (sections[CvLexicon.Section.CONTACT].orEmpty() + lines.take(10))
 
+        // 1. A line naming a known country or major city, matched on folded text so an
+        //    accented spelling behaves like the plain one.
+        val knownPlace = pool.firstOrNull { line ->
+            val folded = CvTextNormalizer.fold(line)
+            CvLexicon.foldedPlaces.any { place ->
+                Regex("\\b" + Regex.escape(place) + "\\b").containsMatchIn(folded)
+            }
+        }
+        if (knownPlace != null) return knownPlace.trim().take(60)
+
+        // 2. A "City, Country"-shaped line: two comma-separated parts, letters only.
         val commaCity = pool.firstOrNull { line ->
             line.contains(',') && line.length in 4..40 && !line.contains('@') &&
-                line.split(',').size == 2 && line.all { it.isLetter() || it.isWhitespace() || it == ',' }
+                line.split(',').size == 2 &&
+                line.all { it.isLetter() || it.isWhitespace() || it == ',' || it == '-' || it == '.' || it == '\'' }
         }
         return commaCity?.trim()
     }
@@ -187,13 +263,13 @@ class HeuristicCvAnalyzer : CvAnalyzer {
         val found = linkedSetOf<String>()
         val candidates = sections[CvLexicon.Section.EXPERIENCE].orEmpty() + lines.take(12)
         for (line in candidates) {
-            val lower = line.lowercase()
-            val marker = CvLexicon.titleMarkers.firstOrNull { lower.contains(it) } ?: continue
+            val folded = CvTextNormalizer.fold(line)
+            val marker = CvLexicon.titleMarkers.firstOrNull { folded.contains(it) } ?: continue
             val cleaned = line
-                .split('|', '–', '—', '·', ',')
-                .firstOrNull { it.lowercase().contains(marker) }
+                .split('|', '–', '—', '·', ',', '/')
+                .firstOrNull { CvTextNormalizer.fold(it).contains(marker) }
                 ?.trim()
-                ?.trim('-', '•', '*', ' ')
+                ?.trim('-', '•', '*', ' ', ':')
                 ?: continue
             if (cleaned.length in 3..48 && cleaned.split(Regex("\\s+")).size <= 6) {
                 found += cleaned.replaceFirstChar { it.uppercase() }
@@ -246,12 +322,13 @@ class HeuristicCvAnalyzer : CvAnalyzer {
         return span?.takeIf { it in 1..60 }
     }
 
-    private fun matchSkills(lowerText: String): List<String> {
+    private fun matchSkills(foldedText: String): List<String> {
         val matches = mutableListOf<Pair<String, Int>>()
         for (definition in CvLexicon.skills) {
             var best = 0
             for (alias in definition.aliases) {
-                val occurrences = Regex("\\b" + Regex.escape(alias) + "\\b").findAll(lowerText).count()
+                val occurrences = Regex("\\b" + Regex.escape(CvTextNormalizer.fold(alias)) + "\\b")
+                    .findAll(foldedText).count()
                 if (occurrences > best) best = occurrences
             }
             if (best > 0) matches += definition.canonical to best
@@ -268,20 +345,33 @@ class HeuristicCvAnalyzer : CvAnalyzer {
     ): List<com.aiglobal.jobfinder.data.model.LanguageSkill> {
         val pool = sections[CvLexicon.Section.LANGUAGES].orEmpty().ifEmpty { lines }
         val out = mutableListOf<com.aiglobal.jobfinder.data.model.LanguageSkill>()
+        val seen = mutableSetOf<String>()
         for (line in pool) {
-            for (language in CvLexicon.languages) {
-                val regex = Regex("\\b" + Regex.escape(language) + "\\b(?:[\\s:–—\\-()]+([A-Za-z]{1,3}\\d?|native|fluent|beginner|intermediate|advanced|basic|courant|moyen|débutant))?", RegexOption.IGNORE_CASE)
-                val match = regex.find(line) ?: continue
-                val token = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() }
+            // Fold the line so "Anglais", "francais" and "Espanol" all match their alias.
+            val foldedLine = CvTextNormalizer.fold(line)
+            for ((canonical, aliases) in CvLexicon.languageAliases) {
+                if (seen.contains(canonical)) continue
+                val hit = aliases.firstOrNull { alias ->
+                    Regex("\\b" + Regex.escape(CvTextNormalizer.fold(alias)) + "\\b")
+                        .containsMatchIn(foldedLine)
+                } ?: continue
+
+                // The level word sits right after the language name ("English - fluent").
+                val levelRegex = Regex(
+                    Regex.escape(CvTextNormalizer.fold(hit)) +
+                        "(?:[\\s:-]+([a-z]{1,12}\\d?|native|fluent|beginner|intermediate|advanced|basic|courant|moyen|debutant|bilingue|natif|avance|maternelle))?",
+                )
+                val token = levelRegex.find(foldedLine)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
                 val level = com.aiglobal.jobfinder.data.model.LanguageLevel.fromToken(token)
                 out += com.aiglobal.jobfinder.data.model.LanguageSkill(
-                    name = language,
+                    name = canonical,
                     level = level,
                     evidence = line.trim().take(80),
                 )
+                seen += canonical
             }
         }
-        return out.distinctBy { it.name.lowercase() }
+        return out
     }
 
     private fun findEducation(sections: Map<CvLexicon.Section, List<String>>): List<com.aiglobal.jobfinder.data.model.EducationEntry> {
@@ -293,37 +383,56 @@ class HeuristicCvAnalyzer : CvAnalyzer {
         var i = 0
         while (i < lines.size && out.size < 6) {
             val line = lines[i]
-            val lower = line.lowercase()
-            val hasDegree = CvLexicon.degreeMarkers.any { lower.contains(it) }
+            // Degree markers are matched on folded text, so "Ingenieur" and "Ingénieur" agree.
+            val folded = CvTextNormalizer.fold(line)
+            val hasDegree = CvLexicon.degreeMarkers.any { folded.contains(it) }
             if (!hasDegree) {
                 i++
                 continue
             }
-            // The institution is usually the next line, or the same line after a separator.
-            val sameLineInstitution = CvLexicon.institutionMarkers.firstOrNull { lower.contains(it) }
+
             val next = lines.getOrNull(i + 1)
+            val foldedNext = next?.let { CvTextNormalizer.fold(it) }
+
+            // The institution is usually the next line, or the same line after a separator.
+            val sameLineInstitution = CvLexicon.institutionMarkers.any { folded.contains(it) }
+            val nextIsInstitution = foldedNext != null &&
+                CvLexicon.institutionMarkers.any { foldedNext.contains(it) } &&
+                CvLexicon.degreeMarkers.none { foldedNext.contains(it) }
+
+            // Split on the separators a CV uses to put degree and school on one line.
+            val parts = line.split('|', ';', ',', '—', '·').map { it.trim() }.filter { it.isNotEmpty() }
+            val degree = parts
+                .firstOrNull { part ->
+                    val f = CvTextNormalizer.fold(part)
+                    CvLexicon.degreeMarkers.any { f.contains(it) } &&
+                        CvLexicon.institutionMarkers.none { f.contains(it) }
+                }
+                ?: parts.firstOrNull()
+                ?: line
+
             val institution = when {
-                sameLineInstitution != null -> line
-                next != null && CvLexicon.institutionMarkers.any { next.lowercase().contains(it) } -> next
+                nextIsInstitution -> next!!.trim()
+                parts.size >= 2 -> parts.drop(1)
+                    .firstOrNull { part ->
+                        CvLexicon.institutionMarkers.any { CvTextNormalizer.fold(part).contains(it) }
+                    }
+                    .orEmpty()
+                sameLineInstitution -> ""
                 else -> ""
             }
+
             val year = YEAR.find(line)?.value?.toIntOrNull()
                 ?: next?.let { YEAR.find(it)?.value?.toIntOrNull() }
 
-            val degree = line.split('|', '–', '—', ',')
-                .map { it.trim() }
-                .firstOrNull { part -> CvLexicon.degreeMarkers.any { part.lowercase().contains(it) } }
-                ?.replace(YEAR, "")
-                ?.trim(' ', '-', '•')
-                ?: line.trim()
-
             out += com.aiglobal.jobfinder.data.model.EducationEntry(
-                degree = degree.take(90),
-                institution = if (institution == line) "" else institution.trim().take(90),
+                degree = degree.replace(YEAR, "").trim(' ', '-', '•', ',').take(90),
+                institution = institution.replace(YEAR, "").trim(' ', '-', '•', ',').take(90),
                 country = "",
                 year = year ?: 0,
             )
-            i++
+            // Skip the institution line we just consumed.
+            i += if (nextIsInstitution) 2 else 1
         }
         return out
     }
@@ -348,9 +457,11 @@ class HeuristicCvAnalyzer : CvAnalyzer {
     }
 
     private fun findCountries(text: String): List<String> {
+        // [text] is the accent-folded, lowercased document, so the country names are folded too.
         val found = linkedMapOf<String, Int>()
         for (country in CvLexicon.countries) {
-            val count = Regex("\\b" + Regex.escape(country) + "\\b").findAll(text).count()
+            val folded = CvTextNormalizer.fold(country)
+            val count = Regex("\\b" + Regex.escape(folded) + "\\b").findAll(text).count()
             if (count > 0) found[country] = count
         }
         return found.entries.sortedByDescending { it.value }.map { it.key }

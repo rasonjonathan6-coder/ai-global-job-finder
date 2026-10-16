@@ -21,17 +21,21 @@ internal object CvLexicon {
 
     val skills: List<SkillDefinition> = listOf(
         // --- Industrial / maintenance ---
-        SkillDefinition("Preventive maintenance", SkillCategory.TECHNICAL, listOf("preventive maintenance", "planned maintenance", "preventative maintenance", "preventive")),
-        SkillDefinition("Electrical diagnostics", SkillCategory.TECHNICAL, listOf("electrical diagnostics", "electrical fault", "electrical maintenance", "electrical troubleshooting", "electrical systems")),
-        SkillDefinition("Mechanical repair", SkillCategory.TECHNICAL, listOf("mechanical repair", "mechanical maintenance", "mechanical fitting", "mechanical systems", "mecanique")),
-        SkillDefinition("Hydraulics", SkillCategory.TECHNICAL, listOf("hydraulic", "hydraulics", "hydraulic systems")),
-        SkillDefinition("Pneumatics", SkillCategory.TECHNICAL, listOf("pneumatic", "pneumatics")),
-        SkillDefinition("Welding", SkillCategory.TECHNICAL, listOf("welding", "mig welding", "tig welding", "arc welding", "soudure")),
-        SkillDefinition("HVAC & refrigeration", SkillCategory.TECHNICAL, listOf("hvac", "refrigeration", "air conditioning", "climatisation")),
-        SkillDefinition("CNC machining", SkillCategory.TECHNICAL, listOf("cnc", "machining", "lathe", "milling")),
-        SkillDefinition("Automation & PLC", SkillCategory.TOOLS, listOf("plc", "programmable logic controller", "automation", "scada", "siemens s7", "allen bradley")),
-        SkillDefinition("CMMS software", SkillCategory.SOFTWARE, listOf("cmms", "maintenance management software", "maximo", "sap pm")),
-        SkillDefinition("Predictive maintenance", SkillCategory.TECHNICAL, listOf("predictive maintenance", "condition monitoring", "vibration analysis")),
+        SkillDefinition("Preventive maintenance", SkillCategory.TECHNICAL, listOf("preventive maintenance", "planned maintenance", "preventative maintenance", "preventive", "maintenance preventive", "maintenance préventive", "preventative")),
+        SkillDefinition("Electrical diagnostics", SkillCategory.TECHNICAL, listOf("electrical diagnostics", "electrical fault", "electrical maintenance", "electrical troubleshooting", "electrical systems", "diagnostic electrique", "diagnostic électrique", "diagnostics")),
+        SkillDefinition("Mechanical repair", SkillCategory.TECHNICAL, listOf("mechanical repair", "mechanical maintenance", "mechanical fitting", "mechanical systems", "mecanique", "mécanique", "mechanical", "mechanic")),
+        SkillDefinition("Mechanical seals", SkillCategory.TECHNICAL, listOf("mechanical seal", "mechanical seals", "seal replacement", "gland packing", "joint mecanique", "joints")),
+        SkillDefinition("Rotating equipment", SkillCategory.TECHNICAL, listOf("rotating equipment", "pumps", "pompes", "pump repair", "compressors", "compresseurs", "gearbox", "reducteur", "réducteur", "bearing", "roulement", "coupling", "accouplement")),
+        SkillDefinition("Hydraulics", SkillCategory.TECHNICAL, listOf("hydraulic", "hydraulics", "hydraulic systems", "hydraulique")),
+        SkillDefinition("Pneumatics", SkillCategory.TECHNICAL, listOf("pneumatic", "pneumatics", "pneumatique")),
+        SkillDefinition("Welding", SkillCategory.TECHNICAL, listOf("welding", "mig welding", "tig welding", "arc welding", "soudure", "soudeur")),
+        SkillDefinition("HVAC & refrigeration", SkillCategory.TECHNICAL, listOf("hvac", "refrigeration", "air conditioning", "climatisation", "froid")),
+        SkillDefinition("CNC machining", SkillCategory.TECHNICAL, listOf("cnc", "machining", "lathe", "milling", "usinage", "tour", "fraisage")),
+        SkillDefinition("Automation & PLC", SkillCategory.TOOLS, listOf("plc", "programmable logic controller", "automation", "automate", "scada", "siemens s7", "allen bradley", "api")),
+        SkillDefinition("CMMS software", SkillCategory.SOFTWARE, listOf("cmms", "maintenance management software", "maximo", "sap pm", "gmao")),
+        SkillDefinition("Predictive maintenance", SkillCategory.TECHNICAL, listOf("predictive maintenance", "condition monitoring", "vibration analysis", "vibration", "analysis vibratoire", "analyse vibratoire")),
+        SkillDefinition("Metrology & measurement", SkillCategory.TECHNICAL, listOf("metrology", "metrologie", "métrologie", "calibration", "calibrage", "measurement", "measuring instruments", "micrometer", "pied a coulisse", "vernier")),
+        SkillDefinition("Technical documentation", SkillCategory.SOFT, listOf("technical documentation", "documentation technique", "maintenance reports", "rapports de maintenance", "procedures", "procédures", "work instructions")),
 
         // --- Safety ---
         SkillDefinition("Workplace safety", SkillCategory.SAFETY, listOf("lockout", "tagout", "loto", "workplace safety", "safety compliance", "hse", "occupational health")),
@@ -75,6 +79,33 @@ internal object CvLexicon {
     val languages: List<String> = listOf(
         "English", "French", "Malagasy", "German", "Spanish", "Portuguese", "Italian",
         "Arabic", "Mandarin", "Chinese", "Dutch", "Swahili", "Hindi", "Russian", "Japanese",
+        "Turkish", "Korean", "Indonesian", "Greek", "Polish", "Romanian", "Hebrew", "Norwegian",
+        "Swedish", "Danish", "Finnish", "Czech", "Hindi", "Bengali", "Urdu", "Persian",
+    )
+
+    /**
+     * How a CV spells each language, keyed by the canonical English name. A CV written in
+     * French says "Anglais", not "English"; both must resolve to the same skill so a
+     * francophone candidate is not scored as having no languages.
+     */
+    val languageAliases: Map<String, List<String>> = mapOf(
+        "English" to listOf("english", "anglais", "ingles", "inglés", "englisch"),
+        "French" to listOf("french", "français", "francais", "frances", "französisch", "franzosich"),
+        "Malagasy" to listOf("malagasy", "malgache"),
+        "German" to listOf("german", "allemand", "alemán", "aleman", "deutsch"),
+        "Spanish" to listOf("spanish", "espagnol", "espanol", "español"),
+        "Italian" to listOf("italian", "italien", "italiano"),
+        "Portuguese" to listOf("portuguese", "portugais", "português", "portugues"),
+        "Arabic" to listOf("arabic", "arabe", "árabe", "arabe"),
+        "Mandarin" to listOf("mandarin", "chinese", "chinois", "putonghua"),
+        "Chinese" to listOf("chinese", "chinois", "mandarin"),
+        "Dutch" to listOf("dutch", "néerlandais", "neerlandais", "holandés"),
+        "Swahili" to listOf("swahili", "kiswahili"),
+        "Turkish" to listOf("turkish", "turc", "turco"),
+        "Korean" to listOf("korean", "coréen", "coreen"),
+        "Russian" to listOf("russian", "russe", "ruso"),
+        "Japanese" to listOf("japanese", "japonais", "japonés"),
+        "Hindi" to listOf("hindi", "hindî"),
     )
 
     /** Degree and diploma markers, longest first so "master" wins over "ma". */
@@ -125,6 +156,21 @@ internal object CvLexicon {
         "Réunion", "Reunion", "Mayotte", "Comoros", "Comores", "Seychelles", "Kenya", "Rwanda",
     )
 
+    /** Major cities that frequently stand in for a country on a CV header. */
+    val cities: List<String> = listOf(
+        "Antananarivo", "Toamasina", "Antsirabe", "Fianarantsoa", "Mahajanga", "Toliara",
+        "Nairobi", "Johannesburg", "Cape Town", "Dubai", "Abu Dhabi", "Doha", "Riyadh",
+        "Paris", "Lyon", "Marseille", "London", "Manchester", "Berlin", "Munich", "Frankfurt",
+        "Amsterdam", "Brussels", "Geneva", "Zurich", "Madrid", "Barcelona", "Lisbon", "Rome",
+        "Milan", "Toronto", "Vancouver", "Montreal", "Ottawa", "Ottawa", "Calgary",
+        "New York", "Chicago", "Houston", "Sydney", "Melbourne", "Auckland", "Singapore",
+        "Hong Kong", "Tokyo", "Seoul", "Kuala Lumpur", "Port Louis", "Saint-Denis",
+    )
+
+    /** Country names and cities, accent-folded, for tolerant matching against folded text. */
+    val foldedPlaces: Set<String> =
+        (countries + cities).map { CvTextNormalizer.fold(it) }.toSet()
+
     /** Relocation signals, checked in order. */
     val relocationPhrases: List<Pair<String, String>> = listOf(
         "willing to relocate" to "Willing to relocate",
@@ -152,16 +198,16 @@ internal object CvLexicon {
     /** Section headings, keyed by the normalised heading text. */
     val sectionKeywords: Map<String, Section> = buildMap {
         fun add(section: Section, vararg keys: String) = keys.forEach { put(it, section) }
-        add(Section.SUMMARY, "summary", "profile", "professional summary", "about me", "about", "objective", "career objective", "profil", "résumé", "resume", "présentation", "presentation", "objectif")
-        add(Section.EXPERIENCE, "experience", "work experience", "professional experience", "employment", "employment history", "work history", "career", "expérience", "experience professionnelle", "parcours professionnel", "expériences", "historique professionnel")
-        add(Section.EDUCATION, "education", "academic background", "qualifications", "academic", "formation", "éducation", "education et formation", "études", "etudes", "diplômes", "diplomes")
-        add(Section.SKILLS, "skills", "technical skills", "core skills", "key skills", "competencies", "areas of expertise", "expertise", "compétences", "competences", "compétences techniques", "savoir-faire")
-        add(Section.LANGUAGES, "languages", "language skills", "langues", "langues parlées", "langues parlees")
-        add(Section.CERTIFICATIONS, "certifications", "certificates", "licences", "licenses", "training", "certifications et formations", "attestations")
-        add(Section.PROJECTS, "projects", "selected projects", "projets", "réalisations", "realisations")
-        add(Section.CONTACT, "contact", "contact details", "coordonnées", "coordonnees", "informations personnelles")
-        add(Section.INTERESTS, "interests", "hobbies", "centres d'intérêt", "loisirs", "activités", "activites")
-        add(Section.REFERENCES, "references", "références", "references professionnelles")
+        add(Section.SUMMARY, "summary", "profile", "professional summary", "about me", "about", "objective", "career objective", "profil", "résumé", "resume", "présentation", "presentation", "objectif", "professional profile", "career summary", "personal summary", "summary of experience", "a propos", "à propos", "overview", "executive summary")
+        add(Section.EXPERIENCE, "experience", "work experience", "professional experience", "employment", "employment history", "work history", "career", "expérience", "experience professionnelle", "parcours professionnel", "expériences", "historique professionnel", "professional background", "work background", "job history", "relevant experience", "career history", "expérience professionnelle", "parcours", "expérience de travail", "experience de travail", "expérience professionnelles", "professional experience summary")
+        add(Section.EDUCATION, "education", "academic background", "qualifications", "academic", "formation", "éducation", "education et formation", "études", "etudes", "diplômes", "diplomes", "education and training", "academic qualifications", "educational background", "academic history", "qualification", "formation et diplômes", "formation et diplomes", "education & training", "études et diplômes", "parcours scolaire", "scolarité", "scolarite")
+        add(Section.SKILLS, "skills", "technical skills", "core skills", "key skills", "competencies", "areas of expertise", "expertise", "compétences", "competences", "compétences techniques", "savoir-faire", "skill set", "skills summary", "professional skills", "additional skills", "core competencies", "key competencies", "technical competencies", "savoir faire", "compétences clés", "competences cles", "compétences professionnelles", "aptitudes", "technical expertise", "hard skills", "soft skills", "skills & abilities", "skills and abilities")
+        add(Section.LANGUAGES, "languages", "language skills", "langues", "langues parlées", "langues parlees", "language", "langues etrangeres", "langues étrangères", "foreign languages", "language proficiency", "linguistic skills", "competences linguistiques")
+        add(Section.CERTIFICATIONS, "certifications", "certificates", "licences", "licenses", "training", "certifications et formations", "attestations", "certifications and training", "professional certifications", "certifications & licences", "licences & certifications", "certifications et licence", "cursus", "formations", "certification", "professional development", "certifications & training")
+        add(Section.PROJECTS, "projects", "selected projects", "projets", "réalisations", "realisations", "personal projects", "project experience", "key projects", "projets personnels", "réalisations professionnelles")
+        add(Section.CONTACT, "contact", "contact details", "coordonnées", "coordonnees", "informations personnelles", "contact information", "personal details", "personal information", "contact info", "coordonnées personnelles", "coordonnees personnelles", "details", "détails")
+        add(Section.INTERESTS, "interests", "hobbies", "centres d'intérêt", "loisirs", "activités", "activites", "interest", "centres d'interet", "activities", "hobbies and interests", "interests and hobbies", "activités extra-professionnelles")
+        add(Section.REFERENCES, "references", "références", "references professionnelles", "professional references", "referees", "références professionnelles", "reference")
     }
 
     enum class Section { SUMMARY, EXPERIENCE, EDUCATION, SKILLS, LANGUAGES, CERTIFICATIONS, PROJECTS, CONTACT, INTERESTS, REFERENCES, UNKNOWN }

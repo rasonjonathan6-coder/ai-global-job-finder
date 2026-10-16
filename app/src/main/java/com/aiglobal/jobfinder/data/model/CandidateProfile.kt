@@ -84,11 +84,14 @@ enum class LanguageLevel(val label: String) {
             val t = token?.trim()?.lowercase() ?: return null
             if (t.isEmpty()) return null
             return when {
-                t.startsWith("native") || t.startsWith("mother") || t.startsWith("langue maternelle") -> NATIVE
-                t.startsWith("fluent") || t.startsWith("courant") -> FLUENT
-                t.startsWith("adv") || t.startsWith("c1") || t.startsWith("c2") -> ADVANCED
-                t.startsWith("inter") || t.startsWith("b1") || t.startsWith("b2") || t.startsWith("moyen") -> INTERMEDIATE
-                t.startsWith("beg") || t.startsWith("basic") || t.startsWith("a1") || t.startsWith("a2") || t.startsWith("début") -> BEGINNER
+                t.startsWith("native") || t.startsWith("mother") || t.startsWith("langue maternelle") ||
+                    t.startsWith("natif") || t.startsWith("bilingue") -> NATIVE
+                t.startsWith("fluent") || t.startsWith("courant") || t.startsWith("maternelle") -> FLUENT
+                t.startsWith("adv") || t.startsWith("c1") || t.startsWith("c2") || t.startsWith("avanc") -> ADVANCED
+                t.startsWith("inter") || t.startsWith("b1") || t.startsWith("b2") || t.startsWith("moyen") ||
+                    t.startsWith("intermed") -> INTERMEDIATE
+                t.startsWith("beg") || t.startsWith("basic") || t.startsWith("a1") || t.startsWith("a2") ||
+                    t.startsWith("debut") || t.startsWith("début") || t.startsWith("notion") -> BEGINNER
                 else -> null
             }
         }

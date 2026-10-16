@@ -46,8 +46,14 @@ class PdfCvParser(private val context: Context) : CvParser {
                 val pageCount = doc.numberOfPages
                 if (pageCount == 0) throw CvParseException.Corrupted()
 
-                val text = try {
-                    PDFTextStripper().apply { sortByPosition = true }.getText(doc)
+                val rawText = try {
+                    PDFTextStripper().apply {
+                        sortByPosition = true
+                        // Explicit defaults, so a layout is not glued together by PDFBox's
+                        // own guesses before we ever see the text.
+                        lineSeparator = "\n"
+                        wordSeparator = " "
+                    }.getText(doc)
                 } catch (e: IOException) {
                     throw CvParseException.Corrupted(e)
                 } catch (e: RuntimeException) {
@@ -55,8 +61,10 @@ class PdfCvParser(private val context: Context) : CvParser {
                     throw CvParseException.Corrupted(e)
                 }
 
+                val text = CvTextNormalizer.normalize(rawText)
+
                 val warnings = buildList {
-                    if (text.isBlank()) {
+                    if (text.count { !it.isWhitespace() } < CvParseResult.MIN_USABLE_CHARACTERS) {
                         add("This PDF has no text layer. It is probably a scan or a photo.")
                     }
                 }

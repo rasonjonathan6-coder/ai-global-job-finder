@@ -19,7 +19,7 @@ class PlainTextCvParser : CvParser {
     override suspend fun parse(source: CvSource, fileType: CvFileType): CvParseResult =
         withContext(Dispatchers.IO) {
             val bytes = source.openStream().use { it.readBytes() }
-            val text = decode(bytes).replace("\r\n", "\n").trim()
+            val text = CvTextNormalizer.normalize(decode(bytes))
             val warnings = buildList {
                 if (text.isBlank()) add("This file is empty.")
             }

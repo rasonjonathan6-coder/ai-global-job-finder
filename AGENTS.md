@@ -93,6 +93,27 @@ Notes that cost time to rediscover:
   applicationContext)` lazily (guarded by `isReady()`), so `CvParserRegistry.default(context)`
   takes the app `Context`. `Stage27CvAnalysisTest` locks this in — it asserts `isReady()` and
   reads a real asset-backed PDF under Robolectric. Do not log CV content or keys.
+- **`CvTextNormalizer` is the single gate between raw text and every extractor.** PDFBox
+  splits lines across text fragments and can double-decode UTF-8 as Latin-1, so "Mécanicien"
+  can arrive as "MÃ©canicien" and "technician" as "techni-\\ncian". Text is repaired once
+  (`normalize`) before parsing finishes, and matching runs on an accent-folded copy
+  (`fold`). Extractors must never compare against raw case-folded text — that is what made
+  the title appear while skills, education and languages stayed empty on a real CV.
+  `fold` is for comparison only; the value stored in the profile keeps its original accents.
+- **Keyword matching must be accent-insensitive.** `CvLexicon.sectionKeywords`,
+  `titleMarkers`, `degreeMarkers` and skill/language aliases are looked up against folded
+  text. `CvLexicon.languageAliases` maps canonical language names to their English, French
+  and Spanish spellings, so a francophone CV listing "Anglais"/"Français"/"Malgache" is read
+  instead of being scored as having no languages. `CvLexicon.foldedPlaces` (countries +
+  major cities) backs location detection.
+- **Absent vs unreadable is a different message.** `CvAnalyzer.sectionWarnings` reports
+  "no section found" when the heading is missing and "a section was found but nothing could
+  be read" when the heading exists with body text under it. Never report the former when the
+  latter is true. Fields are only ever populated from text that is actually present — the
+  analyzer never invents a name, phone or degree.
+- `Stage28CvExtractionTest` covers all of the above: a realistic header with the job title
+  before the name, a French CV with accents and French headings, a document that must yield
+  empty fields, and the normaliser (mojibake, hyphen splits, folding).
 - `data/repository/CvRepository.kt` — owns the flow: import → parse → analyse → persist.
   `record` is a `StateFlow<CvRecord?>`; `completeness()` derives profile completeness.
   All disk/parse work runs on `Dispatchers.IO`/`Default` behind a write mutex.

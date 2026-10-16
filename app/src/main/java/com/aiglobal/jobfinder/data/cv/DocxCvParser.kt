@@ -29,7 +29,7 @@ class DocxCvParser : CvParser {
             if (parts.isEmpty()) {
                 throw CvParseException.Corrupted()
             }
-            val text = parts.joinToString("\n")
+            val text = CvTextNormalizer.normalize(parts.joinToString("\n"))
             val warnings = buildList {
                 if (text.isBlank()) {
                     add("No text was found in the document body.")
