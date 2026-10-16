@@ -1271,6 +1271,51 @@ Suite **425 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1` probes). `
 (0 errors, 52 pre-existing warnings), `assembleDebug` and `assembleRelease` all succeed. No
 emulator run (no KVM here).
 
+## Stage 33 — validation of the CV → offers → deduplication → history journey
+
+A *validation* stage with no functional change intended, and none made: every scenario that
+could be exercised off-device passed, so no defect was reproduced and nothing was "fixed".
+The stage's honesty requirement is that an on-device run is never claimed when no device was
+used. Here there is **no device and no emulator**: `adb devices` is empty, `/dev/kvm` does not
+exist (no `vmx`/`svm` in `/proc/cpuinfo`), and the SDK has no `emulator` binary and no
+`system-images`. So the twelve device scenarios are reported as *automated-covered* or
+*not run on device*, never as an Android device validation.
+
+**Tooling checked first.** `adb version` = 1.0.41 (present), `adb devices` = empty, no
+`emulator`/`system-images` under `ANDROID_HOME=/home/openhands/android-sdk`, no KVM. An
+x86_64 Android emulator cannot start without KVM here, and there is no ARM host for an ARM
+image, so an AVD was not attempted.
+
+**Scenario coverage (device scenarios from the brief).**
+
+- Automated, deterministic: 6 (one posting from two sources → one application), 7 (two
+  different postings stay distinct), 8 (confirm-duplicate survives a restart), 9
+  (confirm-distinct survives a restart), 10 (the "N to verify" figure equals what is really
+  pending), 11 (the history never shows `Sent`, and a forced real send still cannot reach it).
+- Automated via existing suites: 2 (PDF with a text layer), 3 (image/scanned PDF reported as
+  partial/impossible, not "analysed"), 4 (no fabricated title/skills/experience) → Stage 28/29;
+  5 (filters, match scores, country/visa) → Stage 10/21/24/25; 12 (offline and API-error
+  behaviour: every source still named, nothing reported as a failure, cached-only surfaced) →
+  Stage 22.
+- Not run on a device: none of 1–12; scenario 1 (install and launch) and the touch/scroll
+  interactions are the parts that genuinely need a device or emulator and are therefore
+  reported as not executed rather than assumed.
+
+**Tests (6 new).** `Stage33JourneyValidationTest` replays scenarios 6–11 in order against the
+real `SubmissionRegistry` over a real on-disk document (reopened to prove persistence), and
+renders the real `SubmissionHistoryContent` at a narrow phone width (`w320dp-h640dp-hdpi`) to
+prove the pending counter and the "nothing is ever sent" promise reach the screen. Real
+sending stays impossible throughout (`SENT` unreachable; a forced real send is
+`BLOCKED_INCOMPATIBLE`). Suite **441 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1`
+probes). `lintDebug` (0 errors, 52 pre-existing warnings + 1 info), `assembleDebug` and
+`assembleRelease` all succeed.
+
+**Artifacts.** Debug APK `app/build/outputs/apk/debug/app-debug.apk`
+(30,232,921 bytes, sha256 `d5d875c1…5c177`), release APK
+`app/build/outputs/apk/release/app-release-unsigned.apk` (8,387,761 bytes, sha256
+`da354d4e…ecb005`). The release APK is unsigned; install it with `adb install` only after
+signing (`apksigner`), and the debug one with `adb install -r app-debug.apk`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
