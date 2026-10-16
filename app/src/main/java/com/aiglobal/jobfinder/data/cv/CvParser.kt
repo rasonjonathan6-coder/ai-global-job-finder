@@ -1,5 +1,6 @@
 package com.aiglobal.jobfinder.data.cv
 
+import android.content.Context
 import com.aiglobal.jobfinder.data.model.CvFileType
 import java.io.InputStream
 
@@ -94,8 +95,8 @@ class CvParserRegistry(private val parsers: List<CvParser>) {
 
     /** Default registry: every format the picker accepts has a real implementation. */
     companion object {
-        fun default(): CvParserRegistry = CvParserRegistry(
-            listOf(PdfCvParser(), DocxCvParser(), DocCvParser(), PlainTextCvParser()),
+        fun default(context: Context): CvParserRegistry = CvParserRegistry(
+            listOf(PdfCvParser(context), DocxCvParser(), DocCvParser(), PlainTextCvParser()),
         )
     }
 }

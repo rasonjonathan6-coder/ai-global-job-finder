@@ -72,7 +72,7 @@ open class AppContainer(application: Application) {
     val cvRepository: CvRepository = CvRepository(
         context = application,
         fileStore = CvFileStore(application),
-        parserRegistry = CvParserRegistry.default(),
+        parserRegistry = CvParserRegistry.default(application),
         analyzer = HeuristicCvAnalyzer(),
     )
 

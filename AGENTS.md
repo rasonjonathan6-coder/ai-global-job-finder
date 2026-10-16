@@ -83,6 +83,16 @@ Notes that cost time to rediscover:
 - `data/cv/` — `CvFileStore` (copies a picked `Uri` into app-private storage under a
   UUID-derived name), `CvParserRegistry` (PDF via pdfbox-android, DOC/DOCX, TXT),
   `HeuristicCvAnalyzer`, `CvLexicon`, `CvProfileMerger`. `CvFileType` lives in `data/model`.
+- **pdfbox-android MUST be initialised before any PDF call.** PDFBox loads its glyph lists,
+  AFM font metrics and CMaps from the app assets and, if `PDFBoxResourceLoader` was never
+  initialised, the first `PDDocument.load`/`PDFTextStripper.getText` aborts the process
+  (device logcat: `RuntimeException: FileNotFoundException: com/tom_roush/pdfbox/resources/
+  glyphlist/additional.txt` from `LegacyPDFStreamEngine`). Because an uncaught exception on
+  a background dispatcher kills the whole app, this surfaced as "the app keeps stopping" on
+  "Analyse my CV". `PdfCvParser(context)` now calls `PDFBoxResourceLoader.init(context.
+  applicationContext)` lazily (guarded by `isReady()`), so `CvParserRegistry.default(context)`
+  takes the app `Context`. `Stage27CvAnalysisTest` locks this in — it asserts `isReady()` and
+  reads a real asset-backed PDF under Robolectric. Do not log CV content or keys.
 - `data/repository/CvRepository.kt` — owns the flow: import → parse → analyse → persist.
   `record` is a `StateFlow<CvRecord?>`; `completeness()` derives profile completeness.
   All disk/parse work runs on `Dispatchers.IO`/`Default` behind a write mutex.
@@ -1021,7 +1031,7 @@ fixing, then verified **42 consecutive green runs**.
 Debug package `com.aiglobal.jobfinder.debug`, versionName `1.0.0-debug`, versionCode 1, minSdk 26,
 targetSdk 34. Release is minified/shrunk and shares the same code; only its signing is absent.
 
-**Validation.** Unit suite **346 tests, 0 failures, 0 errors, 2 skipped** (the two opt-in
+**Validation.** Unit suite **354 tests, 0 failures, 0 errors, 2 skipped** (the two opt-in
 `LIVE_PROBE=1` probes, skipped by design). `lintDebug` **0 errors, 52 pre-existing warnings**.
 `assembleDebug` and `assembleRelease` both succeed. There is **no emulator run** — this container
 has no KVM, so a device/emulator pass is out of scope and must be done by the user.
