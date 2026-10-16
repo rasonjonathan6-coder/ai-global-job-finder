@@ -134,6 +134,11 @@ class WorkdayProvider(
         val url = optString("externalUrl").ifBlank { site.detailUrl(optString("externalPath")) }
         val reqId = optString("jobReqId").ifBlank { optString("id") }
 
+        // Workday states whether the posting still accepts applicants. When it says no, the
+        // posting is closed and must not be shown as if it were open. The field is absent on
+        // some rows; absent means "not stated", never "closed".
+        val closedToNewApplicants = has("canApply") && !optBoolean("canApply")
+
         return RawJob(
             providerId = this@WorkdayProvider.id,
             providerName = this@WorkdayProvider.name,
@@ -146,6 +151,7 @@ class WorkdayProvider(
             employmentType = optString("timeType").takeIf { it.isNotBlank() },
             postedAtEpochMillis = IsoDates.epochMillis(optString("startDate")),
             isRemote = false,
+            closedToNewApplicants = closedToNewApplicants,
         )
     }
 

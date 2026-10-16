@@ -51,6 +51,10 @@ enum class RecordRejectionReason(val label: String, val explanation: String) {
         "Duplicate posting",
         "The same role from the same employer was already kept from another source.",
     ),
+    CLOSED_TO_APPLICANTS(
+        "No longer accepting applicants",
+        "The source itself reports the posting is closed to new applicants, so applying would lead nowhere.",
+    ),
 }
 
 /** The outcome of validating one record. */
@@ -136,6 +140,10 @@ class RecordValidationEngine(
 
         reasons += salaryIssues(raw)
         reasons += ageIssues(raw, now)
+
+        // A posting the source itself marks as closed is not shown as if it were open. This
+        // is a stated fact, not an age guess, so it is surfaced with its own reason.
+        if (raw.closedToNewApplicants) reasons += RecordRejectionReason.CLOSED_TO_APPLICANTS
 
         return RecordValidation(
             accepted = reasons.isEmpty(),

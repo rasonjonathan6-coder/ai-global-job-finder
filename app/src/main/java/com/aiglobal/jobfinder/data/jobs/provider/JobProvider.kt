@@ -30,6 +30,14 @@ data class RawJob(
     val salaryMax: Int? = null,
     val salaryCurrency: String? = null,
     val salaryPeriod: SalaryPeriod? = null,
+    /**
+     * True only when the source *itself* says the posting is closed to new applicants
+     * (Workday's `canApply = false`). This is a fact the employer declared, not an
+     * inference from age, so a closed posting is dropped rather than shown as if it were
+     * still open. Providers whose feed cannot state this leave it false — absence of the
+     * flag never means "closed".
+     */
+    val closedToNewApplicants: Boolean = false,
 )
 
 /**

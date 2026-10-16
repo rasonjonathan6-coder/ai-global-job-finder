@@ -18,7 +18,7 @@ object CountryCatalog {
     )
 
     private val entries: List<Entry> = listOf(
-        Entry("United States", "🇺🇸", listOf("united states", "usa", "u.s.a", "u.s.", "america")),
+        Entry("United States", "🇺🇸", listOf("united states of america", "united states", "usa", "u.s.a", "u.s.", "america")),
         Entry("Canada", "🇨🇦", listOf("canada")),
         Entry("United Kingdom", "🇬🇧", listOf("united kingdom", "uk", "great britain", "britain", "england", "scotland", "wales", "northern ireland")),
         Entry("Germany", "🇩🇪", listOf("germany", "deutschland")),
@@ -76,6 +76,8 @@ object CountryCatalog {
         Entry("Burkina Faso", "🇧🇫", listOf("burkina faso")),
         Entry("Tanzania", "🇹🇿", listOf("tanzania")),
         Entry("Zambia", "🇿🇲", listOf("zambia")),
+        Entry("Zimbabwe", "🇿🇼", listOf("zimbabwe", "harare")),
+        Entry("Côte d'Ivoire", "🇨🇮", listOf("côte d'ivoire", "cote d'ivoire", "ivory coast", "abidjan")),
         Entry("Botswana", "🇧🇼", listOf("botswana")),
         Entry("Namibia", "🇳🇦", listOf("namibia")),
         Entry("Democratic Republic of the Congo", "🇨🇩", listOf("democratic republic of the congo", "dr congo", "drc", "congo")),
@@ -84,6 +86,7 @@ object CountryCatalog {
         Entry("Chile", "🇨🇱", listOf("chile")),
         Entry("Peru", "🇵🇪", listOf("peru")),
         Entry("Suriname", "🇸🇷", listOf("suriname")),
+        Entry("Panama", "🇵🇦", listOf("panama")),
         Entry("Papua New Guinea", "🇵🇬", listOf("papua new guinea")),
         Entry("Brazil", "🇧🇷", listOf("brazil")),
         Entry("Mexico", "🇲🇽", listOf("mexico")),

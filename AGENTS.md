@@ -1492,6 +1492,58 @@ détail, tri Expat fit par bénéfices puis éligibilité/sponsorisation puis sc
 Fichiers modifiés/ajoutés : `WorkdayProvider.kt`, `ViewModels.kt`, `Job.kt`,
 `Stage36TargetedDiscoveryTest.kt`.
 
+## Stage 37 — vérifier que l'offre renvoyée est actuelle, pertinente et « applicable »
+
+**Objet.** Stage 36 a élargi la curation de boards. Cette étape vérifie, preuves à l'appui, que
+l'offre qui en sort est **réellement exploitable** par un candidat appliquant depuis Madagascar :
+qu'elle est **actuelle** (pas un poste fermé présenté comme ouvert), **pertinente** pour le CV
+(métier du candidat, pas seulement un employeur industriel) et **applicable** (pays résolu pour
+l'éligibilité, lien de candidature employeur). La méthode est un audit live des champs que le
+fournisseur Workday **jetait**.
+
+**Reconnaissance (champs Workday mesurés en direct).** Sur Weir/Sulzer/EPSA/First Quantum, l'appel
+détail (`/wday/cxs/{tenant}/{site}{externalPath}`) porte des champs non lus :
+
+| Champ | Mesure live | Décision |
+| --- | --- | --- |
+| `startDate` | présent **100 %** (75/75), suit `postedOn` (« Posted Today » → date du jour) | conservé → `postedAtEpochMillis` ; la fraîcheur reste « date non indiquée » si absent |
+| `canApply` | booléen présent, `true` sur 315/315 postings ouverts scannés | lu → `closedToNewApplicants` ; `false` ⇒ poste **fermé** |
+| `externalUrl` + `country` | résolus | déjà utilisés (lien + pays) |
+
+**Décisions.**
+
+1. **Fermé ≠ ouvert.** Nouveau fait `RawJob.closedToNewApplicants` (défaut `false`, donc les autres
+   fournisseurs sont inchangés), posé par `WorkdayProvider` **uniquement** quand la source dit
+   `canApply = false`. Un champ **absent** vaut « non déclaré », jamais « fermé ». Le
+   `RecordValidationEngine` rejette ces postings avec une raison dédiée et **comptée**
+   (`CLOSED_TO_APPLICANTS`), donc jamais affichés comme ouverts. Persisté dans `JobCache`.
+2. **Pays manquants (trouvé par la sonde live).** EPSA publie des postes de mine en **Côte
+   d'Ivoire** et au **Zimbabwe**, First Quantum au **Panama** ; ces pays n'étaient pas dans
+   `CountryCatalog`, donc l'éligibilité ne pouvait pas être jugée. Ajoutés : Zimbabwe 🇿🇼, Côte
+   d'Ivoire 🇨🇮 (alias FR `côte d'ivoire` + EN `ivory coast` + `abidjan`), Panama 🇵🇦, et l'alias
+   Workday « United States of America ». La fraîcheur et la pertinence n'ont **pas** été touchées.
+
+**Preuve avant/après (sonde live, `Stage37LiveProbeTest`).** Avant : « 4601 -Yaoure Gold Mine 2,
+Côte d'Ivoire (known=false) » et « Cobre Panama (known=false) ». Après : `🇨🇮 Côte d'Ivoire
+(known=true)`, `🇵🇦 Panama (known=true)` ; **0 postings sans date**, **0 fermés laissés** ;
+« structural checks passed for 11 kept postings ». Le meilleur résultat reste « 68 % Maintenance
+Technician — Weir Group 🇺🇸 » (TARGET), avec EPSA Arabie saoudite 🇸🇦 en MAINTENANCE_FAMILY.
+
+**Limite honnête.** Aucun `canApply = false` n'a été observé sur les boards scannés le jour de la
+mesure : le filtre est correct et testé, mais son effet réel est aujourd'hui nul (les boards
+retirent vite les postes fermés). `startDate` reste la date de publication, pas une date limite de
+candidature. Le rendement Golfe/Afrique dépend du moment de la mesure.
+
+**Vérification.** Suite **472 tests, 0 échec, 0 erreur, 3 skipped** (+11 : `Stage37OfferVerificationTest`
+10 tests + `Stage37LiveProbeTest` 1 sonde ignorée sans `LIVE_PROBE=1`). `lintDebug` **0 erreur,
+52 warnings** (inchangé). `assembleDebug` réussit. Nouveaux fichiers :
+`Stage37OfferVerificationTest.kt` (10 tests : date lue et classée récente, absence de date ⇒ jamais
+« frais », fermé rejeté et compté, `canApply` lu, `canApply` absent ⇒ non fermé, métier du candidat
+reconnu, professions différentes écartées, pays + drapeau + lien + employeur présents, Golfe résolu,
+pays Afrique/Golfe ajoutés reconnus) et `Stage37LiveProbeTest.kt` (sonde `LIVE_PROBE=1`, ignorée par
+défaut). Fichiers modifiés : `JobProvider.kt` (`RawJob`), `WorkdayProvider.kt`, `JobCache.kt`,
+`RecordValidationEngine.kt`, `CountryCatalog.kt`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
