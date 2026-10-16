@@ -18,31 +18,31 @@ data class NvidiaModel(
 object NvidiaModels {
 
     /**
-     * Suggested starting points. These are long-lived, widely-hosted Meta/NVIDIA models that
-     * answer `/chat/completions` on `integrate.api.nvidia.com`. The list is a convenience,
-     * not a whitelist: NVIDIA retires and adds models often, so the app also discovers the
-     * account's real list at runtime (`/v1/models`) and lets the user type any id. A model
-     * that is not in this list is still valid if the account serves it.
+     * Suggested starting points, each verified to answer `/chat/completions` on the account's
+     * endpoint. The list is a convenience, not a whitelist: NVIDIA retires models often (an
+     * id can still appear in `/v1/models` yet answer `410 Gone` or `404 Not found for account`
+     * when called), so the app also discovers the account's real list at runtime and lets the
+     * user type any id. A model not in this list is still valid if the account serves it.
      */
     val known: List<NvidiaModel> = listOf(
         NvidiaModel(
-            id = "meta/llama-3.1-8b-instruct",
-            label = "Llama 3.1 8B Instruct",
+            id = "meta/llama-3.2-11b-vision-instruct",
+            label = "Llama 3.2 11B",
             note = "Fast, low-cost general model. A good default for drafting and explaining.",
         ),
         NvidiaModel(
-            id = "meta/llama-3.3-70b-instruct",
-            label = "Llama 3.3 70B Instruct",
-            note = "Larger model. Higher quality writing, slower and more quota per call.",
+            id = "google/gemma-4-31b-it",
+            label = "Gemma 4 31B",
+            note = "Larger general model. Higher quality writing, slower per call.",
         ),
         NvidiaModel(
-            id = "nvidia/llama-3.3-nemotron-super-49b-v1",
-            label = "Nemotron Super 49B",
+            id = "nvidia/nemotron-3-super-120b-a12b",
+            label = "Nemotron 3 Super 120B",
             note = "NVIDIA reasoning model. Strong at explanation, slower.",
         ),
         NvidiaModel(
-            id = "mistralai/mistral-nemo-12b-instruct",
-            label = "Mistral NeMo 12B",
+            id = "nvidia/nemotron-3.5-super-vl-120b-a12b",
+            label = "Nemotron 3.5 Super VL 120B",
             note = "General-purpose alternative if a preferred model is unavailable.",
         ),
     )

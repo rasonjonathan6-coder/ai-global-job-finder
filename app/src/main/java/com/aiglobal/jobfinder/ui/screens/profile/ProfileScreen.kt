@@ -1426,7 +1426,7 @@ internal fun AiAssistantCard(
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
                     PrimaryButton(
-                        text = if (testing) "Testing…" else "Test key",
+                        text = if (testing) "Checking…" else "Check key",
                         onClick = {
                             testing = true
                             testResult = null
@@ -1468,7 +1468,11 @@ internal fun AiAssistantCard(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = if (ok) "NVIDIA accepted this key." else result.message,
+                            text = if (ok) {
+                                "This key is valid. It can list models \u2014 test the selected model below to confirm it can draft."
+                            } else {
+                                result.message
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface,
                         )

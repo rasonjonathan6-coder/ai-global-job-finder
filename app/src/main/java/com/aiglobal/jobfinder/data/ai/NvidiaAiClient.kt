@@ -146,10 +146,16 @@ class NvidiaAiClient(
             return classifyThrowable(t)
         }
         if (response.statusCode !in 200..299) return interpretError(response)
-        // A reachable model that answers is a success even if the token limit truncated the
-        // text; an empty body on HTTP 200 is the only real "bad response" case.
-        return if (response.body.isBlank()) {
-            failure(NvidiaStatus.BAD_RESPONSE, "NVIDIA returned an empty response for this model.")
+        // "On" must mean "this model, with these settings, produced text". A reasoning model
+        // can answer HTTP 200 with `content: null` (all budget spent thinking), and an empty
+        // body is equally unusable, so both fail here rather than falsely marking the service
+        // operational. This matches what [complete] requires.
+        val text = extractContent(response.body)
+        return if (text.isBlank()) {
+            failure(
+                NvidiaStatus.BAD_RESPONSE,
+                "The model answered but returned no text with these settings. Pick another model.",
+            )
         } else {
             NvidiaResult(NvidiaStatus.OK, text = "The model answered. It can be used for drafting.")
         }
@@ -270,11 +276,20 @@ class NvidiaAiClient(
         else -> failure(NvidiaStatus.NETWORK, "The request to NVIDIA failed: ${t.javaClass.simpleName}.")
     }
 
-    /** Extracts `choices[0].message.content`; tolerant of a non-string or missing content. */
+    /**
+     * Extracts `choices[0].message.content`; tolerant of a non-string or missing content.
+     * A JSON `null` is treated as absent: reasoning models return `content: null`, and the
+     * naive `toString()` would turn it into the literal text "null".
+     */
     internal fun extractContent(body: String): String = runCatching {
         val choices = JSONObject(body).optJSONArray("choices") ?: return ""
         val message = choices.optJSONObject(0)?.optJSONObject("message") ?: return ""
-        message.opt("content")?.let { it as? String ?: it.toString() }.orEmpty().trim()
+        if (message.isNull("content")) return ""
+        when (val value = message.opt("content")) {
+            null, JSONObject.NULL -> ""
+            is String -> value.trim()
+            else -> value.toString().trim()
+        }
     }.getOrDefault("")
 
     /** Pulls the human-readable reason out of an NVIDIA error body, e.g. `detail` or `title`. */
