@@ -97,6 +97,7 @@ class CvRepository(
                 status = CvStatus.FAILED,
                 pageCount = parsed.pageCount,
                 extractedCharacters = parsed.characterCount,
+                extractedNonWhitespaceCharacters = parsed.nonWhitespaceCount,
                 warnings = (current.warnings + parsed.warnings + reason).distinct(),
             )
             persist(failed)
@@ -117,10 +118,15 @@ class CvRepository(
             analyzedAtEpochMillis = clock(),
             pageCount = parsed.pageCount,
             extractedCharacters = parsed.characterCount,
+            extractedNonWhitespaceCharacters = parsed.nonWhitespaceCount,
             profile = analysis.profile,
-            engineId = analyzer.id,
-            engineLabel = analyzer.label,
+            // Name the engine that actually produced the shown profile. When the AI pass falls
+            // back, that is the on-device analyser, not the AI one that was asked.
+            engineId = analysis.effectiveEngineId ?: analyzer.id,
+            engineLabel = analysis.effectiveEngineLabel ?: analyzer.label,
             aiStatus = analysis.aiStatus,
+            // The analyser already derives these from the profile it returned, so a note can
+            // never contradict a section the user can see. Parse-time notes are kept too.
             warnings = (parsed.warnings + analysis.warnings).distinct(),
         )
         persist(updated)
@@ -234,6 +240,7 @@ internal fun recordToJson(record: CvRecord): JSONObject = JSONObject().apply {
     put("status", record.status.name)
     put("pageCount", record.pageCount ?: JSONObject.NULL)
     put("extractedCharacters", record.extractedCharacters)
+    put("extractedNonWhitespaceCharacters", record.extractedNonWhitespaceCharacters)
     put("engineId", record.engineId ?: JSONObject.NULL)
     put("engineLabel", record.engineLabel ?: JSONObject.NULL)
     put("aiStatus", record.aiStatus.name)
@@ -299,6 +306,7 @@ internal fun cvRecordFromJson(json: JSONObject): CvRecord = CvRecord(
     status = runCatching { CvStatus.valueOf(json.optString("status")) }.getOrDefault(CvStatus.IMPORTED),
     pageCount = json.optIntOrNull("pageCount"),
     extractedCharacters = json.optInt("extractedCharacters"),
+    extractedNonWhitespaceCharacters = json.optInt("extractedNonWhitespaceCharacters"),
     engineId = json.optStringOrNull("engineId"),
     engineLabel = json.optStringOrNull("engineLabel"),
     aiStatus = runCatching { com.aiglobal.jobfinder.data.model.CvAiStatus.valueOf(json.optString("aiStatus")) }

@@ -66,7 +66,7 @@ class CvAiAnalyzer internal constructor(
         val heuristic: CvAnalysisResult = HeuristicCvAnalyzer().analyze(text, existing, protectedFields)
 
         if (text.count { !it.isWhitespace() } < CvParseResult.MIN_USABLE_CHARACTERS) {
-            return heuristic.copy(aiStatus = CvAiStatus.NONE)
+            return heuristic.copy(aiStatus = CvAiStatus.NONE).asOnDevice()
         }
 
         val config = configProvider()
@@ -78,8 +78,9 @@ class CvAiAnalyzer internal constructor(
         if (refused != null) {
             return heuristic.copy(
                 aiStatus = refused,
-                warnings = heuristic.warnings + listOfNotNull(refused.explanation()),
-            )
+                warnings = CvAnalysisWarnings.warningsFor(heuristic.profile, heuristic.presence) +
+                    listOfNotNull(refused.explanation()),
+            ).asOnDevice()
         }
 
         val chunks = chunk(text)
@@ -105,8 +106,9 @@ class CvAiAnalyzer internal constructor(
         if (failure != null || extractions.isEmpty()) {
             return heuristic.copy(
                 aiStatus = CvAiStatus.FAILED,
-                warnings = heuristic.warnings + failureWarning(failure, config),
-            )
+                warnings = CvAnalysisWarnings.warningsFor(heuristic.profile, heuristic.presence) +
+                    failureWarning(failure, config),
+            ).asOnDevice()
         }
 
         // One call per chunk; union them, then let the AI result win over the heuristic where
@@ -118,12 +120,25 @@ class CvAiAnalyzer internal constructor(
             protectedFields = protectedFields,
         )
 
+        // The notes describe the profile that will actually be shown, so a field the model
+        // recovered (education, languages, …) is never also reported as missing. The AI does
+        // not re-ask for a name/email/phone the heuristic already found — those come from the
+        // model's own JSON, which is authoritative here — but the deterministic contact regexes
+        // remain the fallback, so anything the model omitted is still filled from the CV text.
+        val presence = CvSectionPresence(
+            skills = heuristic.presence.skills || aiProfile.skills.isNotEmpty(),
+            education = heuristic.presence.education || aiProfile.education.isNotEmpty(),
+            languages = heuristic.presence.languages || aiProfile.languages.isNotEmpty(),
+        )
+        val notes = CvAnalysisWarnings.warningsFor(profile, presence)
+
         return CvAnalysisResult(
             profile = profile,
-            warnings = heuristic.warnings + extraWarnings(profile),
+            warnings = notes,
             confidence = confidenceOf(profile),
             evidence = evidenceOf(profile),
             aiStatus = CvAiStatus.SUCCESS,
+            presence = presence,
         )
     }
 
@@ -272,9 +287,17 @@ class CvAiAnalyzer internal constructor(
             if (profile.education.isNotEmpty()) put(com.aiglobal.jobfinder.data.model.CandidateField.EDUCATION, profile.education.first().degree)
         }
 
-    private fun extraWarnings(profile: CandidateProfile): List<String> = buildList {
-        if (profile.fullName.isBlank()) add("The AI could not find a name. Add yours by hand.")
-        if (profile.education.isEmpty()) add("The AI could not find an education or training entry.")
+    /**
+     * Marks a fallback result as produced by the on-device analyser. Without this the record
+     * would keep the AI analyser's label while showing the on-device profile, so the footer
+     * ("… · AI analysis (NVIDIA)") would name an engine that did not produce the fields.
+     */
+    private fun CvAnalysisResult.asOnDevice(): CvAnalysisResult {
+        val onDevice = HeuristicCvAnalyzer()
+        return copy(
+            effectiveEngineId = onDevice.id,
+            effectiveEngineLabel = onDevice.label,
+        )
     }
 
     private fun failureWarning(failure: NvidiaResult?, config: NvidiaConfig): String {

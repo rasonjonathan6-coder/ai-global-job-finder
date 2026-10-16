@@ -771,13 +771,20 @@ private fun NotesCard(warnings: List<String>) {
 }
 
 /**
+ * The number of characters the user should see. Newer records carry an explicit
+ * non-whitespace count; older ones fall back to the total buffer length so nothing shows blank.
+ */
+private fun CvRecord.readableCharacterCount(): Int =
+    if (extractedNonWhitespaceCharacters > 0) extractedNonWhitespaceCharacters else extractedCharacters
+
+/**
  * Shown when the document yielded some text but not enough for a full analysis. It states
  * the honest reason first, so a thin profile is never read as a complete one.
  */
 @Composable
 private fun PartialReadBanner(record: CvRecord) {
     val spacing = LocalSpacing.current
-    val characters = record.extractedCharacters
+    val characters = record.readableCharacterCount()
     AppCard(
         modifier = Modifier.fillMaxWidth(),
         containerColor = extendedColors.warningContainer,
@@ -819,7 +826,7 @@ private fun TechnicalDetailsCard(record: CvRecord) {
     val spacing = LocalSpacing.current
     val rows = buildList {
         record.pageCount?.let { add("Pages" to it.toString()) }
-        add("Characters extracted" to record.extractedCharacters.toString())
+        add("Characters read" to record.readableCharacterCount().toString())
         add("Format" to record.fileType.label)
         add("File size" to formatFileSize(record.sizeBytes))
         record.engineLabel?.let { add("Engine" to it) }

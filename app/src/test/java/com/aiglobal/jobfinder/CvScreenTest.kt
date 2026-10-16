@@ -138,6 +138,7 @@ class CvScreenTest {
             status = CvStatus.PARTIAL,
             pageCount = 2,
             extractedCharacters = 96,
+            extractedNonWhitespaceCharacters = 90,
             profile = CandidateProfile(currentTitle = "Mechanical Seal Repair Technician"),
         )
         render(CvUiState(isLoading = false, record = partial))
@@ -146,7 +147,7 @@ class CvScreenTest {
         composeRule.onNodeWithText("Analysis incomplete").assertIsDisplayed()
         scrollToText("Only part of this CV could be read")
         scrollToText("Technical details")
-        scrollToText("Characters extracted")
+        scrollToText("Characters read")
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -55,7 +56,9 @@ class PdfCvParser(private val context: Context) : CvParser {
                     val pageText = try {
                         // XY-cut reading order, not PDFBox's row-by-row order: a sidebar or
                         // two-column CV would otherwise be interleaved and lose its headings.
-                        PdfLayoutExtractor.text(doc, index)
+                        // Guarded: the layout pass must never recover *less* than PDFBox's
+                        // default order, so a pathological page still yields its text.
+                        recoverPageText(doc, index)
                     } catch (e: IOException) {
                         throw CvParseException.Corrupted(e)
                     } catch (e: RuntimeException) {
@@ -113,6 +116,25 @@ class PdfCvParser(private val context: Context) : CvParser {
                 )
             }
         }
+
+    /**
+     * Recovers one page, preferring the XY-cut reading order but never returning less text
+     * than PDFBox's default order. The default pass is only computed when the layout pass
+     * looks thin, so the common case stays single-pass and fast.
+     */
+    private fun recoverPageText(document: PDDocument, pageIndex: Int): String {
+        val layout = PdfLayoutExtractor.text(document, pageIndex)
+        val layoutCount = layout.count { !it.isWhitespace() }
+        // A healthy page is already well above the fragment threshold; no need to second-guess.
+        if (layoutCount >= CvParseResult.MIN_USABLE_CHARACTERS) return layout
+
+        val plain = PDFTextStripper().apply {
+            startPage = pageIndex + 1
+            endPage = pageIndex + 1
+        }.getText(document)
+
+        return if (plain.count { !it.isWhitespace() } > layoutCount) plain else layout
+    }
 
     /**
      * True when any page holds a raster image, a reasonable proxy for "this is a scan".

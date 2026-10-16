@@ -1592,6 +1592,44 @@ et le trajet complet dépôt → analyseur IA). Fichiers modifiés : `CvAnalyzer
 helpers `recordToJson`/`cvRecordFromJson` rendus `internal`), `AiJobFinderApp.kt` (câblage),
 `ui/screens/cv/CvScreen.kt` (`AiAnalysisCard`).
 
+## Stage 40 — les notes du CV décrivent le profil réellement affiché
+
+**Symptôme (appareil réel).** Un CV qui ne rendait que peu de texte produisait malgré tout un
+profil riche (formation, langues) **et**, en même temps, des notes affirmant que la formation, les
+langues, le nom, l'e-mail et le téléphone étaient tous absents. Les notes contredisaient donc le
+profil montré juste à côté.
+
+**Cause.** `CvAiAnalyzer`, sur le chemin IA, construisait ses notes à partir du profil
+**heuristique seul** (`heuristic.warnings + extraWarnings(profile)`), jamais à partir du profil
+fusionné que l'utilisateur voit. Un champ récupéré par le modèle (formation, langues) restait donc
+signalé comme manquant. Un second défaut : quand l'IA échoue, l'enregistrement gardait l'étiquette
+« AI analysis (NVIDIA) » alors que le profil affiché venait de l'analyseur on-device.
+
+**Correctif.** Les notes ont **une seule source**, `data/cv/CvAnalysisWarnings.kt`
+(`warningsFor(profile, presence)`), dérivée du profil qui sera affiché. Les deux analyseurs y
+délèguent : si une section est présente, aucune note ne la dit absente. `presence`
+(`CvSectionPresence`, sections réellement portées par le document) ne change que la **formulation**
+(« section trouvée mais illisible » vs « aucune section »), jamais la présence d'une note. Le
+résultat porte aussi l'analyseur **effectif** (`effectiveEngineId/Label`) : en repli, le dépôt
+nomme l'analyseur on-device, pas l'IA qui n'a rien produit.
+
+**Comptage honnête.** `CvRecord.extractedNonWhitespaceCharacters` est persisté et affiché
+(« Characters read ») : `extractedCharacters` comptait tout le tampon (sauts de page/lignes), donc
+un PDF multipage lisait beaucoup plus grand que le texte visible. Ancien enregistrement sans le
+champ ⇒ repli sur l'ancien compteur.
+
+**Extraction.** `PdfCvParser.recoverPageText` ne rend jamais **moins** de texte que l'ordre par
+défaut de PDFBox : la passe XY-cut reste préférée, mais une page pathologique retombe sur le
+stripper par défaut (la passe par défaut n'est calculée que si la passe layout semble maigre).
+
+**Vérification.** Suite **500 tests, 0 échec** (+13 : `Stage40CvConsistencyTest`). Le probe
+temporaire qui reproduisait la contradiction a été supprimé. Nouveaux fichiers :
+`data/cv/CvAnalysisWarnings.kt` et `Stage40CvConsistencyTest.kt`. Modifiés : `CvAnalyzer.kt`
+(`presence`, `effectiveEngine*`, délégation des notes), `CvAiAnalyzer.kt` (notes sur le profil
+fusionné, repli étiqueté on-device), `CandidateProfile.kt` (compteur non-blanc), `CvRepository.kt`
+(compteur + moteur effectif), `PdfCvParser.kt` (garde-fou d'extraction), `ui/screens/cv/CvScreen.kt`
+(« Characters read »), `CvScreenTest.kt` (libellé).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

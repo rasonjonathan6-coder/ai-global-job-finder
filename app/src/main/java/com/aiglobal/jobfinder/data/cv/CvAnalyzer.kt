@@ -14,6 +14,16 @@ data class CvAnalysisResult(
     val evidence: Map<CandidateField, String> = emptyMap(),
     /** Whether and how the AI pass contributed to this result. */
     val aiStatus: CvAiStatus = CvAiStatus.NONE,
+    /**
+     * The analyser that produced [profile]. This is not always the analyser that was asked:
+     * when the AI pass falls back, the on-device profile is what the user actually sees, so
+     * the effective engine is the on-device one. Null means "use the configured analyser's
+     * own id/label" — the case for a clean on-device or AI run.
+     */
+    val effectiveEngineId: String? = null,
+    val effectiveEngineLabel: String? = null,
+    /** Which sections the document carried, so an unreadable one is not called absent. */
+    val presence: CvSectionPresence = CvSectionPresence.NONE,
 )
 
 /**
@@ -60,7 +70,6 @@ class HeuristicCvAnalyzer : CvAnalyzer {
         existing: CandidateProfile,
         protectedFields: Set<CandidateField>,
     ): CvAnalysisResult {
-        val warnings = mutableListOf<String>()
         val evidence = mutableMapOf<CandidateField, String>()
 
         if (text.count { !it.isWhitespace() } < CvParseResult.MIN_USABLE_CHARACTERS) {
@@ -93,11 +102,14 @@ class HeuristicCvAnalyzer : CvAnalyzer {
         val industries = findIndustries(foldedText, skills)
         val summary = findSummary(sections, lines)
 
-        warnings += sectionWarnings(sections, skills, education, languages)
-
-        if (email == null) warnings += "No email address was found. Add one so applications can be sent."
-        if (phone == null) warnings += "No phone number was found."
-        if (name == null) warnings += "The candidate name could not be identified. Check the document header."
+        // Which sections the document carried, so an unreadable one is worded differently
+        // from a genuinely absent one. Recorded before merging: the merged profile may also
+        // carry values the user typed by hand, which the document never contained.
+        val presence = CvSectionPresence(
+            skills = hasSectionContent(sections, CvLexicon.Section.SKILLS),
+            education = hasSectionContent(sections, CvLexicon.Section.EDUCATION),
+            languages = hasSectionContent(sections, CvLexicon.Section.LANGUAGES),
+        )
 
         val extracted = CandidateProfile(
             fullName = name ?: "",
@@ -144,9 +156,12 @@ class HeuristicCvAnalyzer : CvAnalyzer {
 
         return CvAnalysisResult(
             profile = merged,
-            warnings = warnings,
+            // Notes come from the profile that is actually shown, so a warning can never
+            // contradict a section the user can see.
+            warnings = CvAnalysisWarnings.warningsFor(merged, presence),
             confidence = computeConfidence(extracted),
             evidence = evidence,
+            presence = presence,
         )
     }
 
@@ -192,48 +207,16 @@ class HeuristicCvAnalyzer : CvAnalyzer {
     }
 
     /**
-     * Warnings that distinguish a genuinely absent section from one that is present but
-     * could not be read. The user sees "we could not read" only when the document actually
-     * contained a matching section, which tells them it is worth correcting by hand.
+     * True when a heading introduces content that follows it. A lone heading with nothing
+     * under it counts as absent, so the note the user reads stays truthful.
      */
-    private fun sectionWarnings(
+    private fun hasSectionContent(
         sections: Map<CvLexicon.Section, List<String>>,
-        skills: List<String>,
-        education: List<Any>,
-        languages: List<Any>,
-    ): List<String> {
-        val out = mutableListOf<String>()
-
-        // A section exists when a heading introduces content that follows it. A lone heading
-        // with nothing under it is treated as absent, so the message stays truthful.
-        fun linesUnder(section: CvLexicon.Section): List<String> {
-            val body = sections[section].orEmpty().filter { it.isNotBlank() }
-            val headings = body.count { CvTextStructure.headingFor(it) != null }
-            return if (body.size > headings) body else emptyList()
-        }
-
-        if (skills.isEmpty()) {
-            out += if (linesUnder(CvLexicon.Section.SKILLS).isNotEmpty()) {
-                "A skills section was found but no known skills were recognised in it. Add yours by hand."
-            } else {
-                "No skills section was found. Add your skills to improve matching."
-            }
-        }
-        if (education.isEmpty()) {
-            out += if (linesUnder(CvLexicon.Section.EDUCATION).isNotEmpty()) {
-                "A training section was found but no degree or diploma could be read from it."
-            } else {
-                "No education or training section was found."
-            }
-        }
-        if (languages.isEmpty()) {
-            out += if (linesUnder(CvLexicon.Section.LANGUAGES).isNotEmpty()) {
-                "A languages section was found but no known language was recognised in it."
-            } else {
-                "No languages were listed. Many international roles require a language level."
-            }
-        }
-        return out
+        section: CvLexicon.Section,
+    ): Boolean {
+        val body = sections[section].orEmpty().filter { it.isNotBlank() }
+        val headings = body.count { CvTextStructure.headingFor(it) != null }
+        return body.size > headings
     }
 
     private fun findLocation(lines: List<String>, sections: Map<CvLexicon.Section, List<String>>): String? {

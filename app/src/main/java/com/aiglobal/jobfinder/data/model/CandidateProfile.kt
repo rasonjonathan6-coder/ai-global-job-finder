@@ -211,6 +211,12 @@ data class CvRecord(
     val status: CvStatus = CvStatus.IMPORTED,
     val pageCount: Int? = null,
     val extractedCharacters: Int = 0,
+    /**
+     * Characters the extractor actually recovered, whitespace excluded. This is the number the
+     * user should trust: [extractedCharacters] counts the whole text buffer (newlines between
+     * pages, line breaks), which for a multi-page PDF reads far larger than the visible text.
+     */
+    val extractedNonWhitespaceCharacters: Int = 0,
     val profile: CandidateProfile = CandidateProfile(),
     /** Fields the user corrected; a later analysis must not overwrite these. */
     val userEditedFields: Set<CandidateField> = emptySet(),
