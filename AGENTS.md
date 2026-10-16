@@ -867,13 +867,25 @@ empty page stops the walk; the industrial titles classify as maintenance family;
 provider reports "no answer" as a usable failure, not an empty result). Suite: **307 tests,
 0 failures** (2 skipped: the opt-in live probes).
 
-**Known pre-existing flake (not Stage 24).** `Stage22AuditTest` intermittently fails on the
-suite run (`expected:<IDLE> but was:<LOADING>`, or its sibling
-`anOnlineAttemptListsEachSourceExactlyOnce`) because the repository's constructor launches its
-own first refresh on `Dispatchers.IO` while the test's `awaitSettled` polls a *different* flow
-(`diagnostics`) than the one it then asserts (`syncState`). It reproduces on the untouched
-Stage 23 baseline and passes in isolation. If you touch that area, make the wait key on
-`syncState` itself (or both flows) rather than only `diagnostics`.
+**Resolved in Stage 27 — the `Stage22AuditTest` flake.** The intermittent
+`expected:<IDLE> but was:<LOADING>` / `network is not available` failures had *two* causes, both
+now fixed:
+
+1. The test's `awaitSettled` polled `diagnostics` with a predicate
+   (`!isRefreshing && no provider IN_PROGRESS`) that the repository's **seed state** also
+   satisfies — the object is constructed "not refreshing" before its init coroutine runs, so
+   `first {}` returned the blank seed instead of waiting. The wait now also requires a recorded
+   attempt (`lastAttemptAtEpochMillis != null`) before it can settle.
+2. `LiveJobRepository` launched **two** refreshes on startup: the explicit init refresh plus one
+   from `demoMode.collect`, which fires on its own seed value. The two could serialize, so a
+   source was queried twice and `syncState` was read mid-second-attempt. The collector now uses
+   `demoMode.drop(1)`, so the seed value no longer schedules a refresh and a launch queries each
+   source once.
+
+The shared helper lives in `RepositorySettle.kt` (test source). Regression tests pin both the
+seed-vs-attempt contract and "one launch reads each source once". Verified green 42 consecutive
+runs where the old code failed roughly 1 run in 4.
+
 
 ## Stage 25 — technical job discovery quality & expat evidence
 
@@ -974,6 +986,50 @@ leading country only appears when something is actionable). `Stage26ScreenTest` 
 and its headline are reachable at 320 dp; a ready-only list shows no preparation section; a
 gapped posting shows its next step; the empty state still explains itself). Suite: **340 tests,
 0 failures** — the documented `Stage22AuditTest` flake stayed green this run.
+
+## Stage 27 — stabilize tests, validate the APK, prepare real-world use
+
+**The flake is fixed, at its source.** Two independent defects caused the intermittent
+`Stage22AuditTest` failures (see the note above): the test's settle predicate matched the
+repository's pre-attempt seed, and the repository fired a duplicate startup refresh from the
+demo-mode collector. The fix is deliberately small and does not weaken any assertion:
+
+- `app/src/test/java/com/aiglobal/jobfinder/RepositorySettle.kt` — one `awaitSettled` helper for
+  the test source. It waits on **both** `diagnostics` and `syncState`, and it only accepts a
+  diagnostics state that records an attempt (`lastAttemptAtEpochMillis != null`). That single
+  extra clause is what excludes the seed. `isSettledDiagnostics(...)` is the pure predicate,
+  exposed so the regression tests can pin the contract without racing the init coroutine.
+- `LiveJobRepository` — the demo-mode collector is now `demoMode.drop(1).collect { ... }`. Its
+  seed value is not a mode change; the explicit init refresh already covers startup. This removes
+  a redundant refresh on every launch and is a real behaviour improvement, not a test-only tweak.
+  Leaving demo mode still triggers a refresh, because a genuine change into live mode is always a
+  later emission.
+
+Tests added to `Stage22AuditTest` (now 9): the untouched seed must **not** settle; a recorded
+finished attempt **must**; an in-flight attempt (refreshing, or a provider in progress) must not;
+the seed-vs-attempt contract end to end; one launch reads each source once; and after settling,
+both flows describe the same finished attempt. Reproduced the old failure (~1 run in 4) before
+fixing, then verified **42 consecutive green runs**.
+
+**Artifacts (verified, not assumed).**
+
+| Artifact | Path | Size | Signing |
+| --- | --- | --- | --- |
+| Debug | `app/build/outputs/apk/debug/app-debug.apk` | ~29.8 MB | Android debug key (installs on a personal phone) |
+| Release | `app/build/outputs/apk/release/app-release-unsigned.apk` | ~8.4 MB | **unsigned** — not install-ready |
+
+Debug package `com.aiglobal.jobfinder.debug`, versionName `1.0.0-debug`, versionCode 1, minSdk 26,
+targetSdk 34. Release is minified/shrunk and shares the same code; only its signing is absent.
+
+**Validation.** Unit suite **346 tests, 0 failures, 0 errors, 2 skipped** (the two opt-in
+`LIVE_PROBE=1` probes, skipped by design). `lintDebug` **0 errors, 52 pre-existing warnings**.
+`assembleDebug` and `assembleRelease` both succeed. There is **no emulator run** — this container
+has no KVM, so a device/emulator pass is out of scope and must be done by the user.
+
+**Real-world use.** `docs/DEVICE_TEST_CHECKLIST.md` is the manual checklist for installing the
+debug APK on the phone and verifying CV import, honest refresh/caching, shortlist quality,
+unknown-visa handling, next-step guidance, employer links, editing, offline recovery,
+notifications and both themes. It states plainly which layers are automated and which are not.
 
 ## Conventions
 

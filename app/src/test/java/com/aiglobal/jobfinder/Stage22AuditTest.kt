@@ -9,15 +9,17 @@ import com.aiglobal.jobfinder.data.jobs.provider.ProviderCapabilities
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderKind
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
 import com.aiglobal.jobfinder.data.model.CandidateProfile
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.SourceState
 import com.aiglobal.jobfinder.data.repository.LiveJobRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -78,19 +80,6 @@ class Stage22AuditTest {
         isOnline = { online },
     )
 
-    /**
-     * Waits for a refresh to settle. The repository kicks off its own first refresh in the
-     * constructor, so an explicit call can be skipped by the single-flight mutex; polling
-     * until no source is in progress removes that race from the assertions.
-     */
-    private suspend fun LiveJobRepository.awaitSettled() {
-        withTimeout(5_000) {
-            diagnostics.first { state ->
-                !state.isRefreshing && state.providers.none { it.status == ProviderStatus.IN_PROGRESS }
-            }
-        }
-    }
-
     @Test
     fun offlineAttemptStillNamesEverySourceAndNeverReportsFailure() = runBlocking {
         val provider = StaticProvider(id = "arbeitnow", name = "Arbeitnow")
@@ -148,5 +137,109 @@ class Stage22AuditTest {
         assertEquals(setOf("arbeitnow", "jooble"), ids.toSet())
         assertEquals(ProviderStatus.SUCCESS_WITH_RESULTS, repo.diagnostics.first().providers.first { it.providerId == "arbeitnow" }.status)
         assertEquals(ProviderStatus.NOT_CONFIGURED, repo.diagnostics.first().providers.first { it.providerId == "jooble" }.status)
+    }
+
+    /**
+     * Regression for the Stage 22 flake. The repository seeds diagnostics with
+     * `isRefreshing = false` and no provider in progress *before* its init coroutine has run,
+     * so the old "is it idle?" predicate matched that seed and returned the blank state. The
+     * completion signal must require a recorded attempt.
+     */
+    @Test
+    fun theUntouchedSeedStateIsNotTreatedAsSettled() {
+        // Exactly the seed: no attempt recorded, nothing refreshing, no provider in progress.
+        assertFalse(
+            "the pre-attempt seed must never read as settled",
+            isSettledDiagnostics(lastAttemptAtEpochMillis = null, isRefreshing = false, anyProviderInProgress = false),
+        )
+    }
+
+    @Test
+    fun aFinishedAttemptIsTreatedAsSettled() {
+        assertTrue(
+            isSettledDiagnostics(lastAttemptAtEpochMillis = 1_700_000_000_000, isRefreshing = false, anyProviderInProgress = false),
+        )
+    }
+
+    /** A refresh that is still running — or has a source in flight — is never settled. */
+    @Test
+    fun anInFlightAttemptIsNotSettled() {
+        assertFalse(isSettledDiagnostics(lastAttemptAtEpochMillis = 1_700_000_000_000, isRefreshing = true, anyProviderInProgress = false))
+        assertFalse(isSettledDiagnostics(lastAttemptAtEpochMillis = 1_700_000_000_000, isRefreshing = false, anyProviderInProgress = true))
+    }
+
+    /**
+     * The interleaving that produced the failure, pinned without racing the init coroutine:
+     * the repository's untouched seed — the exact values it is constructed with — is what the
+     * old predicate matched, and it must not count as settled.
+     */
+    @Test
+    fun theRepositorySeedMatchesTheOldPredicateButNotTheRecordedAttemptContract() = runBlocking {
+        val repo = repository(listOf(StaticProvider(id = "arbeitnow", name = "Arbeitnow")), online = false)
+
+        // What the object is constructed with, before any attempt. This is the exact shape
+        // the old "!refreshing && no IN_PROGRESS" check accepted.
+        val seed = ProviderDiagnostics(
+            providers = listOf(
+                ProviderDiagnostic(
+                    providerId = "arbeitnow",
+                    name = "Arbeitnow",
+                    homepage = "https://example.test/arbeitnow",
+                    documentationUrl = "https://example.test/arbeitnow/docs",
+                ),
+            ),
+        )
+        assertFalse("the seed must not satisfy the recorded-attempt contract", isSettledDiagnostics(
+            lastAttemptAtEpochMillis = seed.lastAttemptAtEpochMillis,
+            isRefreshing = seed.isRefreshing,
+            anyProviderInProgress = seed.providers.any { it.status == ProviderStatus.IN_PROGRESS },
+        ))
+
+        // And once the real init refresh settles, it does.
+        repo.awaitSettled()
+        val settled = repo.diagnostics.first()
+        assertTrue(isSettledDiagnostics(
+            lastAttemptAtEpochMillis = settled.lastAttemptAtEpochMillis,
+            isRefreshing = settled.isRefreshing,
+            anyProviderInProgress = settled.providers.any { it.status == ProviderStatus.IN_PROGRESS },
+        ))
+    }
+
+    /**
+     * Regression for the second half of the Stage 22 flake. The repository used to fire two
+     * refreshes on startup — the explicit init refresh plus one from the demo-mode collector
+     * reacting to its own seed value — so a source could be queried twice and the sync state
+     * could be caught mid-second-attempt (LOADING). A launch must read each source once.
+     */
+    @Test
+    fun oneLaunchReadsEachSourceOnce() = runBlocking {
+        val provider = StaticProvider(id = "arbeitnow", name = "Arbeitnow", jobs = listOf(raw("a1", "arbeitnow")))
+        val repo = repository(listOf(provider), online = true)
+
+        repo.awaitSettled()
+
+        assertEquals("a single launch must not schedule a second, redundant refresh", 1, provider.fetches)
+        assertEquals(SourceState.SUCCESS, repo.syncState.first().sources.single().state)
+    }
+
+    /**
+     * After the initial refresh settles, both flows must describe the same finished attempt:
+     * diagnostics report the observed network and a recorded time, and sync reports idle
+     * sources consistent with that attempt.
+     */
+    @Test
+    fun afterSettlingBothFlowsDescribeTheSameFinishedAttempt() = runBlocking {
+        val repo = repository(listOf(StaticProvider(id = "arbeitnow", name = "Arbeitnow")), online = false)
+
+        repo.awaitSettled()
+
+        val diagnostics = repo.diagnostics.first()
+        val sync = repo.syncState.first()
+        assertNotNull("a settled state has a recorded attempt", diagnostics.lastAttemptAtEpochMillis)
+        assertFalse(diagnostics.isRefreshing)
+        assertFalse("sync must agree the attempt finished", sync.isRefreshing)
+        assertTrue("offline is reported as such, not left at the optimistic default", !diagnostics.networkAvailable)
+        assertEquals(1, sync.sources.size)
+        assertTrue("a finished attempt leaves no source loading", sync.sources.none { it.state == SourceState.LOADING })
     }
 }

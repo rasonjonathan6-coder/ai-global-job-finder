@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -208,7 +209,11 @@ class LiveJobRepository(
         val cached = cache.read()
         if (cached.isNotEmpty()) rawJobs.value = cached
         scope.launch {
-            demoMode.collect { enabled ->
+            // The seed value is just the initial default, not a mode change: the init
+            // coroutine below already refreshes on startup. Refreshing on it too would fire a
+            // second, redundant attempt on every launch (and leave the state flipping between
+            // LOADING and IDLE), so only a genuine change *into* live mode re-refreshes.
+            demoMode.drop(1).collect { enabled ->
                 demoEnabled = enabled
                 // Leaving demo mode must not strand the user with an empty list.
                 if (!enabled) runLiveValidation()
