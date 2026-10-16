@@ -1399,6 +1399,41 @@ au-delà du 6ᵉ dans la liste ordonnée ne sont pas interrogés lors de ce pass
 Sonde temporaire supprimée ; seuls `HttpJsonClient.kt` (rédaction) et `Stage34ApiAuditTest.kt`
 sont ajoutés.
 
+## Stage 35 — découverte ciblée depuis les boards employeurs
+
+**Objet.** Stage 34 a montré, preuves à l'appui, que les boards employeurs (Workday, Greenhouse,
+Ashby, Lever) portent bien les métiers de maintenance du candidat, mais que **Greenhouse n'en
+remontait aucun** lors de la sonde complète. Ce stage corrige la cause, sans élargir le périmètre :
+le seul défaut de *récupération* mis en évidence par l'audit.
+
+**Cause (structurelle, pas un manque de données).** L'API liste de Greenhouse n'a **pas** de
+recherche serveur ; `GreenhouseProvider` lit donc la liste puis consacre un budget borné
+(`DETAILS_PER_BOARD = 6`) à des appels détail concurrents, car seule la fiche détail porte le
+pays et le texte d'offre dont `MatchingEngine` a besoin. Ce budget était dépensé sur les **6
+premières lignes** de la liste. Or les métiers d'un industriel sont **profonds** dans son board :
+« Maintenance Technician » est très au-delà des premières lignes, tandis que les premières lignes
+sont des stages et des postes de labo/conception. Conséquence : les métiers n'étaient jamais lus et
+le board *paraissait* dépourvu de postes du métier.
+
+**Correctif (local, borné, sans invention).** `GreenhouseProvider.pickDetailIds` choisit désormais
+les lignes à lire en priorisant les titres de la famille maintenance, via le **même
+`RoleClassifier`** que le reste du pipeline (source unique de vérité sur la pertinence), puis
+complète le budget avec les lignes les plus récentes restantes. Le nombre de requêtes est
+**inchangé** ; seul l'ordre change. Quand aucun titre n'est un métier, le résultat est la liste
+« plus récentes d'abord » d'origine — donc le comportement ailleurs est strictement préservé.
+Aucun board ajouté, aucun `DEFAULT_KEYWORDS` modifié, aucun fournisseur touché (Ashby/Lever
+filtrent déjà localement ; Workday/EURES cherchent déjà côté serveur).
+
+**Limite honnête.** Le budget détail reste borné à 6/board : si un board publiait plus de 6 titres
+pertinents, certains ne seraient pas lus lors de ce passage. C'est un compromis assumé contre un
+téléchargement multi-mégaoctets à chaque rafraîchissement (le fichier le documente déjà).
+
+**Vérification.** Suite **452 tests, 0 échec, 2 skipped** (+5 : `Stage35TargetedDiscoveryTest` :
+métiers enfouis réellement lus, budget borné à 6 appels inchangé, board sans métier → repli
+« plus récentes d'abord » identique, curation Greenhouse bien formée). `lintDebug` **0 erreur,
+52 warnings** (inchangé). `assembleDebug` réussit. Seuls `GreenhouseProvider.kt` et
+`Stage35TargetedDiscoveryTest.kt` sont modifiés/ajoutés.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

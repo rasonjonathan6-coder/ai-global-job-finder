@@ -1,5 +1,6 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
+import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -24,6 +25,9 @@ data class GreenhouseBoard(
  * Greenhouse's public board API has no server-side keyword search: the list is fetched and
  * filtered locally. The list row omits the description, so a bounded, concurrent set of
  * per-posting detail calls reads the country and the job text the matching engine needs.
+ * Because that budget is bounded, the trade titles are read first (see [pickDetailIds]),
+ * so an employer's maintenance vacancies are not crowded out by its latest unrelated
+ * internship.
  */
 class GreenhouseProvider(
     private val feed: JsonFeed = HttpJsonFeed,
@@ -57,8 +61,7 @@ class GreenhouseProvider(
                 continue
             }
             anyAnswered = true
-            val ids = rows.mapNotNull { it.optString("id").takeIf { id -> id.isNotBlank() } }
-                .take(DETAILS_PER_BOARD)
+            val ids = pickDetailIds(rows)
             for (job in detailsFor(board, ids)) {
                 collected.putIfAbsent(job.externalId, job)
             }
@@ -74,6 +77,33 @@ class GreenhouseProvider(
             )
         }
         return collected.values.take(limit)
+    }
+
+    /**
+     * Chooses which list rows get the bounded, expensive per-posting detail read.
+     *
+     * The list endpoint carries the title but not the description; the detail call carries
+     * both. Spending the whole budget on the first rows in list order is what hid the very
+     * roles the candidate wants: an industrial employer's maintenance and trade titles sit
+     * deep in a board (Redwood Materials' "Maintenance Technician" is far past its first
+     * rows), so a straight top-N read returned only lab and design roles and the board
+     * looked like it had no trade vacancy at all.
+     *
+     * Trade titles are therefore read first, using the same [RoleClassifier] the rest of the
+     * pipeline uses to define relevance, and the newest remaining rows fill the rest of the
+     * budget. This changes only the order; the same number of requests are made and no
+     * posting is invented. When no title reads as a trade role the result is the plain
+     * newest-first list, so the provider's behaviour elsewhere is unchanged.
+     */
+    private fun pickDetailIds(rows: List<JSONObject>): List<String> {
+        val titled = rows.mapNotNull { row ->
+            val id = row.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            id to row.optString("title")
+        }
+        val (relevant, rest) = titled.partition { (_, title) ->
+            RoleClassifier.classify(title).isMaintenanceFamily
+        }
+        return (relevant + rest).map { it.first }.take(DETAILS_PER_BOARD)
     }
 
     private suspend fun list(board: GreenhouseBoard): List<JSONObject> {
