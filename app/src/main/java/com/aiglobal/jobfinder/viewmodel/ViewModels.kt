@@ -298,8 +298,27 @@ data class JobsUiState(
                 JobSort.BEST_MATCH -> result.sortedByDescending { it.matchScore }
                 JobSort.NEWEST -> result.sortedByDescending { it.postedAtEpochMillis }
                 JobSort.SALARY_HIGH -> result.sortedByDescending { eurPerYearOrZero(it) }
+                JobSort.EXPAT_FIT -> result.sortedWith(expatFitOrder)
             }
         }
+
+    /**
+     * The most applicable first: the documented Expat Benefits Score, then a real
+     * Madagascar path (sponsored or eligible), then documented visa sponsorship, and only
+     * then CV match and recency. Every step reads a recorded fact, so the order is
+     * reproducible rather than a hunch.
+     */
+    private val expatFitOrder: Comparator<Job> =
+        compareByDescending<Job> { expatAssessments[it.id]?.score ?: -1 }
+            .thenByDescending { it.eligibility.rank }
+            .thenByDescending { job ->
+                job.benefitEvidence.any {
+                    it.type.key == com.aiglobal.jobfinder.data.model.JobBenefitTypes.VISA_SPONSORSHIP.key &&
+                        it.status == com.aiglobal.jobfinder.data.model.BenefitStatus.CONFIRMED
+                }
+            }
+            .thenByDescending { it.matchScore }
+            .thenByDescending { it.postedAtEpochMillis ?: 0L }
 
     private fun eurPerYearOrZero(job: Job): Int =
         if (job.salaryMin <= 0) 0
@@ -312,6 +331,9 @@ enum class JobSort(val label: String) {
     BEST_MATCH("Best match"),
     NEWEST("Newest"),
     SALARY_HIGH("Highest salary"),
+
+    /** Most applicable from Madagascar first, using recorded facts rather than a guess. */
+    EXPAT_FIT("Expat fit"),
 }
 
 class JobsViewModel(

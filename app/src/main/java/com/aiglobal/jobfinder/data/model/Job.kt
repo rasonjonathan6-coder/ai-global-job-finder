@@ -20,7 +20,22 @@ enum class MatchTier { EXCELLENT, STRONG, GOOD, FAIR, LOW;
 }
 
 /** Whether a candidate currently in Madagascar can realistically apply. */
-enum class MadagascarEligibility { ELIGIBLE, VISA_SPONSORED, UNCLEAR, RESTRICTED }
+enum class MadagascarEligibility {
+    ELIGIBLE, VISA_SPONSORED, UNCLEAR, RESTRICTED;
+
+    /**
+     * Ordering weight for "can I apply from here?": a direct eligibility or a sponsored
+     * route outranks an unclear posting, which outranks one that rules expats out. Derived
+     * here so the sort and the UI reason from the same value.
+     */
+    val rank: Int
+        get() = when (this) {
+            ELIGIBLE -> 3
+            VISA_SPONSORED -> 2
+            UNCLEAR -> 1
+            RESTRICTED -> 0
+        }
+}
 
 /** Relocation / visa posture advertised by the employer. */
 enum class VisaSupport { FULL_SPONSORSHIP, RELOCATION_PACKAGE, SPONSORSHIP_AVAILABLE, NOT_MENTIONED, LOCAL_ONLY }

@@ -1434,6 +1434,64 @@ métiers enfouis réellement lus, budget borné à 6 appels inchangé, board san
 52 warnings** (inchangé). `assembleDebug` réussit. Seuls `GreenhouseProvider.kt` et
 `Stage35TargetedDiscoveryTest.kt` sont modifiés/ajoutés.
 
+## Stage 36 — nouvelles sources gratuites ciblées + tri « Expat fit » vérifiable
+
+**Objet.** Trouver de **nouvelles sources gratuites** qui exposent réellement les métiers visés
+(maintenance industrielle, mécanique, pompes, mines) pour un candidat appliquant **depuis
+Madagascar**, dans les géographies prioritaires (Arabie saoudite, EAU, Qatar, Oman, Koweït,
+Afrique du Sud, Botswana, Namibie, Zambie). Deux livrables : élargir la curation de boards
+employeurs, et rendre l'ordre d'affichage **reproductible sur des faits enregistrés**.
+
+**Reconnaissance (APIs gratuites, mesurée en direct).** Aucune source unique « Gulf + Afrique »
+n'existe gratuitement :
+
+| Source | Verdict |
+| --- | --- |
+| Careerjet (`public.api.careerjet.net`) | **Non viable** : exige un `Referer` déclaré (403 « Undeclared referrer ») et n'écoute qu'en HTTP en clair. |
+| Adzuna | Clé gratuite, mais **16–20 pays, aucun pays du Golfe** ; dans la région, seule l'Afrique du Sud. |
+| The Muse / ReliefWeb v2 | **Fermés** : appname/Referer approuvé obligatoire (403). |
+| Findwork | Clé requise (401). |
+| SmartRecruiters | Sans clé, recherche serveur `q=` et filtre `country=`, mais **couverture Golfe/Afrique négligeable** (Bosch : Arabie saoudite 2, EAU 0, Qatar 0 ; Afrique du Sud 1). |
+| Workday / Lever / Greenhouse / Ashby | **Sans clé**, le poste est celui de l'employeur (le plus fiable). |
+| GulfTalent, Naukrigulf, Bayt, agences de main-d'œuvre | Publient bien les postes du Golfe mais **sans API gratuite** (pages web seules). |
+
+**Décision.** Étendre la curation **Workday** (fournisseur déjà en place, format `RawJob`
+traduction-seule préservé) plutôt qu'ajouter un fournisseur à faible rendement. Sites **vérifiés
+en direct** via le CXS public (recherche serveur + appel détail qui porte le pays réel) :
+
+- `weir` (Weir Group, pompes/équipements miniers) — remonte « Millwright », « Shift Leader:
+  Maintenance » (Port Elizabeth) ;
+- `sulzer` (Sulzer, pompes/équipement tournant) — remonte « Gas Turbine Fitter » (Abu Dhabi) ;
+- `epsa` (EPSA, terrassement minier) — remonte « Maintenance Engineer (Madinah) », « Heavy
+  Equipment Mechanic (Turaif) », de nombreux postes de mine (Mashonaland West) ;
+- `firstquantum` (First Quantum Minerals, cuivre Zambie) — remonte « Artisan Fitter », « Artisan
+  Boilermaker », « Artisan, Electrician » (Solwezi/Kalumbila).
+
+**Preuve avant/après.** Sur les 8 métiers cibles envoyés aux boards, 4 sites existants remontent
+~128 titres de métier ; les 4 sites ajoutés en remontent ~186, dont les titres exacts du candidat
+(fitter, artisan, field service technician) et des localisations Golfe/Afrique. Le détail est bien
+lu (pays, description, URL de candidature employeur) : First Quantum → Zambie, EPSA → Côte
+d'Ivoire, Sulzer → Émirats, Weir → États-Unis.
+
+**Tri « Expat fit » (vérifiable, pas une intuition).** Nouveau `JobSort.EXPAT_FIT` et nouvelle
+propriété dérivée `MadagascarEligibility.rank` (ELIGIBLE 3 > VISA_SPONSORED 2 > UNCLEAR 1 >
+RESTRICTED 0). L'ordre compare, dans cet ordre, des **faits enregistrés** : score Expat Benefits
+documenté, puis verdict d'éligibilité, puis sponsorisation de visa confirmée (preuve), puis score
+CV, puis date. Le tri s'affiche automatiquement dans les puces « Sort by » existantes (le rendu
+itérait déjà `JobSort.entries`).
+
+**Limite honnête.** Les boards Gulf/Afrique locaux sans API restent hors portée ; leur accès
+nécessiterait scraping (hors des règles) ou une clé commerciale. Le rendement Golfe des boards
+employeurs reste faible côté sièges (peu de postes dans ces pays), mais les postes de **chantier**
+(Abu Dhabi, Turaif, Madinah, Solwezi) — précisément ceux du candidat — y sont bien présents.
+
+**Vérification.** Suite **461 tests, 0 échec, 0 erreur, 2 skipped** (+9 : `Stage36TargetedDiscoveryTest` :
+curation pompe/Afrique présente et sans doublon, pays Golfe et pays africain résolus depuis l'appel
+détail, tri Expat fit par bénéfices puis éligibilité/sponsorisation puis score CV, rang d'éligibilité).
+`lintDebug` **0 erreur, 52 warnings** (inchangé). `assembleDebug` et `assembleRelease` réussissent.
+Fichiers modifiés/ajoutés : `WorkdayProvider.kt`, `ViewModels.kt`, `Job.kt`,
+`Stage36TargetedDiscoveryTest.kt`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

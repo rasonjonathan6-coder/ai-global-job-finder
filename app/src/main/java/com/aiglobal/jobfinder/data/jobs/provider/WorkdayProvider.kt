@@ -23,10 +23,13 @@ data class WorkdaySite(
 }
 
 /**
- * Workday careers sites of large mining and industrial employers — Rio Tinto, Alcoa,
- * GE Vernova and SSR Mining. These are [ProviderKind.EMPLOYER_BOARD] sources: the posting
- * is the employer's own, so it is the most trustworthy feed for expat industrial and
- * mining roles, and it applies directly with no middle party.
+ * Workday careers sites of large mining, pump and industrial employers — Rio Tinto, Alcoa,
+ * GE Vernova, SSR Mining, The Weir Group, Sulzer, EPSA and First Quantum Minerals. These
+ * are [ProviderKind.EMPLOYER_BOARD] sources: the posting is the employer's own, so it is the
+ * most trustworthy feed for expat industrial and mining roles, and it applies directly with
+ * no middle party. The pump and earthmoving-service employers matter because they advertise
+ * the very trades a Madagascar-based maintenance/mechanical/pump candidate targets
+ * (millwright, field service technician, fitter, artisan) across Gulf and African sites.
  *
  * Workday's public CXS endpoint supports server-side keyword search and a per-posting
  * detail call. The search row carries only a free-text location ("Canga East"), so the
@@ -166,5 +169,13 @@ internal object WorkdayBoards {
         WorkdaySite("alcoa", "alcoa.wd5.myworkdayjobs.com", "Careers", "Alcoa"),
         WorkdaySite("gevernova", "gevernova.wd5.myworkdayjobs.com", "Vernova_ExternalSite", "GE Vernova"),
         WorkdaySite("ssrmining", "ssrmining.wd108.myworkdayjobs.com", "SSR_Mining_Careers", "SSR Mining"),
+        // Pump and industrial-service employers, whose exact trade roles (millwright, field
+        // service technician, fitter) are what a maintenance candidate can apply for.
+        WorkdaySite("weir", "weir.wd3.myworkdayjobs.com", "Weir_External_Careers", "Weir Group"),
+        WorkdaySite("sulzer", "sulzer.wd502.myworkdayjobs.com", "SulzerJobs", "Sulzer"),
+        // Mining contractors and producers with African and Gulf sites, where expat trades
+        // (artisan fitter, boilermaker, drill mechanic) are advertised.
+        WorkdaySite("epsa", "epsa.wd103.myworkdayjobs.com", "ExternalCareerSite", "EPSA"),
+        WorkdaySite("firstquantum", "firstquantum.wd3.myworkdayjobs.com", "First_Quantum_Careers", "First Quantum Minerals"),
     )
 }
