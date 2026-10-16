@@ -102,14 +102,18 @@ object HttpJsonClient {
 
     /**
      * Strips anything that looks like a secret out of a URL before it is put in a message
-     * or a stack trace. Adzuna requires its key as a query parameter, so without this a
-     * failed request would carry the key into any log that records the exception.
+     * or a stack trace. Adzuna requires its key as a query parameter, and Jooble requires its
+     * key as the last *path* segment (`https://jooble.org/api/<key>`), so without this a
+     * failed request would carry a key into any log that records the exception.
      */
     internal fun redactUrl(url: String): String {
-        val queryStart = url.indexOf('?')
-        if (queryStart < 0) return url
-        val base = url.substring(0, queryStart)
-        val params = url.substring(queryStart + 1)
+        val withoutPathSecret = PATH_SECRET.replace(url) { match ->
+            match.value.removeSuffix(match.groupValues[1]) + "***"
+        }
+        val queryStart = withoutPathSecret.indexOf('?')
+        if (queryStart < 0) return withoutPathSecret
+        val base = withoutPathSecret.substring(0, queryStart)
+        val params = withoutPathSecret.substring(queryStart + 1)
             .split('&')
             .filter { it.isNotBlank() }
             .joinToString("&") { param ->
@@ -120,4 +124,11 @@ object HttpJsonClient {
     }
 
     private val SECRET_PARAM = Regex("(?i)(key|token|secret|password|passwd|auth|credential|app_?id)")
+
+    /**
+     * A long, unpunctuated token as the final path segment — the shape of Jooble's API key.
+     * Kept to 24+ characters so ordinary path words ("jobs", "gb", "v1") and hyphenated ids
+     * are left alone, and Adzuna's query redaction behaves exactly as before.
+     */
+    private val PATH_SECRET = Regex("/([A-Za-z0-9]{24,})(?=$|[?#])")
 }

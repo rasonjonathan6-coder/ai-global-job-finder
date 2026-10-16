@@ -1316,6 +1316,89 @@ probes). `lintDebug` (0 errors, 52 pre-existing warnings + 1 info), `assembleDeb
 `da354d4e…ecb005`). The release APK is unsigned; install it with `adb install` only after
 signing (`apksigner`), and the debug one with `adb install -r app-debug.apk`.
 
+## Stage 34 — audit réel des API de recherche d'emploi et de la qualité des offres
+
+**Objet.** Vérifier, preuves à l'appui, une seule question : l'application peut-elle réellement
+trouver des offres accessibles à un candidat qui postule **depuis Madagascar**, dans les métiers
+Mechanical Technician, Maintenance Technician, Pump Technician, Industrial Mechanic, Mechanical
+Maintenance Technician, Mining Maintenance Technician (et métiers industriels voisins) ? Aucun
+changement fonctionnel n'est apporté : cet audit constate, et ne corrige qu'un seul défaut de
+sécurité latent (voir plus bas).
+
+**Méthode (preuves réelles, aucune simulation).** Deux sondes live exécutées par le propre code de
+l'application, activées par `LIVE_PROBE=1`, sans aucun secret :
+
+- `Stage14LiveProbeTest` a interrogé le **jeu par défaut** (Arbeitnow, Remotive, Jobicy,
+  Himalayas ; Adzuna non configuré). Résultat : **144 offres brutes, 144 uniques**, mais
+  `score>=60 = 0` et **0** titre contenant `maintenance`, `mechanic`, `technician`, `pump`,
+  `fitter`, `millwright` ou `mining`. Meilleur score = 49 % (des postes logiciels/vente :
+  « Enterprise Account Director », « Senior Product Designer »…). Les 4 boards par défaut ne
+  ramènent donc **aucun** métier de maintenance.
+- Une sonde temporaire (créée puis **supprimée**, jamais commitée) a interrogé le **jeu complet**
+  réellement assemblé dans `LiveJobRepository` : EURES (300), Workday (72), Greenhouse (108),
+  Ashby (360), Lever (3). Résultat : **843 bruts → 259 uniques → 58 offres de la famille
+  maintenance**, dont GE Vernova (« Maintenance Technician - Electrical », « Industrial
+  Mechanical Technician »), SSR Mining (« Mine Maintenance Mechanic », « Superintendent,
+  Maintenance »), Rio Tinto (« Fixed Plant Maintenance Inspector »), Form Energy (« Equipment
+  Maintenance Technician »), Alcoa, Sila (« HVAC Maintenance Technician »). Éligibilité :
+  `ELIGIBLE=69`, `VISA_SPONSORED=1`, `UNCLEAR=189`.
+
+**Conclusion — l'application trouve bien de vraies offres du métier.** Oui, à condition que
+l'utilisateur active EURES et les boards employeurs (Workday/Greenhouse/Ashby/Lever), qui sont
+désactivés ou vides par défaut. Le pipeline réel (providers → filtre de pertinence
+`RoleClassifier` → `MatchingEngine`/`EligibilityEngine`) fonctionne : il a produit 58 offres
+industrielles réelles avec titres, employeurs, pays et URL source.
+
+**Qualité des offres (salaires, visa, relocalisation).**
+- Les boards employeurs (Workday/Greenhouse/Ashby/Lever) **ne publient pas de salaire** :
+  `salary=0-0` sur toutes les offres du jeu complet. La qualité « salaire » est donc nulle pour
+  ces sources, alors que Jobicy/Remotive/Himalayas/Adzuna la fournissent quand elle existe.
+- Aucune offre des 6 métiers cibles n'a de **sponsorship de visa confirmé** (`visa=NOT_MENTIONED`
+  partout dans la famille maintenance ; la seule `VISA_SPONSORED` du tirage était un poste ML).
+  GE Vernova affiche `RELOCATION_PACKAGE` — c'est une **aide à la relocalisation**, pas une
+  preuve de sponsoring de visa. Le garde-fou `ExpatBenefitExtractor` (phrases documentées vs
+  heuristique, refus explicites) tient correctement : « none documented » n'est jamais présenté
+  comme un refus, et « Not stated » n'est jamais présenté comme un accord.
+- Conséquence pratique : les meilleures pistes (GE Vernova, SSR Mining, Rio Tinto) sont
+  accessibles en principe, mais **la question « visa » reste à vérifier par le candidat** — ce
+  que l'application signale déjà honnêtement (`NEEDS_VERIFICATION`), au lieu de fabriquer une
+  promesse.
+
+**Défaut latent corrigé (sécurité, additif).** La clé Jooble voyage dans le **chemin** de l'URL
+(`https://jooble.org/api/<clé>`), et `HttpJsonClient.redactUrl` ne masquait que les paramètres de
+requête. Un échec Jooble produisait donc un `IOException("HTTP … for <url>")` portant la clé en
+clair ; par `failureDiagnostic(...)` ce message est copié dans `ProviderDiagnostic.message`, qui
+alimente le panneau Diagnostics de l'écran Sources. La rédaction couvre désormais aussi un jeton
+final de 24 caractères alphanumériques (forme d'une clé Jooble), sans toucher aux identifiants
+normaux. Le garde-fou est verrouillé par `Stage34ApiAuditTest` (6 tests : clé en chemin masquée,
+avec ou sans query, clé Adzuna en query toujours masquée, segments courts préservés, identifiants
+Lever/Workday hyphenés préservés, URL simple intacte).
+
+**Comportements vérifiés comme intentionnels (non modifiés).** Un lieu « Ville, région » (par
+exemple « Weymouth, MA », « Weirton, WV ») se résout en pays **non résolu** (`📍`), pas en
+« United States ». C'est délibéré et épinglé par `Stage24IndustrialSourceTest` (« the catalog must
+not invent one ») : le catalogue ne devine jamais un pays. L'audit **ne touche pas** à ce
+comportement. À noter pour le candidat : une offre industrielle américaine « Ville, ST » s'affiche
+sans drapeau pays, ce qui est plus honnête qu'un pays inventé.
+
+**Défauts reconstatés, non introduits par ce stage.**
+- Jooble non authentifié renvoie **403 Cloudflare (HTML)** : classé `AUTHENTICATION`/erreur, jamais
+  interprété comme « aucun poste » (`Stage17ApiConfigTest`).
+- Effet de bord du garde-fou de lieu : le message d'erreur Jooble (URL avec clé) reste affiché en
+  clair sur l'écran Diagnostics, la rédaction n'intervenant que dans le message de l'exception
+  HTTP. Non corrigé ici (éviter un changement d'UI hors périmètre) — déjà noté.
+
+**Rôle des 6 métiers demandés.** `TargetSearch.roles` couvre l'ensemble : les métiers demandés se
+ramènent aux rôles canoniques via `searchPhrases`/`titleSignals` (« maintenance technician »,
+« mechanical technician », « pump », « fitter », « mine maintenance »…). Limite honnête :
+`keywordPlan(profileTitles, max=6)` envoie au plus 6 requêtes par rafraîchissement, donc les rôles
+au-delà du 6ᵉ dans la liste ordonnée ne sont pas interrogés lors de ce passage.
+
+**Vérification.** Suite **447 tests, 0 échec, 2 skipped** (+6 : `Stage34ApiAuditTest`). `lintDebug`
+0 erreur, **52 warnings + 1 info** (inchangé). `assembleDebug` et `assembleRelease` réussissent.
+Sonde temporaire supprimée ; seuls `HttpJsonClient.kt` (rédaction) et `Stage34ApiAuditTest.kt`
+sont ajoutés.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
