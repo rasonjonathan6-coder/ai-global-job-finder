@@ -1104,6 +1104,54 @@ fields, and Stage 27/28 PDF behaviour preserved. `CvScreenTest` gains a partial-
 Suite **377 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1` probes). `lintDebug`,
 `assembleDebug` and `assembleRelease` all succeed. No emulator run (no KVM in this container).
 
+## Stage 30 — application registry, dedup and simulation mode
+
+The auto-apply flow could already prepare a draft per posting, but nothing recorded that an
+opening had *already* been handled, and the same posting arrives repeatedly from several boards.
+Stage 30 adds the persistent registry that closes that gap.
+
+**New package `data/submissions/`.**
+
+- `Submission.kt` — the identity and vocabulary of a send.
+  - `SubmissionKey(company, title, country)` is the dedup identity, **not** the app's job id:
+    normalised (case-folded, punctuation stripped) and provider-agnostic, so the same opening from
+    Adzuna, Jooble, EURES or an employer ATS collapses to one key, and it matches the rule the feed
+    already uses to collapse cross-source duplicates. The title is part of the key, so two roles at
+    one employer stay distinct; the country keeps a global employer's two sites apart.
+  - `SubmissionChannel` (`ATS_API`, `EMPLOYER_PORTAL`, `EMAIL`, `UNKNOWN`) is inferred from the
+    posting URL, and carries `realSendSupported` + a plain-language `compatibilityNote`. **Every
+    channel is currently `realSendSupported = false`** — the compatibility gate the user asked for.
+  - `SubmissionOutcome` distinguishes `SENT` (real, unreachable in this stage) from `DRY_RUN`
+    (simulated) and the three refusals: `BLOCKED_DUPLICATE`, `BLOCKED_CONCURRENT`,
+    `BLOCKED_NOT_ENABLED`, `BLOCKED_INCOMPATIBLE`.
+  - `SubmissionEntry` (persisted), `SubmissionDecision`, `SubmissionRequest`, `SubmissionPolicy`.
+- `SubmissionRegistryStore.kt` — `submissions.json` in app-private storage, atomic write behind a
+  mutex, same pattern as `ApplicationStore`/`AutoApplyStore`. `sendingEnabled` defaults to `false`.
+- `SubmissionRegistry.kt` — the rules:
+  1. **One opening, one application.** One entry per `SubmissionKey`; a second attempt returns
+     `BLOCKED_DUPLICATE` and leaves the first receipt untouched. Works across sources and restarts.
+  2. **No concurrent sends.** `submit()` runs its decide-and-record step under a mutex, so racing
+     coroutines cannot both pass the duplicate check; the loser gets `BLOCKED_CONCURRENT`.
+  3. **Simulation only.** A real send requires `allowRealSend` **and** `sendingEnabled` **and**
+     `channel.realSendSupported` **and** a wired-in `realSender`. With no verified sender in this
+     stage, `SENT` is unreachable and every attempt is recorded as `DRY_RUN`. The app never asks
+     for, stores, or uses a mailbox password.
+
+**Wiring.** `AiJobFinderApp.submissionRegistry` is exposed and injected into `AutoApplyCenter`.
+Approving a draft now records a simulated attempt through the registry, so approving the same
+opening twice is refused and the item says so — nothing is ever sent. All new constructor
+parameters are optional, so the existing pure decision logic stays testable without a registry.
+
+**Tests (11 new).** `Stage30SubmissionRegistryTest` drives the real registry over a real on-disk
+document: a second submission of the same opening is refused; the same opening from a different
+source is refused (and the refusal names the other source); the refusal survives a restart; 12
+concurrent submissions of one opening record exactly one and block the other 11; sending is off by
+default and nothing is sent; a real send is refused while sending is off, for an incompatible
+channel even when activated, and when no verified sender is wired in; no channel claims real-send
+support; the channel is inferred from the URL; and identity ignores case/punctuation while keeping
+distinct roles apart. Suite **388 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1` probes).
+`lintDebug`, `assembleDebug` and `assembleRelease` all succeed. No emulator run (no KVM here).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

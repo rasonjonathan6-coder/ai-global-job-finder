@@ -42,6 +42,8 @@ import com.aiglobal.jobfinder.data.repository.CvRepository
 import com.aiglobal.jobfinder.data.repository.JobRepository
 import com.aiglobal.jobfinder.data.repository.LiveJobRepository
 import com.aiglobal.jobfinder.data.scam.ScamDetector
+import com.aiglobal.jobfinder.data.submissions.SubmissionRegistry
+import com.aiglobal.jobfinder.data.submissions.SubmissionRegistryStore
 import com.aiglobal.jobfinder.work.JobRefreshScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -250,6 +252,16 @@ open class AppContainer(application: Application) {
         )
     }
 
+    /**
+     * The persistent application registry: one entry per opening (employer + title +
+     * country), so the same job cannot be applied to twice even when it arrives from
+     * several boards or the app restarts. Real sending is off by default and, with no
+     * verified sender wired in, only the simulation path is reachable.
+     */
+    val submissionRegistry: SubmissionRegistry by lazy {
+        SubmissionRegistry(store = SubmissionRegistryStore(application))
+    }
+
     /** Safe auto-apply: prepares drafts and stops before submission. */
     val autoApplyCenter: AutoApplyCenter by lazy {
         AutoApplyCenter(
@@ -257,6 +269,7 @@ open class AppContainer(application: Application) {
             applicationCenter = applicationCenter,
             store = AutoApplyStore(application),
             candidateProfile = { candidateProfileValue() },
+            submissionRegistry = submissionRegistry,
         )
     }
 

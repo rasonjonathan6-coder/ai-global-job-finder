@@ -6,6 +6,9 @@ import com.aiglobal.jobfinder.data.model.AutoApplyState
 import com.aiglobal.jobfinder.data.model.AutoApplyStatus
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.repository.JobRepository
+import com.aiglobal.jobfinder.data.submissions.SubmissionOutcome
+import com.aiglobal.jobfinder.data.submissions.SubmissionRegistry
+import com.aiglobal.jobfinder.data.submissions.SubmissionRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +32,12 @@ class AutoApplyCenter(
     private val applicationCenter: ApplicationCenter,
     private val store: AutoApplyStore,
     private val candidateProfile: () -> CandidateProfile = { CandidateProfile() },
+    /**
+     * The application registry. When present, approving a draft records a simulated
+     * attempt, so the same opening can never be approved — or, later, sent — twice.
+     * Optional so the pure decision logic stays testable without a registry.
+     */
+    private val submissionRegistry: SubmissionRegistry? = null,
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -92,9 +101,32 @@ class AutoApplyCenter(
         }
     }
 
-    /** Marks a draft as approved. This is the only way an item leaves the "ready" state. */
-    suspend fun approve(jobId: String) = store.updateItem(jobId) {
-        it.copy(status = AutoApplyStatus.APPROVED, reason = "Approved. Open the posting to send it yourself.")
+    /**
+     * Marks a draft as approved. This is the only way an item leaves the "ready" state.
+     *
+     * Approval is a deliberate user tap and never sends anything. When a [SubmissionRegistry]
+     * is wired in, it records the attempt as a simulation, which also means the same opening
+     * cannot be approved twice: the second approval is refused by the registry and the item
+     * says so plainly instead of pretending to have gone through again.
+     */
+    suspend fun approve(jobId: String) {
+        val item = store.items.value.firstOrNull { it.jobId == jobId }
+        val job = item?.let { candidate -> repository.jobs.first().firstOrNull { it.id == candidate.jobId } }
+        if (item != null && job != null && submissionRegistry != null) {
+            val decision = submissionRegistry.submit(SubmissionRequest(job = job, allowRealSend = false))
+            val reason = when (decision.outcome) {
+                SubmissionOutcome.DRY_RUN ->
+                    "Approved — simulated. Nothing was sent; open the posting to send it yourself."
+                SubmissionOutcome.BLOCKED_DUPLICATE, SubmissionOutcome.BLOCKED_CONCURRENT ->
+                    "Already handled — not submitted again. ${decision.reason}"
+                else -> "Approved. Open the posting to send it yourself."
+            }
+            store.updateItem(jobId) { it.copy(status = AutoApplyStatus.APPROVED, reason = reason) }
+            return
+        }
+        store.updateItem(jobId) {
+            it.copy(status = AutoApplyStatus.APPROVED, reason = "Approved. Open the posting to send it yourself.")
+        }
     }
 
     suspend fun skip(jobId: String) = store.updateItem(jobId) {
