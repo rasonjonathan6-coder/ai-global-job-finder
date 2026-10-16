@@ -169,6 +169,8 @@ data class CandidateProfile(
 enum class CvStatus(val label: String) {
     IMPORTED("Imported — not analysed"),
     ANALYZED("Analysed"),
+    /** Text was recovered but not enough to build a profile around. */
+    PARTIAL("Partly read"),
     FAILED("Analysis failed"),
 }
 

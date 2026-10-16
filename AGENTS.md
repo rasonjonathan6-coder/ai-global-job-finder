@@ -1062,6 +1062,48 @@ debug APK on the phone and verifying CV import, honest refresh/caching, shortlis
 unknown-visa handling, next-step guidance, employer links, editing, offline recovery,
 notifications and both themes. It states plainly which layers are automated and which are not.
 
+## Stage 29 — honest CV extraction (partial results, per-page counts)
+
+**Reported:** importing `Jonathan_Rason_CV_Updated.pdf` (1.9 MB) showed "Analysed" with 12%
+completeness — only the title *"Mechanical Seal Repair Technician"* and two skills, and no
+name, email, phone, location or experience.
+
+**Root cause (established from the code, not assumed).** The status was not derived from how
+much text was recovered: `CvRepository.analyzeImported()` granted `CvStatus.ANALYZED` whenever
+at least one character came out, and `CvParseResult.hasUsableText` was the only gate. A PDF whose
+text layer yields a handful of words therefore looked like a *complete* analysis, and the
+completeness percentage — the sum of the field weights actually found — correctly reported the
+little it had (a title is worth 15% → 12% after normalisation). Separately, `PdfCvParser` never
+counted pages and never distinguished an image-only (scanned) PDF from an empty one, so the user
+had no diagnostic to act on. **The user's real CV is not in this repository**, so it could not be
+run; the fix targets the confirmed code path and the tests are synthetic — no claim is made about
+the real file.
+
+**Fix.**
+
+- `data/cv/CvParser.kt` — `CvPageText` (1-based `pageNumber`, `characterCount`, `isEmpty`); the
+  result now exposes `pages`, `isPartial`, `imagesOnly` and `hasAnythingExtractable` on top of the
+  existing `hasUsableText` / `characterCount`.
+- `data/cv/PdfCvParser.kt` — page-by-page extraction respecting `setStartPage`/`setEndPage`, a
+  per-page contributed-character count, honest image-only detection (an image XObject plus no
+  text), a `pageCount == 0` guard, and `CvParseException.Corrupted` on a malformed file.
+- `data/model/CandidateProfile.kt` — new `CvStatus.PARTIAL("Partly read")`, persisted by name, so
+  a fragment is never shown as "Analysed". `IMPORTED` / `ANALYZED` / `FAILED` are unchanged.
+- `data/repository/CvRepository.kt` — nothing extracted → `FAILED` (with page/char counts kept);
+  some text but below `MIN_USABLE_CHARACTERS` → `PARTIAL`; otherwise `ANALYZED`.
+- `ui/screens/cv/CvScreen.kt` + `viewmodel/CvViewModel.kt` — a warning `PartialReadBanner` states
+  how much was recovered, the hero reads "Analysis incomplete", the status pill uses warning
+  colours for partial, and a `TechnicalDetailsCard` shows pages, characters, format, size and
+  engine. This is what turns the opaque "12%" into a diagnosable number.
+
+**Tests (11 new).** `Stage29PdfExtractionTest`: multipage with no truncation, a page-by-page
+gap count, French accents (Helvetica/WinAnsi, no external font), a two-column layout keeping both
+columns, a title-only fragment reported as partial, an image-only PDF reported as image/OCR
+(not parsed), a corrupt PDF → `Corrupted`, a password-protected PDF → `Encrypted`, no invented
+fields, and Stage 27/28 PDF behaviour preserved. `CvScreenTest` gains a partial-status UI test.
+Suite **377 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1` probes). `lintDebug`,
+`assembleDebug` and `assembleRelease` all succeed. No emulator run (no KVM in this container).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

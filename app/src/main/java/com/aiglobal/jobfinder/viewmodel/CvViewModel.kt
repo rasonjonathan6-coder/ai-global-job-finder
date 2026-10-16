@@ -37,6 +37,7 @@ data class CvUiState(
 ) {
     val hasDocument: Boolean get() = record != null
     val isAnalyzed: Boolean get() = record?.status == CvStatus.ANALYZED
+    val isPartial: Boolean get() = record?.status == CvStatus.PARTIAL
     val hasFailed: Boolean get() = record?.status == CvStatus.FAILED
 }
 

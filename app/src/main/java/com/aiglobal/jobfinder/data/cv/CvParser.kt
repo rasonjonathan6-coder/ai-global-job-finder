@@ -23,17 +23,46 @@ class ByteCvSource(
     override fun openStream(): InputStream = bytes.inputStream()
 }
 
+/** How much text a single page contributed, so the UI can show where extraction stalled. */
+data class CvPageText(
+    /** 1-based page number as the reader sees it. */
+    val number: Int,
+    val characterCount: Int,
+) {
+    val isEmpty: Boolean get() = characterCount == 0
+}
+
 /** Text extracted from a document, plus anything worth telling the user about it. */
 data class CvParseResult(
     val text: String,
     val pageCount: Int? = null,
     val warnings: List<String> = emptyList(),
+    /** Per-page character counts; empty when the format has no page concept. */
+    val pages: List<CvPageText> = emptyList(),
+    /**
+     * True when the document has pages, but they carry no text while holding drawable
+     * content (raster images). PDFBox cannot read pixels as text — this lets the UI say so
+     * honestly instead of blaming a corrupt file.
+     */
+    val imagesOnly: Boolean = false,
 ) {
     val characterCount: Int get() = text.length
-    val hasUsableText: Boolean get() = text.count { !it.isWhitespace() } >= MIN_USABLE_CHARACTERS
+
+    /** Non-whitespace characters actually recovered; the honest measure of "how much text". */
+    val nonWhitespaceCount: Int get() = text.count { !it.isWhitespace() }
+
+    /** Enough text to feed an analyser a real profile. */
+    val hasUsableText: Boolean get() = nonWhitespaceCount >= MIN_USABLE_CHARACTERS
+
+    /** Some text, but too little to be a whole CV. Distinct from "nothing at all". */
+    val isPartial: Boolean
+        get() = !hasUsableText && nonWhitespaceCount > 0
+
+    /** True as soon as any non-whitespace character was recovered. */
+    val hasAnythingExtractable: Boolean get() = nonWhitespaceCount > 0
 
     companion object {
-        /** Below this, there is nothing worth sending to an analyser. */
+        /** Below this, there is not enough text to analyse a profile from. */
         const val MIN_USABLE_CHARACTERS = 60
     }
 }

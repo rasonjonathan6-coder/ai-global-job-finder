@@ -87,10 +87,16 @@ class CvRepository(
             ?: throw CvParseException.Unreadable()
 
         val parsed = parserRegistry.parse(source, current.fileType)
-        if (!parsed.hasUsableText) {
+
+        // Nothing at all was recovered: fail honestly. A document that yielded a few
+        // characters is kept — "partly read" is more truthful than "analysis failed", and it
+        // lets the user see the fragment and its diagnostics without pretending it is whole.
+        if (!parsed.hasAnythingExtractable) {
             val reason = CvParseException.NoText().message.orEmpty()
             val failed = current.copy(
                 status = CvStatus.FAILED,
+                pageCount = parsed.pageCount,
+                extractedCharacters = parsed.characterCount,
                 warnings = (current.warnings + parsed.warnings + reason).distinct(),
             )
             persist(failed)
@@ -106,7 +112,8 @@ class CvRepository(
         }
 
         val updated = current.copy(
-            status = CvStatus.ANALYZED,
+            // Only call it "Analysed" when there was enough text to analyse.
+            status = if (parsed.hasUsableText) CvStatus.ANALYZED else CvStatus.PARTIAL,
             analyzedAtEpochMillis = clock(),
             pageCount = parsed.pageCount,
             extractedCharacters = parsed.characterCount,

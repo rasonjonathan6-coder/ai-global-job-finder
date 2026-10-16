@@ -148,6 +148,7 @@ fun CvScreen(
                 isBusy = state.isBusy,
                 busyLabel = state.busyLabel,
                 isAnalyzed = state.isAnalyzed,
+                isPartial = state.isPartial,
                 onDevice = state.analysisStaysOnDevice,
             )
         }
@@ -191,6 +192,11 @@ fun CvScreen(
             }
 
             else -> {
+                // Only a fragment came out: say so before showing a thin profile, so the user
+                // never mistakes a partly-read document for a fully analysed one.
+                if (record.status == CvStatus.PARTIAL) {
+                    item { PartialReadBanner(record) }
+                }
                 item { SummaryCard(record, state.completeness) }
                 item { ContactCard(record, onEditField) }
                 if (record.profile.skills.isNotEmpty()) item { SkillsCard(record.profile.skills) }
@@ -198,6 +204,9 @@ fun CvScreen(
                 if (record.profile.certifications.isNotEmpty()) item { CertificationsCard(record.profile.certifications) }
                 if (record.profile.languages.isNotEmpty()) item { LanguagesCard(record.profile.languages) }
                 if (record.warnings.isNotEmpty()) item { NotesCard(record.warnings) }
+                if (record.extractedCharacters > 0 || record.pageCount != null) {
+                    item { TechnicalDetailsCard(record) }
+                }
             }
         }
     }
@@ -208,6 +217,7 @@ private fun AnalysisHeroCard(
     isBusy: Boolean,
     busyLabel: String,
     isAnalyzed: Boolean,
+    isPartial: Boolean,
     onDevice: Boolean,
 ) {
     val spacing = LocalSpacing.current
@@ -221,6 +231,7 @@ private fun AnalysisHeroCard(
     val title = when {
         isBusy -> busyLabel.ifBlank { "Working…" }
         isAnalyzed -> "Analysis complete"
+        isPartial -> "Analysis incomplete"
         else -> "Ready to analyse"
     }
     val subtitle = if (onDevice) {
@@ -330,14 +341,15 @@ private fun ImportCard(
                     )
                 }
                 if (record != null) {
+                    val (pillContainer, pillContent) = when (record.status) {
+                        CvStatus.FAILED -> extendedColors.dangerContainer to extendedColors.danger
+                        CvStatus.PARTIAL -> extendedColors.warningContainer to extendedColors.warning
+                        else -> extendedColors.successContainer to extendedColors.success
+                    }
                     Pill(
                         text = record.status.label,
-                        containerColor = if (record.status == CvStatus.FAILED) {
-                            extendedColors.dangerContainer
-                        } else {
-                            extendedColors.successContainer
-                        },
-                        contentColor = if (record.status == CvStatus.FAILED) extendedColors.danger else extendedColors.success,
+                        containerColor = pillContainer,
+                        contentColor = pillContent,
                     )
                 }
             }
@@ -668,6 +680,96 @@ private fun NotesCard(warnings: List<String>) {
                         text = warning,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Shown when the document yielded some text but not enough for a full analysis. It states
+ * the honest reason first, so a thin profile is never read as a complete one.
+ */
+@Composable
+private fun PartialReadBanner(record: CvRecord) {
+    val spacing = LocalSpacing.current
+    val characters = record.extractedCharacters
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = extendedColors.warningContainer,
+        borderColor = extendedColors.warning.copy(alpha = 0.3f),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.ErrorOutline,
+                    contentDescription = null,
+                    tint = extendedColors.warning,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Only part of this CV could be read",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                text = buildString {
+                    append("$characters characters were recovered")
+                    record.pageCount?.let { append(" from $it page${if (it == 1) "" else "s"}") }
+                    append(". The missing parts are probably an image, so they cannot be read ")
+                    append("as text. Add the fields by hand, or import a version with a ")
+                    append("selectable text layer.")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** Page and character counts, so the user can see exactly how much was extracted. */
+@Composable
+private fun TechnicalDetailsCard(record: CvRecord) {
+    val spacing = LocalSpacing.current
+    val rows = buildList {
+        record.pageCount?.let { add("Pages" to it.toString()) }
+        add("Characters extracted" to record.extractedCharacters.toString())
+        add("Format" to record.fileType.label)
+        add("File size" to formatFileSize(record.sizeBytes))
+        record.engineLabel?.let { add("Engine" to it) }
+    }
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Description,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Technical details",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            rows.forEach { (label, value) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = value,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
                     )
                 }
             }

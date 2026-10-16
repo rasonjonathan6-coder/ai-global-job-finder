@@ -4,6 +4,7 @@ import android.content.Context
 import com.aiglobal.jobfinder.data.model.CvFileType
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
@@ -46,32 +47,108 @@ class PdfCvParser(private val context: Context) : CvParser {
                 val pageCount = doc.numberOfPages
                 if (pageCount == 0) throw CvParseException.Corrupted()
 
-                val rawText = try {
-                    PDFTextStripper().apply {
-                        sortByPosition = true
-                        // Explicit defaults, so a layout is not glued together by PDFBox's
-                        // own guesses before we ever see the text.
-                        lineSeparator = "\n"
-                        wordSeparator = " "
-                    }.getText(doc)
-                } catch (e: IOException) {
-                    throw CvParseException.Corrupted(e)
-                } catch (e: RuntimeException) {
-                    // A missing glyph list or font metric surfaces here on odd documents.
-                    throw CvParseException.Corrupted(e)
+                // Extract page by page. Every page is attempted and every page is counted,
+                // so a single unhealthy page can never silently swallow the rest of the
+                // document — the failure the user actually saw (only the title recovered).
+                val perPage = ArrayList<String>(pageCount)
+                val pageTexts = ArrayList<CvPageText>(pageCount)
+                for (index in 0 until pageCount) {
+                    val pageText = try {
+                        stripperFor(doc, index).getText(doc)
+                    } catch (e: IOException) {
+                        throw CvParseException.Corrupted(e)
+                    } catch (e: RuntimeException) {
+                        // A missing glyph list or font metric surfaces here on odd documents.
+                        throw CvParseException.Corrupted(e)
+                    }
+                    perPage += pageText
+                    pageTexts += CvPageText(
+                        number = index + 1,
+                        characterCount = pageText.count { !it.isWhitespace() },
+                    )
                 }
 
-                val text = CvTextNormalizer.normalize(rawText)
+                // Join the pages with a blank line so the last word of one page is never
+                // glued to the first of the next, then normalise once over the whole text.
+                val text = CvTextNormalizer.normalize(perPage.joinToString("\n\n"))
+
+                val recovered = text.count { !it.isWhitespace() }
+                val blankPages = pageTexts.count { it.isEmpty }
+                val carriesDrawing = doc.anyPageHasDrawableContent()
+                val imagesOnly = recovered == 0 && carriesDrawing
 
                 val warnings = buildList {
-                    if (text.count { !it.isWhitespace() } < CvParseResult.MIN_USABLE_CHARACTERS) {
-                        add("This PDF has no text layer. It is probably a scan or a photo.")
+                    when {
+                        imagesOnly -> add(
+                            "This PDF has no text layer — every page is an image. " +
+                                "Reading it needs OCR, which this app does not do. Export or " +
+                                "scan the CV with a text layer, or paste it as a .txt file.",
+                        )
+
+                        recovered == 0 -> add(
+                            "This PDF has no text layer. It is empty, or its pages hold only " +
+                                "drawings rather than selectable text.",
+                        )
+
+                        recovered < CvParseResult.MIN_USABLE_CHARACTERS -> add(
+                            "Only a fragment of text was recovered ($recovered characters). The " +
+                                "document probably has an incomplete text layer; the rest may be " +
+                                "an image. A version with selectable text would analyse fully.",
+                        )
+
+                        blankPages > 0 -> add(
+                            "$blankPages of $pageCount pages had no text. If part of your CV is a " +
+                                "picture, retype or re-export it as text.",
+                        )
                     }
                 }
 
-                CvParseResult(text = text, pageCount = pageCount, warnings = warnings)
+                CvParseResult(
+                    text = text,
+                    pageCount = pageCount,
+                    warnings = warnings,
+                    pages = pageTexts,
+                    imagesOnly = imagesOnly,
+                )
             }
         }
+
+    /** A fresh stripper bound to a single page, so page N cannot depend on page N-1. */
+    private fun stripperFor(document: PDDocument, pageIndex: Int): PDFTextStripper =
+        PDFTextStripper().apply {
+            sortByPosition = true
+            // Explicit separators, so a layout is not glued together by PDFBox's own
+            // guesses before we ever see the text.
+            lineSeparator = "\n"
+            wordSeparator = " "
+            startPage = pageIndex + 1
+            endPage = pageIndex + 1
+        }
+
+    /**
+     * True when any page holds a raster image, a reasonable proxy for "this is a scan".
+     * Deliberately cheap: it reads only the resource dictionaries, never the pixels, so it
+     * cannot itself become the slow or fragile part of parsing.
+     */
+    private fun PDDocument.anyPageHasDrawableContent(): Boolean {
+        for (index in 0 until numberOfPages) {
+            val page: PDPage = try {
+                getPage(index)
+            } catch (_: RuntimeException) {
+                continue
+            }
+            val resources = page.resources ?: continue
+            for (name in resources.xObjectNames) {
+                val isImage = try {
+                    resources.isImageXObject(name)
+                } catch (_: Exception) {
+                    false
+                }
+                if (isImage) return true
+            }
+        }
+        return false
+    }
 
     private fun ensureResourceLoader() {
         if (!PDFBoxResourceLoader.isReady()) {

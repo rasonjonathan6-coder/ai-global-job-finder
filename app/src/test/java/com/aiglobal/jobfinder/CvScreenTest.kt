@@ -131,6 +131,25 @@ class CvScreenTest {
     }
 
     @Test
+    fun aPartlyReadDocumentIsLabelledHonestlyWithItsDiagnostics() {
+        // The reported symptom: a fragment was read but the screen said "Analysed". A partial
+        // result must now say so, show how much text was recovered, and expose the counts.
+        val partial = analysedRecord.copy(
+            status = CvStatus.PARTIAL,
+            pageCount = 2,
+            extractedCharacters = 96,
+            profile = CandidateProfile(currentTitle = "Mechanical Seal Repair Technician"),
+        )
+        render(CvUiState(isLoading = false, record = partial))
+
+        composeRule.onNodeWithText("Partly read").assertIsDisplayed()
+        composeRule.onNodeWithText("Analysis incomplete").assertIsDisplayed()
+        scrollToText("Only part of this CV could be read")
+        scrollToText("Technical details")
+        scrollToText("Characters extracted")
+    }
+
+    @Test
     fun failedParseShowsRecoverableErrorWithRetry() {
         var retried = false
         render(
