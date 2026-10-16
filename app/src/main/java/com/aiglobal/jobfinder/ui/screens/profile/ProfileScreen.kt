@@ -129,6 +129,8 @@ fun ProfileScreen(
     onOpenExpat: (String) -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     onOpenSubmissionHistory: () -> Unit = {},
+    /** Postings parked for the user to confirm whether they are the same opening. */
+    pendingVerifications: Int = 0,
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val demoMode by viewModel.demoMode.collectAsStateWithLifecycle()
@@ -271,6 +273,13 @@ fun ProfileScreen(
                             text = "See simulated attempts, blocked duplicates and postings to verify",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (pendingVerifications > 0) {
+                        Pill(
+                            text = "$pendingVerifications to verify",
+                            containerColor = extendedColors.info.copy(alpha = 0.14f),
+                            contentColor = extendedColors.info,
                         )
                     }
                 }

@@ -264,6 +264,10 @@ fun AiJobFinderRoot(
                 val vm: ProfileViewModel = viewModel(
                     factory = ProfileViewModelFactory(container.jobRepository, container.preferencesRepository.demoMode),
                 )
+                // Surface the dedup journey where the user already is: a posting parked for
+                // verification is visible from Profile without opening the history screen.
+                val pendingVerifications by container.submissionRegistry.entries
+                    .collectAsStateWithLifecycle()
                 ProfileScreen(
                     viewModel = vm,
                     appViewModel = appViewModel,
@@ -271,6 +275,7 @@ fun AiJobFinderRoot(
                     onOpenExpat = { country -> navController.navigate(SecondaryRoutes.expat(country)) },
                     onOpenDiagnostics = { navController.navigate(SecondaryRoutes.DIAGNOSTICS) },
                     onOpenSubmissionHistory = { navController.navigate(SecondaryRoutes.SUBMISSIONS) },
+                    pendingVerifications = pendingVerifications.count { it.awaitsVerification },
                 )
             }
             composable(

@@ -484,6 +484,16 @@ class ScreenshotTest {
     }
 
     @Test
+    fun profileScreenWithPendingVerifications() = renderBothModes("profile-verification") {
+        ProfileScreen(
+            viewModel = ProfileViewModel(repository),
+            appViewModel = AppViewModel(container),
+            onOpenAi = {},
+            pendingVerifications = 2,
+        )
+    }
+
+    @Test
     fun jobSourcesSettings() = renderBothModes("job-sources") {
         JobSourcesCard(
             credentials = AdzunaCredentials(appId = "abc123", appKey = "def456"),

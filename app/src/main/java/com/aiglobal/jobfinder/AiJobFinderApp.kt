@@ -323,6 +323,9 @@ open class AiJobFinderApp : Application() {
         // idempotent, so running them on every start is safe.
         val appContainer = container
         appContainer.jobNotificationsCoordinator.prepare()
+        // Load the application registry at start so the Profile badge and the history screen
+        // reflect the persisted entries immediately, before either screen is opened.
+        appScopeForScheduling().launch { appContainer.submissionRegistry.load() }
         appScopeForScheduling().launch {
             appContainer.preferencesRepository.refreshPreferences.collect { preferences ->
                 appContainer.jobRefreshScheduler.apply(preferences)

@@ -1224,6 +1224,53 @@ across its fixtures; with URLs now decisive that made two "different" roles coll
 were given their own board ids and URLs (and one an explicit cross-board case) so the test still
 checks what it always did — case/punctuation collapse, distinct roles stay apart.
 
+## Stage 32 — validation of the deduplication and history journey
+
+Stage 31 made identity layered, but its similarity thresholds still decided *ambiguity* from
+fuzzy text alone. Two genuinely different postings that share a prefix — "Maintenance
+Technician" vs "Maintenance Planner" (0.895), or the same employer's "Role 1" vs "Role 2"
+(0.933) — were parked for the user even though their board record ids and canonical URLs
+plainly said they were different. Stage 32 validates the whole journey end to end and closes
+that gap: canonical signals now establish *difference* as well as sameness.
+
+**`SubmissionIdentity` — provable difference.**
+
+- `matchesProvablyDifferent` returns true when the same board (`providerKey`) carries two
+  different record ids (`externalId`), or the same URL host carries two different canonical
+  URLs. `relationTo` consults it *after* `matchesExactly`, so a shared id/URL/fingerprint still
+  wins, but a fuzzy title match can no longer override two conflicting canonical signals.
+- Consequence: "Maintenance Technician" vs "Maintenance Planner" at one employer, and "Role 1"
+  vs "Role 2" on one board, are now `DISTINCT` — recorded separately, never parked. Genuine
+  cross-board re-posts with no canonical signal in common still fall through to `AMBIGUOUS`.
+
+**Journey visibility.**
+
+- `AiJobFinderApp.onCreate` loads `submissionRegistry` at start, so the persisted entries are
+  in memory before either screen opens.
+- `ProfileScreen` gained a `pendingVerifications: Int` parameter and shows an info `Pill`
+  ("N to verify") on the Submission-history card when postings await the user's verdict;
+  `AiJobFinderRoot` supplies it from `submissionRegistry.entries`. The path to the verdict is
+  now visible from Profile without opening the history screen.
+
+**Tests (14 new).** `Stage32DedupJourneyTest` drives the real registry over a real on-disk
+document (reopened to prove persistence), one test per guarantee: a shared record id is
+identical despite drifted metadata; a shared canonical URL collapses tracking noise (and
+`CanonicalUrl` keeps real params, sorts them, drops `utm_*`/`fbclid`/fragment); four distinct
+roles at one employer stay distinct; an ambiguous posting is parked (not a confirmed duplicate,
+recorded, pointing at the entry to compare, nothing sent); `confirmSame` merges sources and
+keeps the parked record id and URL as aliases that are honoured after a restart; `confirmDistinct`
+keeps both postings across a restart and still refuses a second record; a pending posting cannot
+be sent even with `allowRealSend` and sending "activated"; notifications fire once per posting
+and never touch the registry; 20 concurrent submissions (8 distinct + a 12-strong storm on one
+opening) record exactly the distinct ones and one of the storm, unique keys, nothing lost across
+a reopen; the identity relation never calls two distinct roles the same; a blank-employer posting
+does not collide with a real one; and the safety posture is unchanged (`sendingEnabled` false,
+no channel able to send, a refused real send records nothing, the simulated path records a
+non-sent entry). `ScreenshotTest` gained a `profile-verification` render (light + dark).
+Suite **425 tests, 0 failures, 2 skipped** (the opt-in `LIVE_PROBE=1` probes). `lintDebug`
+(0 errors, 52 pre-existing warnings), `assembleDebug` and `assembleRelease` all succeed. No
+emulator run (no KVM here).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

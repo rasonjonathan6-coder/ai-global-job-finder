@@ -22,6 +22,13 @@ import com.aiglobal.jobfinder.data.model.Job
  * The first two are used "when reliable"; the fingerprint is the safety net. Anything the
  * three cannot separate with confidence is reported as ambiguous and sent for the user to
  * verify, never silently merged and never silently allowed.
+ *
+ * Canonical signals establish *difference* as well as sameness: two postings that share a
+ * board but carry different record ids, or sit on the same host but at different URLs, are
+ * provably different postings even when their titles read almost the same. Without that,
+ * a fuzzy title match ("Maintenance Technician" vs "Maintenance Planner", or a test's
+ * "Role 1" vs "Role 2") would be parked for the user when it is really just a different
+ * job. Ambiguity is reserved for the case where nothing canonical distinguishes the two.
  */
 @Immutable
 data class SubmissionIdentity(
@@ -34,11 +41,41 @@ data class SubmissionIdentity(
     /** Employer + title + country, normalised. The provider-agnostic fallback identity. */
     val fingerprint: String get() = "$company|$title|$country"
 
+    /**
+     * The board a record came from (`providerId` in `providerId:externalId`), or blank when
+     * the id carries no provider prefix. Only comparable between two ids that both have one.
+     */
+    val providerKey: String
+        get() = if (providerRecordId.contains(':')) providerRecordId.substringBefore(':') else ""
+
+    /** The per-board record id (`externalId`), or the whole id when there is no prefix. */
+    val externalId: String
+        get() = if (providerRecordId.contains(':')) providerRecordId.substringAfter(':') else providerRecordId
+
+    /** The host of the canonical URL, e.g. `adzuna.ca`; blank when there is no URL. */
+    val urlHost: String get() = canonicalUrl.substringBefore('/')
+
     /** How [other] relates to this identity. */
     fun relationTo(other: SubmissionIdentity): IdentityRelation = when {
         matchesExactly(other) -> IdentityRelation.SAME
+        matchesProvablyDifferent(other) -> IdentityRelation.DISTINCT
         matchesAmbiguously(other) -> IdentityRelation.AMBIGUOUS
         else -> IdentityRelation.DISTINCT
+    }
+
+    /**
+     * True when the canonical signals prove the two are *different* postings: the same board
+     * with different record ids, or the same host with different URLs. Evaluated only after
+     * [matchesExactly] has ruled out a shared id, URL or fingerprint.
+     */
+    fun matchesProvablyDifferent(other: SubmissionIdentity): Boolean {
+        val sameBoard = providerKey.isNotBlank() && providerKey == other.providerKey
+        val differentRecords = externalId != other.externalId
+        if (sameBoard && differentRecords) return true
+
+        val sameHost = urlHost.isNotBlank() && urlHost == other.urlHost
+        if (sameHost && canonicalUrl != other.canonicalUrl) return true
+        return false
     }
 
     /**
