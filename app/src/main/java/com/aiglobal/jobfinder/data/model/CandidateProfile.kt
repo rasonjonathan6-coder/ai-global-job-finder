@@ -175,6 +175,28 @@ enum class CvStatus(val label: String) {
 }
 
 /**
+ * How the optional AI pass over the CV ended. The deterministic on-device analysis always
+ * runs, so a value other than [SUCCESS] never means "no analysis" — it means the profile
+ * shown is the on-device one, and says so.
+ */
+enum class CvAiStatus(val label: String) {
+    /** No AI analyser is active, or the text was too short to send. */
+    NONE(""),
+    SUCCESS("AI analysis"),
+    CONSENT_REQUIRED("AI off — on-device result"),
+    NOT_CONFIGURED("No AI key — on-device result"),
+    FAILED("AI unavailable — on-device result");
+
+    /** A one-line explanation for a non-success outcome, or null when there is none to give. */
+    fun explanation(): String? = when (this) {
+        NONE, SUCCESS -> null
+        CONSENT_REQUIRED -> "AI analysis was skipped because the assistant is off. The on-device analysis was used."
+        NOT_CONFIGURED -> "AI analysis was skipped because no NVIDIA key is configured. The on-device analysis was used."
+        FAILED -> "AI analysis was unavailable. The on-device analysis was used."
+    }
+}
+
+/**
  * Everything the app knows about the user's CV: the file reference plus the analysis
  * result. Persisted as JSON; the file itself lives in app-private storage.
  */
@@ -195,6 +217,8 @@ data class CvRecord(
     /** Identifier of the engine that produced the current values. */
     val engineId: String? = null,
     val engineLabel: String? = null,
+    /** Whether the last analysis used the AI pass, and how it went. */
+    val aiStatus: CvAiStatus = CvAiStatus.NONE,
     /** Non-fatal notes from parsing or analysis, shown as-is to the user. */
     val warnings: List<String> = emptyList(),
 ) {

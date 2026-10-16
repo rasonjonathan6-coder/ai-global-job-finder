@@ -1544,6 +1544,54 @@ pays Afrique/Golfe ajoutés reconnus) et `Stage37LiveProbeTest.kt` (sonde `LIVE_
 défaut). Fichiers modifiés : `JobProvider.kt` (`RawJob`), `WorkdayProvider.kt`, `JobCache.kt`,
 `RecordValidationEngine.kt`, `CountryCatalog.kt`.
 
+## Stage 38 — lecture IA optionnelle du CV (extraction structurée + repli honnête)
+
+**Objet.** Stage 29 rendait l'extraction honnête (partielle, comptée page par page) mais restait
+**purement heuristique** : le profil affiché était celui des regex locales. Cette étape branche
+enfin l'analyseur IA prévu depuis Stage 16 sur l'import de CV : quand l'utilisateur a **sauvegardé
+une clé NVIDIA *et* activé l'assistant**, le texte du CV est envoyé au modèle qui renvoie un profil
+structuré ; sinon l'analyse reste **sur l'appareil** et le dit clairement.
+
+**Décisions.**
+
+1. **Un seul chemin, deux moteurs.** Nouveau `data/cv/CvAiAnalyzer.kt` implémente l'interface
+   `CvAnalyzer` existante. Il exécute **d'abord** `HeuristicCvAnalyzer` (regex de contact
+   fiables), puis, si `NvidiaConfig.isReady` (clé + consentement), envoie le CV et **fusionne**
+   le résultat du modèle par-dessus via `CvProfileMerger` (les corrections manuelles de
+   l'utilisateur gagnent toujours). Le conteneur (`AiJobFinderApp`) fournit désormais
+   `CvAiAnalyzer { nvidiaConfigValue }` à la place de `HeuristicCvAnalyzer()`.
+2. **Le modèle n'invente pas.** Le prompt impose un schéma JSON fixe et `null` pour tout champ
+   absent ; le parseur **écarte** (jamais ne devine) ce qui ne correspond pas. Un `year` en
+   chaîne non numérique est jeté, pas transformé en `0`. Les lecteurs typés (`intOrNull`,
+   `optBooleanOrNull`) n'acceptent qu'un nombre, une chaîne numérique, ou un booléen.
+3. **Il y a toujours une réponse cohérente.** Consentement absent, clé absente, réseau en échec,
+   réponse illisible ⇒ le résultat heuristique est renvoyé, **étiqueté** `CvAiStatus`
+   (`CONSENT_REQUIRED` / `NOT_CONFIGURED` / `FAILED`) + une ligne d'explication. Le CV **ne
+   quitte pas l'appareil** tant que `isReady` est faux (même verrou que la rédaction assistée).
+4. **Les CV longs sont découpés.** `chunk()` coupe sur les lignes vides (≤ 12 000 caractères),
+   une requête par morceau, union des extractions — pour ne pas dépasser la fenêtre du modèle.
+
+**UI.** Nouvelle carte `AiAnalysisCard` dans `CvScreen` : « Read with the AI assistant » (vert)
+quand l'IA a servi, « The AI assistant is off » / « Add your NVIDIA key to use AI » (actionnable
+vers Profile → AI assistant) sinon, « The AI could not be reached » en cas d'échec. Le héros
+adapte son sous-titre (« Read by the AI assistant and verified on your device »).
+
+**Limite honnête.** Aucun appel NVIDIA live n'est fait depuis la suite : tout passe par la couture
+`complete` de `CvAiAnalyzer` avec des réponses figées. Le comportement réel du modèle sur le CV de
+l'utilisateur (le fichier 1,9 Mo) **n'est pas** prouvé ici — seuls le prompt envoyé, le parseur et
+le repli le sont. Le consentement est obligatoire : sans lui, **zéro** requête (test explicite).
+
+**Vérification.** Suite **487 tests, 0 échec, 0 erreur, 3 skipped** (+15 : `Stage38CvAiAnalysisTest`).
+`lintDebug` **0 erreur, 52 warnings** (inchangé). `assembleDebug` réussit. Nouveaux fichiers :
+`data/cv/CvAiAnalyzer.kt` et `Stage38CvAiAnalysisTest.kt` (15 tests : rien n'est envoyé sans
+consentement ni clé, le modèle lit le CV et ses champs gagnent, réponse sous ```json``` acceptée,
+échec réseau/reponse illisible ⇒ repli on-device, `{}` ⇒ aucun champ inventé, année mal typée
+jetée, pas de JSON ⇒ pas de profil, découpage des CV longs, aller-retour `aiStatus` en persistance,
+et le trajet complet dépôt → analyseur IA). Fichiers modifiés : `CvAnalyzer.kt` (`CvAnalysisResult.aiStatus`),
+`CandidateProfile.kt` (`CvAiStatus`, `CvRecord.aiStatus`), `CvRepository.kt` (persistance `aiStatus`,
+helpers `recordToJson`/`cvRecordFromJson` rendus `internal`), `AiJobFinderApp.kt` (câblage),
+`ui/screens/cv/CvScreen.kt` (`AiAnalysisCard`).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

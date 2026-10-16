@@ -8,9 +8,9 @@ import com.aiglobal.jobfinder.data.applications.ApplicationCenter
 import com.aiglobal.jobfinder.data.applications.ApplicationStore
 import com.aiglobal.jobfinder.data.autoapply.AutoApplyCenter
 import com.aiglobal.jobfinder.data.autoapply.AutoApplyStore
+import com.aiglobal.jobfinder.data.cv.CvAiAnalyzer
 import com.aiglobal.jobfinder.data.cv.CvFileStore
 import com.aiglobal.jobfinder.data.cv.CvParserRegistry
-import com.aiglobal.jobfinder.data.cv.HeuristicCvAnalyzer
 import com.aiglobal.jobfinder.data.interview.InterviewCoach
 import com.aiglobal.jobfinder.data.interview.InterviewPrepStore
 import com.aiglobal.jobfinder.data.jobs.JobCache
@@ -68,14 +68,15 @@ open class AppContainer(application: Application) {
     val preferencesRepository: UserPreferencesRepository = UserPreferencesRepository(application)
 
     /**
-     * CV import and analysis. The analyser is on-device and deterministic, so the
-     * candidate's document is never uploaded to a third party.
+     * CV import and analysis. The analysis runs on-device by default; when the user has saved
+     * an NVIDIA key *and* granted consent, the optional [CvAiAnalyzer] sends the CV text to
+     * NVIDIA for a richer, structured read, with the on-device result as a guaranteed fallback.
      */
     val cvRepository: CvRepository = CvRepository(
         context = application,
         fileStore = CvFileStore(application),
         parserRegistry = CvParserRegistry.default(application),
-        analyzer = HeuristicCvAnalyzer(),
+        analyzer = CvAiAnalyzer(configProvider = { nvidiaConfigValue }),
     )
 
     private val candidateProfileState = MutableStateFlow(CandidateProfile()).also { state ->
@@ -206,6 +207,14 @@ open class AppContainer(application: Application) {
     private var joobleApiKeyValue: String = ""
 
     /**
+     * Last-known NVIDIA key/model/consent, read synchronously when a CV analysis or a draft
+     * starts. The consent gate inside [CvAiAnalyzer] means an unconfigured value sends nothing.
+     */
+    @Volatile
+    private var nvidiaConfigValue: com.aiglobal.jobfinder.data.model.NvidiaConfig =
+        com.aiglobal.jobfinder.data.model.NvidiaConfig()
+
+    /**
      * The Adzuna provider instance, shared with the feed and used directly by the in-app
      * connection test so a "Test connection" tap exercises the same request path the feed
      * uses (real endpoints, real parsing) rather than a separate approximation. It is lazy so
@@ -229,6 +238,9 @@ open class AppContainer(application: Application) {
         }
         appScope.launch {
             preferencesRepository.joobleApiKey.collect { joobleApiKeyValue = it }
+        }
+        appScope.launch {
+            preferencesRepository.nvidiaConfig.collect { nvidiaConfigValue = it }
         }
     }
 

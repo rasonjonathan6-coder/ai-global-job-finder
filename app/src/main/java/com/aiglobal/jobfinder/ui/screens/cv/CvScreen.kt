@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CertificationEntry
+import com.aiglobal.jobfinder.data.model.CvAiStatus
 import com.aiglobal.jobfinder.data.model.CvRecord
 import com.aiglobal.jobfinder.data.model.CvStatus
 import com.aiglobal.jobfinder.data.model.EducationEntry
@@ -150,6 +151,7 @@ fun CvScreen(
                 isAnalyzed = state.isAnalyzed,
                 isPartial = state.isPartial,
                 onDevice = state.analysisStaysOnDevice,
+                aiStatus = state.record?.aiStatus ?: CvAiStatus.NONE,
             )
         }
 
@@ -198,6 +200,7 @@ fun CvScreen(
                     item { PartialReadBanner(record) }
                 }
                 item { SummaryCard(record, state.completeness) }
+                item { AiAnalysisCard(record) }
                 item { ContactCard(record, onEditField) }
                 if (record.profile.skills.isNotEmpty()) item { SkillsCard(record.profile.skills) }
                 if (record.profile.education.isNotEmpty()) item { EducationCard(record.profile.education) }
@@ -219,6 +222,7 @@ private fun AnalysisHeroCard(
     isAnalyzed: Boolean,
     isPartial: Boolean,
     onDevice: Boolean,
+    aiStatus: CvAiStatus,
 ) {
     val spacing = LocalSpacing.current
     val dark = isDarkTheme()
@@ -234,10 +238,13 @@ private fun AnalysisHeroCard(
         isPartial -> "Analysis incomplete"
         else -> "Ready to analyse"
     }
-    val subtitle = if (onDevice) {
-        "Processed on your device — your CV is never uploaded"
-    } else {
-        "Sent to a secure AI service for analysis"
+    val aiUsed = aiStatus == CvAiStatus.SUCCESS
+    val subtitle = when {
+        isBusy -> "Reading your CV — this can take a moment"
+        aiUsed -> "Read by the AI assistant and verified on your device"
+        aiStatus.label.isNotBlank() -> aiStatus.label
+        onDevice -> "Processed on your device — your CV is never uploaded"
+        else -> "Analysed on your device unless you enable the AI assistant"
     }
 
     Column(
@@ -463,6 +470,82 @@ private fun SummaryCard(record: CvRecord, completeness: ProfileCompleteness) {
                 Text(
                     text = "Analysed ${record.analyzedAtEpochMillis?.let { formatDateTime(it) } ?: "just now"} · $engine",
                     style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiAnalysisCard(record: CvRecord) {
+    val status = record.aiStatus
+    // Only two of the three-empty states are actionable from here: the assistant is off, or
+    // no key is saved. A transient failure is informational.
+    val (accent, container, icon) = when (status) {
+        CvAiStatus.SUCCESS -> Triple(
+            extendedColors.success,
+            extendedColors.successContainer,
+            Icons.Filled.AutoAwesome,
+        )
+        CvAiStatus.CONSENT_REQUIRED, CvAiStatus.NOT_CONFIGURED -> Triple(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+            Icons.Filled.AutoAwesome,
+        )
+        else -> Triple(
+            extendedColors.warning,
+            extendedColors.warningContainer,
+            Icons.Filled.ErrorOutline,
+        )
+    }
+    val title = when (status) {
+        CvAiStatus.SUCCESS -> "Read with the AI assistant"
+        CvAiStatus.CONSENT_REQUIRED -> "The AI assistant is off"
+        CvAiStatus.NOT_CONFIGURED -> "Add your NVIDIA key to use AI"
+        CvAiStatus.FAILED -> "The AI could not be reached"
+        CvAiStatus.NONE -> "Analysed on your device"
+    }
+    val body = when (status) {
+        CvAiStatus.SUCCESS ->
+            "Your CV was sent to the AI model only because you turned the assistant on. " +
+                "The fields below are the model's reading, checked against an on-device pass. " +
+                "Correct anything that is wrong — your edits always win."
+        CvAiStatus.CONSENT_REQUIRED ->
+            "This profile was built entirely on your device. Turn on the AI assistant in " +
+                "Profile → AI assistant to read your CV with the model instead."
+        CvAiStatus.NOT_CONFIGURED ->
+            "This profile was built entirely on your device. Save an NVIDIA API key in " +
+                "Profile → AI assistant to enable AI reading."
+        CvAiStatus.FAILED ->
+            "The model did not return a usable answer, so the on-device analysis is shown. " +
+                "Check your connection and try again."
+        CvAiStatus.NONE ->
+            "Everything was processed on your device; your CV was never uploaded."
+    }
+
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = container,
+        borderColor = accent.copy(alpha = 0.3f),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

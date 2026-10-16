@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.data.cv
 
 import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CandidateProfile
+import com.aiglobal.jobfinder.data.model.CvAiStatus
 
 /** Outcome of analysing CV text: the structured profile plus how it was produced. */
 data class CvAnalysisResult(
@@ -11,6 +12,8 @@ data class CvAnalysisResult(
     val confidence: Int = 0,
     /** The snippet each field was derived from, so the user can verify it. */
     val evidence: Map<CandidateField, String> = emptyMap(),
+    /** Whether and how the AI pass contributed to this result. */
+    val aiStatus: CvAiStatus = CvAiStatus.NONE,
 )
 
 /**

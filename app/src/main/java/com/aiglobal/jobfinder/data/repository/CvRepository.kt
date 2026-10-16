@@ -120,6 +120,7 @@ class CvRepository(
             profile = analysis.profile,
             engineId = analyzer.id,
             engineLabel = analyzer.label,
+            aiStatus = analysis.aiStatus,
             warnings = (parsed.warnings + analysis.warnings).distinct(),
         )
         persist(updated)
@@ -222,7 +223,7 @@ class CvRepository(
 
 private const val SCHEMA_VERSION = 1
 
-private fun recordToJson(record: CvRecord): JSONObject = JSONObject().apply {
+internal fun recordToJson(record: CvRecord): JSONObject = JSONObject().apply {
     put("version", SCHEMA_VERSION)
     put("fileName", record.fileName)
     put("storedFileName", record.storedFileName)
@@ -235,6 +236,7 @@ private fun recordToJson(record: CvRecord): JSONObject = JSONObject().apply {
     put("extractedCharacters", record.extractedCharacters)
     put("engineId", record.engineId ?: JSONObject.NULL)
     put("engineLabel", record.engineLabel ?: JSONObject.NULL)
+    put("aiStatus", record.aiStatus.name)
     put("warnings", JSONArray(record.warnings))
     put("userEditedFields", JSONArray(record.userEditedFields.map { it.name }))
     put("profile", profileToJson(record.profile))
@@ -286,7 +288,7 @@ private fun profileToJson(profile: CandidateProfile): JSONObject = JSONObject().
     put("summary", profile.summary)
 }
 
-private fun cvRecordFromJson(json: JSONObject): CvRecord = CvRecord(
+internal fun cvRecordFromJson(json: JSONObject): CvRecord = CvRecord(
     fileName = json.optString("fileName"),
     storedFileName = json.optString("storedFileName"),
     fileType = runCatching { com.aiglobal.jobfinder.data.model.CvFileType.valueOf(json.optString("fileType")) }
@@ -299,6 +301,8 @@ private fun cvRecordFromJson(json: JSONObject): CvRecord = CvRecord(
     extractedCharacters = json.optInt("extractedCharacters"),
     engineId = json.optStringOrNull("engineId"),
     engineLabel = json.optStringOrNull("engineLabel"),
+    aiStatus = runCatching { com.aiglobal.jobfinder.data.model.CvAiStatus.valueOf(json.optString("aiStatus")) }
+        .getOrDefault(com.aiglobal.jobfinder.data.model.CvAiStatus.NONE),
     warnings = json.optJSONArray("warnings").toStringList(),
     userEditedFields = json.optJSONArray("userEditedFields").toStringList()
         .mapNotNull { runCatching { CandidateField.valueOf(it) }.getOrNull() }.toSet(),

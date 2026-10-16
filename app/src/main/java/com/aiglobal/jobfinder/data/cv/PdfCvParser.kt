@@ -6,7 +6,6 @@ import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
-import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -54,7 +53,9 @@ class PdfCvParser(private val context: Context) : CvParser {
                 val pageTexts = ArrayList<CvPageText>(pageCount)
                 for (index in 0 until pageCount) {
                     val pageText = try {
-                        stripperFor(doc, index).getText(doc)
+                        // XY-cut reading order, not PDFBox's row-by-row order: a sidebar or
+                        // two-column CV would otherwise be interleaved and lose its headings.
+                        PdfLayoutExtractor.text(doc, index)
                     } catch (e: IOException) {
                         throw CvParseException.Corrupted(e)
                     } catch (e: RuntimeException) {
@@ -111,18 +112,6 @@ class PdfCvParser(private val context: Context) : CvParser {
                     imagesOnly = imagesOnly,
                 )
             }
-        }
-
-    /** A fresh stripper bound to a single page, so page N cannot depend on page N-1. */
-    private fun stripperFor(document: PDDocument, pageIndex: Int): PDFTextStripper =
-        PDFTextStripper().apply {
-            sortByPosition = true
-            // Explicit separators, so a layout is not glued together by PDFBox's own
-            // guesses before we ever see the text.
-            lineSeparator = "\n"
-            wordSeparator = " "
-            startPage = pageIndex + 1
-            endPage = pageIndex + 1
         }
 
     /**
