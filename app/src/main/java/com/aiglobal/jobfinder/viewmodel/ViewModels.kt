@@ -5,15 +5,18 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.aiglobal.jobfinder.AppContainer
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
+import com.aiglobal.jobfinder.data.jobs.engine.InternationalFitEngine
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.ApplicationRecord
 import com.aiglobal.jobfinder.data.model.ApplicationReminder
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
 import com.aiglobal.jobfinder.data.model.BenefitPriority
+import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.DashboardStats
 import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
+import com.aiglobal.jobfinder.data.model.InternationalFitAssessment
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSyncState
 import com.aiglobal.jobfinder.data.model.NvidiaResult
@@ -214,12 +217,24 @@ data class JobsUiState(
         com.aiglobal.jobfinder.data.jobs.search.SearchCoverage(),
     /** Expat Benefits Score per job id. Kept beside the CV match, never blended into it. */
     val expatAssessments: Map<String, ExpatBenefitsAssessment> = emptyMap(),
+    /**
+     * International Fit per job id. Folds the destination, the route in from Madagascar, the
+     * language and the credential facts into one explainable read, while the documented
+     * Expat Benefits Score stays a separate number beside it.
+     */
+    val internationalFit: Map<String, InternationalFitAssessment> = emptyMap(),
     /** User priorities and gates, mirrored here so the filter row can show them. */
     val expatPreferences: ExpatPreferences = ExpatPreferences(),
     /** Hide postings whose Expat Benefits Score is below this. 0 disables the filter. */
     val minExpatScore: Int = 0,
     /** When true, only postings whose employer documents visa sponsorship are shown. */
     val visaDocumentedOnly: Boolean = false,
+    /**
+     * When true, only postings whose International Fit band is strong or excellent are
+     * shown. The band combines the role, skills, experience, destination and the route in
+     * from Madagascar into one explainable read.
+     */
+    val strongInternationalFitOnly: Boolean = false,
     /**
      * When true, only postings whose title is the candidate's own trade (or the wider
      * maintenance family) are shown. The remote boards return broad samples, so this is
@@ -249,13 +264,17 @@ data class JobsUiState(
     val hasActiveFilters: Boolean
         get() = savedOnly || eligibleOnly || sponsoredOnly || country != null ||
             source != null || minMatch > 0 || minExpatScore > 0 || visaDocumentedOnly ||
-            tradeOnly || query.isNotBlank()
+            strongInternationalFitOnly || tradeOnly || query.isNotBlank()
 
     /** Expat Benefits Score for one posting, or the honest empty state when unknown. */
     fun expatScore(job: Job): Int? = expatAssessments[job.id]?.score
 
     fun expatAssessment(job: Job): ExpatBenefitsAssessment =
         expatAssessments[job.id] ?: ExpatBenefitsAssessment.EMPTY
+
+    /** International Fit for one posting, or the honest empty state when not yet scored. */
+    fun internationalFitOf(job: Job): InternationalFitAssessment =
+        internationalFit[job.id] ?: InternationalFitAssessment.EMPTY
 
     /** True when the card should show its bookmark filled, from either source of truth. */
     fun isSaved(job: Job): Boolean = savedJobIds.contains(job.id) || job.isSaved
@@ -276,6 +295,9 @@ data class JobsUiState(
                 }
             }
             if (tradeOnly) result = result.filter { it.isMaintenanceRelevant }
+            if (strongInternationalFitOnly) result = result.filter {
+                internationalFit[it.id]?.band?.isActionable == true
+            }
             country?.let { selected -> result = result.filter { it.country == selected } }
             source?.let { selected -> result = result.filter { it.providerId == selected } }
             if (minMatch > 0) result = result.filter { it.matchScore >= minMatch }
@@ -299,6 +321,7 @@ data class JobsUiState(
                 JobSort.NEWEST -> result.sortedByDescending { it.postedAtEpochMillis }
                 JobSort.SALARY_HIGH -> result.sortedByDescending { eurPerYearOrZero(it) }
                 JobSort.EXPAT_FIT -> result.sortedWith(expatFitOrder)
+                JobSort.INTERNATIONAL_FIT -> result.sortedWith(internationalFitOrder)
             }
         }
 
@@ -310,6 +333,24 @@ data class JobsUiState(
      */
     private val expatFitOrder: Comparator<Job> =
         compareByDescending<Job> { expatAssessments[it.id]?.score ?: -1 }
+            .thenByDescending { it.eligibility.rank }
+            .thenByDescending { job ->
+                job.benefitEvidence.any {
+                    it.type.key == com.aiglobal.jobfinder.data.model.JobBenefitTypes.VISA_SPONSORSHIP.key &&
+                        it.status == com.aiglobal.jobfinder.data.model.BenefitStatus.CONFIRMED
+                }
+            }
+            .thenByDescending { it.matchScore }
+            .thenByDescending { it.postedAtEpochMillis ?: 0L }
+
+    /**
+     * The strongest international fit first, using recorded facts rather than a hunch. It
+     * reads the International Fit Score, then the eligibility verdict and documented visa
+     * sponsorship as tie-breakers, and only then CV match and recency — so a posting that
+     * ranks high here can always be explained by the facts behind it.
+     */
+    private val internationalFitOrder: Comparator<Job> =
+        compareByDescending<Job> { internationalFit[it.id]?.score ?: -1 }
             .thenByDescending { it.eligibility.rank }
             .thenByDescending { job ->
                 job.benefitEvidence.any {
@@ -334,12 +375,18 @@ enum class JobSort(val label: String) {
 
     /** Most applicable from Madagascar first, using recorded facts rather than a guess. */
     EXPAT_FIT("Expat fit"),
+
+    /** Strongest international fit first, combining role, skills, route and destination. */
+    INTERNATIONAL_FIT("International fit"),
 }
 
 class JobsViewModel(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> = kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
     private val expatEngine: ExpatBenefitsEngine = ExpatBenefitsEngine(),
+    private val candidateProfile: kotlinx.coroutines.flow.Flow<CandidateProfile> =
+        kotlinx.coroutines.flow.flowOf(CandidateProfile()),
+    private val fitEngine: InternationalFitEngine = InternationalFitEngine(),
 ) : ViewModel() {
 
     private val uiStateInternal = kotlinx.coroutines.flow.MutableStateFlow(JobsUiState())
@@ -360,23 +407,34 @@ class JobsViewModel(
         // Re-score every posting whenever the feed or the user's priorities change, so the
         // Expat Benefits Score always reflects the current postings and the current wishes.
         viewModelScope.launch {
-            kotlinx.coroutines.flow.combine(repository.jobs, expatPreferences) { jobs, prefs ->
-                jobs to prefs
-            }.collect { (jobs, prefs) ->
-                uiStateInternal.update {
-                    it.copy(
-                        jobs = jobs,
-                        expatPreferences = prefs,
-                        expatAssessments = jobs.associate { job ->
-                            job.id to expatEngine.assess(
-                                benefits = job.benefitEvidence,
-                                preferences = prefs,
-                                salaryEurPerYear = eurPerYear(job),
-                            )
-                        },
-                    )
+            kotlinx.coroutines.flow.combine(
+                repository.jobs,
+                expatPreferences,
+                candidateProfile,
+            ) { jobs, prefs, profile -> Triple(jobs, prefs, profile) }
+                .collect { (jobs, prefs, profile) ->
+                    val assessments = jobs.associate { job ->
+                        job.id to expatEngine.assess(
+                            benefits = job.benefitEvidence,
+                            preferences = prefs,
+                            salaryEurPerYear = eurPerYear(job),
+                        )
+                    }
+                    uiStateInternal.update {
+                        it.copy(
+                            jobs = jobs,
+                            expatPreferences = prefs,
+                            expatAssessments = assessments,
+                            internationalFit = jobs.associate { job ->
+                                job.id to fitEngine.assess(
+                                    job = job,
+                                    profile = profile,
+                                    expat = assessments.getValue(job.id),
+                                )
+                            },
+                        )
+                    }
                 }
-            }
         }
         refresh()
     }
@@ -420,6 +478,7 @@ class JobsViewModel(
             minMatch = 0,
             minExpatScore = 0,
             visaDocumentedOnly = false,
+            strongInternationalFitOnly = false,
             tradeOnly = false,
         )
     }
@@ -428,6 +487,10 @@ class JobsViewModel(
 
     fun toggleVisaDocumentedFilter() =
         uiStateInternal.update { it.copy(visaDocumentedOnly = !it.visaDocumentedOnly) }
+
+    /** Shows only postings whose International Fit band is strong or excellent. */
+    fun toggleStrongInternationalFitFilter() =
+        uiStateInternal.update { it.copy(strongInternationalFitOnly = !it.strongInternationalFitOnly) }
 
     /** Shows only postings whose title is the candidate's own trade. */
     fun toggleTradeOnlyFilter() = uiStateInternal.update { it.copy(tradeOnly = !it.tradeOnly) }
@@ -450,10 +513,12 @@ class JobsViewModelFactory(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> =
         kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
+    private val candidateProfile: kotlinx.coroutines.flow.Flow<CandidateProfile> =
+        kotlinx.coroutines.flow.flowOf(CandidateProfile()),
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        JobsViewModel(repository, expatPreferences) as T
+        JobsViewModel(repository, expatPreferences, candidateProfile = candidateProfile) as T
 }
 
 data class HomeUiState(

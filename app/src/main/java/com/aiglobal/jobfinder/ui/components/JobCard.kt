@@ -69,6 +69,11 @@ fun JobCard(
     expatScore: Int? = null,
     expatEvidenceCoverage: Int = 0,
     expatLowEvidence: Boolean = false,
+    /**
+     * International Fit for this posting, or null when it has not been computed. Shown
+     * beside the CV match and the Expat Benefits Score so the three are never conflated.
+     */
+    internationalFit: com.aiglobal.jobfinder.data.model.InternationalFitAssessment? = null,
 ) {
     val spacing = com.aiglobal.jobfinder.ui.theme.LocalSpacing.current
     val visible = remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -192,6 +197,9 @@ fun JobCard(
                             evidenceCoverage = expatEvidenceCoverage,
                             lowEvidence = expatLowEvidence,
                         )
+                    }
+                    if (internationalFit != null) {
+                        InternationalFitBadge(assessment = internationalFit)
                     }
                     if (job.scamRisk != com.aiglobal.jobfinder.data.model.ScamRisk.LOW) {
                         ScamRiskBadge(job.scamRisk)

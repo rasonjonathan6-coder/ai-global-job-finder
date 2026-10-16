@@ -1630,6 +1630,52 @@ fusionné, repli étiqueté on-device), `CandidateProfile.kt` (compteur non-blan
 (compteur + moteur effectif), `PdfCvParser.kt` (garde-fou d'extraction), `ui/screens/cv/CvScreen.kt`
 (« Characters read »), `CvScreenTest.kt` (libellé).
 
+## Stage 41 — un « fit international » vérifiable par annonce
+
+**Besoin.** L'app tenait déjà trois nombres distincts : le score de correspondance CV
+(`Job.matchScore`), le verdict d'éligibilité Madagascar (`MadagascarEligibility`) et le score
+documenté des avantages expat (`ExpatBenefitsAssessment`). Aucun ne répond seul à la question du
+candidat basé à Madagascar : « cette offre vaut-elle mon temps, et où en suis-je exactement ? ».
+
+**Ajout.** Un quatrième indicateur, `InternationalFitAssessment`, replie la destination, la route
+depuis Madagascar, la langue et les faits de diplôme/expérience en un seul nombre **explicable**,
+tout en laissant le score d'avantages expat **visible à côté**, jamais fondu dedans.
+
+**Moteur.** `data/jobs/engine/InternationalFitEngine.kt` calcule une somme pondérée de six
+composants, chacun plafonné : route depuis Madagascar 0..35, alignement de métier 0..20,
+recouvrement de compétences 0..20 (pondéré par `RoleFamily`, comme le score de correspondance),
+expérience 0..10, langue 0..10, destination 0..5. Trois règles d'honnêteté, identiques au reste du
+pipeline :
+
+1. **Le silence est neutre, pas négatif.** Une exigence non mentionnée ne gagne ni ne perd ses
+   points, et le composant est marqué `EvidenceStrength.UNKNOWN` (« non indiqué »), jamais un refus.
+2. **Rien n'est inventé.** Métier et compétences viennent de la correspondance existante ;
+   route, langue et destination viennent de faits enregistrés sur `Job`.
+3. **Un profil trop maigre ⇒ `InternationalFitBand.INSUFFICIENT`**, pas un score bas confiant :
+   le nombre n'est montré que s'il y a un vrai profil à confronter.
+
+Le total est la somme exacte de ses composants (`score == components.sumOf { it.points }`) et
+`fromScore` ne renvoie **jamais** `INSUFFICIENT` (réservé à « je ne peux pas juger »).
+
+**UI.** `InternationalFitBadge` (badge, bande + score) réutilise les jetons existants ; la carte
+`JobCard` l'affiche à côté du badge d'avantages expat ; la fiche de détail
+(`JobExplanationSheet`) ouvre une section « Your international fit » listant chaque composant
+(points/max + force de preuve), le résumé de route, puis les blocages (« Before you apply »). Un
+filtre « Strong fit » (`strongInternationalFitOnly`) et un tri `JobSort.INTERNATIONAL_FIT`
+exposent le classement. Aucun redesign : mêmes jetons, clair + sombre.
+
+**Câblage.** `JobsViewModel` prend un flux `candidateProfile` (transmis par
+`JobsViewModelFactory` depuis `AiJobFinderRoot.kt`) et calcule la carte dans le `combine` existant ;
+`JobsUiState` expose la carte, l'accesseur `internationalFitOf(job)` (état vide honnête) et le
+filtre. `clearFilters()` réinitialise le nouveau filtre.
+
+**Vérification.** Suite **516 tests, 0 échec** (+16 : `Stage41InternationalFitTest`, moteur +
+état). Lint **0 erreur / 52 avertissements** (inchangé). Nouveaux fichiers :
+`data/model/InternationalFit.kt`, `data/jobs/engine/InternationalFitEngine.kt`,
+`Stage41InternationalFitTest.kt`. Modifiés : `ViewModels.kt` (état, filtre, tri, usine),
+`AiJobFinderRoot.kt` (profil au factory), `ui/components/Badges.kt` + `JobCard.kt` (badge),
+`ui/screens/jobs/JobsScreen.kt` (fiche de détail, filtre, câblage).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aiglobal.jobfinder.data.model.ApplicationReadiness
 import com.aiglobal.jobfinder.data.model.BenefitStatus
+import com.aiglobal.jobfinder.data.model.InternationalFitAssessment
+import com.aiglobal.jobfinder.data.model.InternationalFitBand
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
 import com.aiglobal.jobfinder.data.model.MatchTier
 import com.aiglobal.jobfinder.data.model.ScamRisk
@@ -341,4 +343,49 @@ fun IconLabelRow(
 @Composable
 fun FreshnessLabel(text: String, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     IconLabelRow(icon = Icons.Filled.Schedule, text = text, modifier = modifier, tint = tint)
+}
+
+/** Color for an International Fit band, aligned with the existing success/info/warning scale. */
+@Composable
+fun internationalFitBandColor(band: InternationalFitBand): Color = when (band) {
+    InternationalFitBand.EXCELLENT -> extendedColors.success
+    InternationalFitBand.STRONG -> extendedColors.info
+    InternationalFitBand.POSSIBLE -> extendedColors.warning
+    InternationalFitBand.WEAK -> extendedColors.warning
+    InternationalFitBand.INSUFFICIENT -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/**
+ * International Fit, shown as its own chip. It answers a different question from the CV
+ * match and the Expat Benefits Score: "is this worth my time from Madagascar, and where do
+ * I stand?". The band is shown with the score, and [InternationalFitBand.INSUFFICIENT] is
+ * shown as "not enough profile" rather than as a low number, so a thin profile is never
+ * read as a bad match.
+ */
+@Composable
+fun InternationalFitBadge(
+    assessment: InternationalFitAssessment,
+    modifier: Modifier = Modifier,
+) {
+    val band = assessment.band
+    val content = internationalFitBandColor(band)
+    val icon = when (band) {
+        InternationalFitBand.EXCELLENT -> Icons.Filled.WorkspacePremium
+        InternationalFitBand.STRONG -> Icons.Filled.Public
+        InternationalFitBand.POSSIBLE -> Icons.Filled.HelpOutline
+        InternationalFitBand.WEAK -> Icons.Filled.Schedule
+        InternationalFitBand.INSUFFICIENT -> Icons.Filled.HelpOutline
+    }
+    val label = if (band == InternationalFitBand.INSUFFICIENT) {
+        "International fit · not enough profile"
+    } else {
+        "International fit ${assessment.score}% · ${band.shortLabel}"
+    }
+    Pill(
+        text = label,
+        containerColor = content.copy(alpha = 0.14f),
+        contentColor = content,
+        leadingIcon = icon,
+        modifier = modifier,
+    )
 }

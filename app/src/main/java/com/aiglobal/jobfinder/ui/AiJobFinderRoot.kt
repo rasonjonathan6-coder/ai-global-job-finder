@@ -185,6 +185,7 @@ fun AiJobFinderRoot(
                     factory = JobsViewModelFactory(
                         repository = container.jobRepository,
                         expatPreferences = appViewModel.expatPreferences,
+                        candidateProfile = container.candidateProfile,
                     ),
                 )
                 JobsScreen(

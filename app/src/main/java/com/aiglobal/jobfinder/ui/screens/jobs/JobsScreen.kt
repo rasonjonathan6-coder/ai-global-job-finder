@@ -73,6 +73,8 @@ import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.EligibilityReason
 import com.aiglobal.jobfinder.data.model.EvidenceStrength
 import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
+import com.aiglobal.jobfinder.data.model.InternationalFitAssessment
+import com.aiglobal.jobfinder.data.model.InternationalFitComponent
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSyncState
 import com.aiglobal.jobfinder.data.model.MatchReason
@@ -84,6 +86,7 @@ import com.aiglobal.jobfinder.ui.components.ErrorState
 import com.aiglobal.jobfinder.ui.components.ExpatScoreBadge
 import com.aiglobal.jobfinder.ui.components.FilterChip
 import com.aiglobal.jobfinder.ui.components.IconChipButton
+import com.aiglobal.jobfinder.ui.components.InternationalFitBadge
 import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.components.JobListSkeleton
 import com.aiglobal.jobfinder.ui.components.MatchChip
@@ -114,6 +117,7 @@ fun JobsScreen(
         onToggleSponsored = viewModel::toggleSponsoredFilter,
         onToggleVisaDocumented = viewModel::toggleVisaDocumentedFilter,
         onToggleTradeOnly = viewModel::toggleTradeOnlyFilter,
+        onToggleStrongInternationalFit = viewModel::toggleStrongInternationalFitFilter,
         onCountryChange = viewModel::onCountryChange,
         onSourceChange = viewModel::onSourceChange,
         onSortChange = viewModel::onSortChange,
@@ -136,6 +140,7 @@ internal fun JobsContent(
     onToggleSponsored: () -> Unit,
     onToggleVisaDocumented: () -> Unit = {},
     onToggleTradeOnly: () -> Unit = {},
+    onToggleStrongInternationalFit: () -> Unit = {},
     onCountryChange: (String?) -> Unit,
     onSourceChange: (String?) -> Unit,
     onSortChange: (JobSort) -> Unit,
@@ -170,6 +175,7 @@ internal fun JobsContent(
             onToggleSponsored = onToggleSponsored,
             onToggleVisaDocumented = onToggleVisaDocumented,
             onToggleTradeOnly = onToggleTradeOnly,
+            onToggleStrongInternationalFit = onToggleStrongInternationalFit,
             onMinExpatScoreChange = onMinExpatScoreChange,
         )
 
@@ -229,6 +235,7 @@ internal fun JobsContent(
                             expatScore = expat.score.takeIf { expat.hasEvidence },
                             expatEvidenceCoverage = expat.evidenceCoverage,
                             expatLowEvidence = expat.hasEvidence && expat.lowEvidence,
+                            internationalFit = state.internationalFitOf(job),
                         )
                     }
                 }
@@ -240,6 +247,7 @@ internal fun JobsContent(
         JobExplanationSheet(
             job = job,
             expat = state.expatAssessment(job),
+            fit = state.internationalFitOf(job),
             onDismiss = { explainJob = null },
             onOpenSource = {
                 explainJob = null
@@ -378,6 +386,7 @@ private fun JobsFilterRow(
     onToggleSponsored: () -> Unit,
     onToggleVisaDocumented: () -> Unit,
     onToggleTradeOnly: () -> Unit,
+    onToggleStrongInternationalFit: () -> Unit,
     onMinExpatScoreChange: (Int) -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -393,6 +402,14 @@ private fun JobsFilterRow(
                 selected = state.tradeOnly,
                 onClick = onToggleTradeOnly,
                 leadingIcon = Icons.Filled.Construction,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Strong fit",
+                selected = state.strongInternationalFitOnly,
+                onClick = onToggleStrongInternationalFit,
+                leadingIcon = Icons.Filled.Public,
             )
         }
         item {
@@ -552,6 +569,7 @@ private fun sourceSummary(syncState: JobSyncState, total: Int, eligible: Int): S
 private fun JobExplanationSheet(
     job: Job,
     expat: ExpatBenefitsAssessment,
+    fit: InternationalFitAssessment,
     onDismiss: () -> Unit,
     onOpenSource: () -> Unit,
     onWriteLetter: () -> Unit,
@@ -591,6 +609,8 @@ private fun JobExplanationSheet(
                 )
             }
 
+            InternationalFitSection(fit)
+
             SectionHeader(
                 title = "Why this match score",
                 subtitle = "Every point of the ${job.matchScore}% comes from one of these signals",
@@ -625,6 +645,129 @@ private fun JobExplanationSheet(
             Text(
                 text = "Always confirm the details on the employer's own page before you apply.",
                 style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * The International Fit block for the detail sheet. It shows the one number that folds the
+ * destination, the route in from Madagascar, the language and the credential facts together,
+ * lists every component behind it, then the facts that stand in the way. The documented Expat
+ * Benefits Score stays a separate number beside it, never blended in.
+ */
+@Composable
+private fun InternationalFitSection(fit: InternationalFitAssessment) {
+    val spacing = LocalSpacing.current
+    SectionHeader(
+        title = "Your international fit",
+        subtitle = "Your trade, skills, route and destination, scored together from the posting",
+    )
+
+    if (fit.isInsufficient) {
+        Text(
+            text = fit.explanation,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        InternationalFitBadge(assessment = fit)
+        fit.expatBenefitsScore?.let { score ->
+            ExpatScoreBadge(
+                score = score,
+                evidenceCoverage = fit.expatEvidenceCoverage,
+                lowEvidence = fit.expatLowEvidence,
+            )
+        }
+    }
+
+    Text(
+        text = fit.routeSummary,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+
+    fit.components.forEach { component -> InternationalFitComponentRow(component) }
+
+    if (fit.blockers.isNotEmpty()) {
+        SectionHeader(
+            title = "Before you apply",
+            subtitle = "Facts from the posting that stand in the way",
+        )
+        fit.blockers.forEach { blocker ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PriorityHigh,
+                    contentDescription = null,
+                    tint = extendedColors.warning,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = blocker,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+    Text(
+        text = fit.explanation,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** One ingredient of the International Fit Score: what it earned, and how it was read. */
+@Composable
+private fun InternationalFitComponentRow(component: InternationalFitComponent) {
+    val color = when (component.strength) {
+        EvidenceStrength.DOCUMENTED -> extendedColors.success
+        EvidenceStrength.REFUSED -> extendedColors.danger
+        EvidenceStrength.INFERRED -> extendedColors.info
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(LocalSpacing.current.xs),
+    ) {
+        Pill(
+            text = "${component.points}/${component.maxPoints}",
+            containerColor = color.copy(alpha = 0.14f),
+            contentColor = color,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = component.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Pill(
+                    text = component.strength.label,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = component.detail,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
