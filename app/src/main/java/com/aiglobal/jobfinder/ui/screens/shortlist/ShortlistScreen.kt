@@ -33,10 +33,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,10 +73,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.model.ApplicationReadiness
 import com.aiglobal.jobfinder.data.model.BlockerKind
 import com.aiglobal.jobfinder.data.model.Job
+import com.aiglobal.jobfinder.data.model.NextStep
+import com.aiglobal.jobfinder.data.model.NextStepAction
 import com.aiglobal.jobfinder.data.model.RankComponent
 import com.aiglobal.jobfinder.data.model.ReadinessBlocker
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
 import com.aiglobal.jobfinder.data.model.ShortlistEntry
+import com.aiglobal.jobfinder.data.model.ShortlistQualityBand
 import com.aiglobal.jobfinder.data.model.ShortlistState
 import com.aiglobal.jobfinder.ui.components.AppCard
 import com.aiglobal.jobfinder.ui.components.EmptyState
@@ -76,10 +88,12 @@ import com.aiglobal.jobfinder.ui.components.IconChipButton
 import com.aiglobal.jobfinder.ui.components.MatchChip
 import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
+import com.aiglobal.jobfinder.ui.components.ProgressBar
 import com.aiglobal.jobfinder.ui.components.ReadinessBadge
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SkeletonBox
+import com.aiglobal.jobfinder.ui.components.StatBlock
 import com.aiglobal.jobfinder.ui.components.isDarkTheme
 import com.aiglobal.jobfinder.ui.screens.jobs.ApplyLinkSheet
 import com.aiglobal.jobfinder.ui.screens.jobs.applicationUrlInspector
@@ -123,6 +137,7 @@ internal fun ShortlistContent(
     val spacing = LocalSpacing.current
     var explainEntry by remember { mutableStateOf<ShortlistEntry?>(null) }
     var applyJob by remember { mutableStateOf<Job?>(null) }
+    var preparationLimit by remember { mutableIntStateOf(3) }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         ShortlistHeader(state = state, onBack = onBack, onRefresh = onRefresh)
@@ -150,6 +165,8 @@ internal fun ShortlistContent(
             ) {
                 item { ShortlistSummary(state = state, onOpenJobs = onOpenJobs) }
 
+                item { QualityDashboard(state = state) }
+
                 if (state.recurringProfileGaps.isNotEmpty()) {
                     item { ProfileGapCard(gaps = state.recurringProfileGaps) }
                 }
@@ -161,14 +178,50 @@ internal fun ShortlistContent(
                     )
                 }
 
-                itemsIndexed(state.entries, key = { _, entry -> entry.job.id }) { index, entry ->
-                    ShortlistEntryCard(
-                        entry = entry,
-                        index = index,
-                        onOpenJob = { onOpenJob(entry.job.id) },
-                        onApply = { applyJob = entry.job },
-                        onExplain = { explainEntry = entry },
-                    )
+                if (state.rankedActionable.isEmpty()) {
+                    item { PreparationPrompt(count = state.needsPreparation.size, onOpenJobs = onOpenJobs) }
+                } else {
+                    itemsIndexed(state.rankedActionable, key = { _, entry -> entry.job.id }) { index, entry ->
+                        ShortlistEntryCard(
+                            entry = entry,
+                            index = index,
+                            showNextStep = false,
+                            onOpenJob = { onOpenJob(entry.job.id) },
+                            onApply = { applyJob = entry.job },
+                            onExplain = { explainEntry = entry },
+                        )
+                    }
+                }
+
+                val preparation = state.needsPreparation
+                if (preparation.isNotEmpty()) {
+                    item {
+                        SectionHeader(
+                            title = "Worth preparing for",
+                            subtitle = "Close the gap and these move up your list",
+                        )
+                    }
+                    val shown = preparation.take(preparationLimit)
+                    itemsIndexed(shown, key = { _, entry -> entry.job.id }) { index, entry ->
+                        ShortlistEntryCard(
+                            entry = entry,
+                            index = index,
+                            showNextStep = true,
+                            onOpenJob = { onOpenJob(entry.job.id) },
+                            onApply = { applyJob = entry.job },
+                            onExplain = { explainEntry = entry },
+                        )
+                    }
+                    if (preparation.size > shown.size) {
+                        item {
+                            SecondaryButton(
+                                text = "Show ${preparation.size - shown.size} more",
+                                onClick = { preparationLimit += 3 },
+                                leadingIcon = Icons.Filled.ExpandMore,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                 }
 
                 item { SourceFootnote(note = state.sourceNote) }
@@ -307,6 +360,172 @@ private fun ShortlistSummary(state: ShortlistState, onOpenJobs: () -> Unit) {
     }
 }
 
+/**
+ * The shortlist-quality read: how strong the list is, how many postings are open to the user,
+ * what share that is, and where the routes in lead. It reports only what the listings state,
+ * and it never dresses a thin list up as an opportunity.
+ */
+@Composable
+private fun QualityDashboard(state: ShortlistState) {
+    val spacing = LocalSpacing.current
+    val quality = state.quality
+    val tone = when (quality.band) {
+        ShortlistQualityBand.STRONG -> extendedColors.success
+        ShortlistQualityBand.BUILDING -> extendedColors.info
+        ShortlistQualityBand.THIN -> extendedColors.warning
+        ShortlistQualityBand.NONE -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(tone.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.TrendingUp,
+                    contentDescription = null,
+                    tint = tone,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Shortlist quality",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = quality.headline,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Pill(text = quality.band.label, containerColor = tone.copy(alpha = 0.14f), contentColor = tone)
+        }
+
+        Spacer(Modifier.height(spacing.sm))
+        ProgressBar(
+            fraction = quality.actionableShare / 100f,
+            color = tone,
+        )
+        Spacer(Modifier.height(spacing.xs))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatBlock(value = "${quality.actionableShare}%", label = "Open to you", accent = tone, modifier = Modifier.weight(1f))
+            StatBlock(value = quality.strongestReadiness.toString(), label = "Best readiness", modifier = Modifier.weight(1f))
+            StatBlock(value = quality.countriesRepresented.toString(), label = "Countries", modifier = Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(spacing.xs))
+        Text(
+            text = quality.detail,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * Shown when nothing is ready yet. It says plainly that the gap is in the listings, points at
+ * the postings that are close, and offers the one action that can change it: refresh.
+ */
+@Composable
+private fun PreparationPrompt(count: Int, onOpenJobs: () -> Unit) {
+    val spacing = LocalSpacing.current
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(extendedColors.info.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.FactCheck,
+                    contentDescription = null,
+                    tint = extendedColors.info,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Nothing is ready yet",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = if (count > 0) {
+                        "$count posting${if (count == 1) "" else "s"} below are close — close the gap and they move up."
+                    } else {
+                        "No posting on your shortlist states a route in from Madagascar yet."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(spacing.sm))
+        SecondaryButton(
+            text = "Browse all matches",
+            onClick = onOpenJobs,
+            leadingIcon = Icons.Filled.Tune,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/** The one action that moves a posting forward, with its own icon and tone. */
+@Composable
+private fun NextStepRow(step: NextStep) {
+    val spacing = LocalSpacing.current
+    val tone = when (step.action) {
+        NextStepAction.APPLY -> extendedColors.success
+        NextStepAction.RUN_SCAM_CHECK -> extendedColors.danger
+        NextStepAction.REVIEW_ELIGIBILITY, NextStepAction.CONFIRM_BENEFITS -> extendedColors.warning
+        NextStepAction.COMPLETE_PROFILE, NextStepAction.TAILOR_CV -> extendedColors.info
+        NextStepAction.OPEN_JOB -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val icon = when (step.action) {
+        NextStepAction.APPLY -> Icons.Filled.CheckCircle
+        NextStepAction.RUN_SCAM_CHECK -> Icons.Filled.Gavel
+        NextStepAction.REVIEW_ELIGIBILITY -> Icons.Filled.Public
+        NextStepAction.CONFIRM_BENEFITS -> Icons.Filled.CardGiftcard
+        NextStepAction.COMPLETE_PROFILE -> Icons.Filled.Person
+        NextStepAction.TAILOR_CV -> Icons.Filled.Description
+        NextStepAction.OPEN_JOB -> Icons.Filled.FactCheck
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(tone.copy(alpha = 0.10f))
+            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(16.dp).padding(top = 2.dp))
+        Spacer(Modifier.width(spacing.xs))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Next: ${step.label}",
+                style = MaterialTheme.typography.labelLarge,
+                color = tone,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = step.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 private fun SummaryStat(label: String, value: Int, accent: Color) {
     Row(
@@ -396,6 +615,7 @@ private fun ProfileGapCard(gaps: List<ReadinessBlocker>) {
 private fun ShortlistEntryCard(
     entry: ShortlistEntry,
     index: Int,
+    showNextStep: Boolean,
     onOpenJob: () -> Unit,
     onApply: () -> Unit,
     onExplain: () -> Unit,
@@ -514,6 +734,10 @@ private fun ShortlistEntryCard(
                 }
             }
 
+            if (showNextStep) {
+                NextStepRow(step = entry.nextStep)
+            }
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (entry.blockers.isEmpty()) Icons.Filled.Check else Icons.Filled.WarningAmber,
@@ -613,6 +837,8 @@ private fun ReadinessExplanationSheet(entry: ShortlistEntry, onDismiss: () -> Un
                 ReadinessBadge(entry.readiness)
                 MatchChip(entry.matchScore)
             }
+
+            NextStepRow(step = entry.nextStep)
 
             Text(
                 text = "Why this rank",

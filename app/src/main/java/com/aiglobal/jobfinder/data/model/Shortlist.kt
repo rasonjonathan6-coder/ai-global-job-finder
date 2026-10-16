@@ -22,9 +22,15 @@ enum class ApplicationReadiness(val label: String, val shortLabel: String, val e
     val isActionable: Boolean get() = this == READY || this == PRIORITY
 
     companion object {
+        /** Lowest score in the top band. Shared so the dashboard and the bands cannot disagree. */
+        const val PRIORITY_MIN = 85
+
+        /** Lowest score in the ready band. */
+        const val READY_MIN = 70
+
         fun fromScore(score: Int): ApplicationReadiness = when {
-            score >= 85 -> PRIORITY
-            score >= 70 -> READY
+            score >= PRIORITY_MIN -> PRIORITY
+            score >= READY_MIN -> READY
             score >= 50 -> PREPARE_FIRST
             score >= 30 -> NEEDS_REVIEW
             else -> BLOCKED
@@ -34,6 +40,25 @@ enum class ApplicationReadiness(val label: String, val shortLabel: String, val e
 
 /** Whether a readiness finding came from the posting itself or from the app's inference. */
 enum class BlockerKind { OFFICIAL, HEURISTIC, PROFILE }
+
+/**
+ * The single action that moves a posting forward, so a card can tell the user what to do
+ * rather than only how it scored. Derived from the hardest-hitting blocker, never stored,
+ * so it can never drift from the blockers the card shows beside it.
+ */
+enum class NextStepAction { APPLY, REVIEW_ELIGIBILITY, CONFIRM_BENEFITS, COMPLETE_PROFILE, TAILOR_CV, RUN_SCAM_CHECK, OPEN_JOB }
+
+/**
+ * One concrete next action for a posting. [detail] is written so it reads as advice the user
+ * can act on today, and it is always honest about whose side the gap is on: a posting that
+ * states nothing is "ask the employer", not "the employer refused".
+ */
+@Immutable
+data class NextStep(
+    val label: String,
+    val detail: String,
+    val action: NextStepAction,
+)
 
 /**
  * One concrete reason a posting is not yet fully ready. Every blocker is either a fact
@@ -104,6 +129,77 @@ data class ShortlistEntry(
     /** What is holding this posting back, hardest-hitting first. */
     val orderedBlockers: List<ReadinessBlocker> get() = blockers.sortedByDescending { it.points }
 
+    /**
+     * The one action that moves this posting forward, derived from the hardest-hitting
+     * blocker so the advice and the score always agree. A posting with nothing in the way
+     * is ready to apply for; the rest name the single biggest thing to do first.
+     */
+    val nextStep: NextStep
+        get() = when (val hardest = orderedBlockers.firstOrNull()?.label) {
+            null -> NextStep(
+                label = "Ready to apply",
+                detail = "The route and your profile both line up — open the posting and apply.",
+                action = NextStepAction.APPLY,
+            )
+            "Eligibility not stated" -> NextStep(
+                label = "Check eligibility first",
+                detail = "The posting does not say whether it accepts applicants from Madagascar. Ask before applying.",
+                action = NextStepAction.REVIEW_ELIGIBILITY,
+            )
+            "Restricted to local applicants" -> NextStep(
+                label = "Not open to you",
+                detail = "The employer restricts this role to local applicants, so there is no route in.",
+                action = NextStepAction.OPEN_JOB,
+            )
+            "Confirm the visa terms" -> NextStep(
+                label = "Confirm the visa terms",
+                detail = "Sponsorship is mentioned but the conditions are not spelled out. Confirm the fees and dependants.",
+                action = NextStepAction.REVIEW_ELIGIBILITY,
+            )
+            "Benefits not stated" -> NextStep(
+                label = "Ask about the package",
+                detail = "No visa, relocation or housing support is documented. That is missing information, not a refusal.",
+                action = NextStepAction.CONFIRM_BENEFITS,
+            )
+            "Documented benefits fall short" -> NextStep(
+                label = "Review the benefits",
+                detail = "The documented benefits score below your priorities. Read the evidence before deciding.",
+                action = NextStepAction.CONFIRM_BENEFITS,
+            )
+            "Scam shield flagged this posting" -> NextStep(
+                label = "Run the scam check",
+                detail = "Several risk signals were found. Open the scam check before sharing any details.",
+                action = NextStepAction.RUN_SCAM_CHECK,
+            )
+            "Some details need checking" -> NextStep(
+                label = "Verify the employer",
+                detail = "The scam shield found minor caution signals. Check the employer independently first.",
+                action = NextStepAction.RUN_SCAM_CHECK,
+            )
+            "No name on your profile" -> NextStep(
+                label = "Add your details",
+                detail = "Import and analyse your CV so applications carry your real name and details.",
+                action = NextStepAction.COMPLETE_PROFILE,
+            )
+            else -> when {
+                hardest.startsWith("CV match") -> NextStep(
+                    label = "Tailor your CV",
+                    detail = "Close the skill gaps this posting lists, then adapt your CV to it before applying.",
+                    action = NextStepAction.TAILOR_CV,
+                )
+                hardest.startsWith("Profile") -> NextStep(
+                    label = "Complete your profile",
+                    detail = "A fuller profile scores more accurately, so this match can be trusted.",
+                    action = NextStepAction.COMPLETE_PROFILE,
+                )
+                else -> NextStep(
+                    label = "Review before applying",
+                    detail = "Open the posting to see the full reasoning and what is in the way.",
+                    action = NextStepAction.OPEN_JOB,
+                )
+            }
+        }
+
     val blockerSummary: String
         get() = when (blockers.size) {
             0 -> "Nothing is holding this back — the route and your profile both line up."
@@ -155,4 +251,111 @@ data class ShortlistState(
             .sortedByDescending { it.points }
 
     val isEmpty: Boolean get() = entries.isEmpty()
+
+    /**
+     * The strongest postings first, ready to act on now. The engine already ranks entries by
+     * readiness then match, so this keeps that order rather than re-sorting.
+     */
+    val rankedActionable: List<ShortlistEntry>
+        get() = entries.filter { it.readiness.isActionable }
+
+    /**
+     * Postings worth acting on once a gap is closed: close to ready, or blocked only by
+     * something the user can fix or confirm. Never includes a local-only posting, which has
+     * no route in and so is not "preparation".
+     */
+    val needsPreparation: List<ShortlistEntry>
+        get() = entries.filter { entry ->
+            !entry.readiness.isActionable &&
+                entry.job.eligibility != MadagascarEligibility.RESTRICTED
+        }
+
+    /** A read on how strong the shortlist itself is, so a thin list is never dressed up. */
+    val quality: ShortlistQuality
+        get() {
+            if (entries.isEmpty()) {
+                return ShortlistQuality(
+                    band = ShortlistQualityBand.NONE,
+                    headline = "No shortlist yet",
+                    detail = "Nothing screened so far is open to applicants in Madagascar. " +
+                        "Refresh to pull the latest postings.",
+                    actionableCount = 0,
+                    actionableShare = 0,
+                    strongestReadiness = 0,
+                    countriesRepresented = 0,
+                    topCountry = null,
+                )
+            }
+            val strongest = entries.maxOf { it.readinessScore }
+            val actionable = actionableCount
+            val share = actionable * 100 / entries.size
+            val countries = entries.map { it.job.country }.distinct()
+            val topCountry = entries.groupBy { it.job.country }
+                .maxByOrNull { (_, group) -> group.count { it.readiness.isActionable } }
+                ?.takeIf { (_, group) -> group.any { it.readiness.isActionable } }
+                ?.let { (country, group) ->
+                    group.first().job.countryFlag to country
+                }
+            val band = when {
+                actionable == 0 -> ShortlistQualityBand.THIN
+                actionable >= 5 && strongest >= ApplicationReadiness.PRIORITY_MIN -> ShortlistQualityBand.STRONG
+                else -> ShortlistQualityBand.BUILDING
+            }
+            return ShortlistQuality(
+                band = band,
+                headline = when (band) {
+                    ShortlistQualityBand.STRONG -> "$actionable postings you can act on now"
+                    ShortlistQualityBand.BUILDING -> "$actionable posting${if (actionable == 1) "" else "s"} to start with"
+                    else -> "Routes in are thin right now"
+                },
+                detail = qualityDetail(entries.size, actionable, countries.size, topCountry?.second),
+                actionableCount = actionable,
+                actionableShare = share,
+                strongestReadiness = strongest,
+                countriesRepresented = countries.size,
+                topCountry = topCountry,
+            )
+        }
+
+    private fun qualityDetail(
+        screened: Int,
+        actionable: Int,
+        countries: Int,
+        topCountry: String?,
+    ): String {
+        val base = "Screened $screened posting${if (screened == 1) "" else "s"}; " +
+            "$actionable ${if (actionable == 1) "is" else "are"} open to you now"
+        val places = if (countries > 0) " across $countries ${if (countries == 1) "country" else "countries"}" else ""
+        val lead = if (topCountry != null) ", with $topCountry leading" else ""
+        return "$base$places$lead. That is what the listings state — verify before you invest time."
+    }
+}
+
+/** How strong the shortlist itself looks, so the dashboard can be honest about a thin list. */
+enum class ShortlistQualityBand(val label: String) {
+    NONE("No data"),
+    THIN("Thin"),
+    BUILDING("Building"),
+    STRONG("Strong"),
+}
+
+/**
+ * A short, honest read on the shortlist as a whole: how many postings are open to the user,
+ * what share that is of everything screened, and where the routes in are. Every figure is
+ * counted from the current snapshot, so the dashboard can never claim more than the list holds.
+ */
+@Immutable
+data class ShortlistQuality(
+    val band: ShortlistQualityBand,
+    val headline: String,
+    val detail: String,
+    val actionableCount: Int,
+    /** Actionable postings as a share (0..100) of everything on the shortlist. */
+    val actionableShare: Int,
+    val strongestReadiness: Int,
+    val countriesRepresented: Int,
+    /** The country with the most actionable postings, as flag to name, when there is one. */
+    val topCountry: Pair<String, String>?,
+) {
+    val hasActionable: Boolean get() = actionableCount > 0
 }

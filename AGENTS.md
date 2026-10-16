@@ -929,6 +929,52 @@ incidental prose invents no benefit; and the broad-sample summary states the tra
 and share). Suite: **323 tests, 1 failure** — the documented pre-existing `Stage22AuditTest`
 flake below, which passes in isolation and reproduces on the untouched Stage 24 baseline.
 
+## Stage 26 — shortlist quality dashboard & actionable ranking
+
+Stage 25 fixed *what* the feed contains. This stage answers the next question a job seeker
+actually asks: **is the shortlist I am looking at any good, and what is the single next thing
+to do about each posting?** Both live on the existing shortlist screen and in `Shortlist.kt`;
+no engine or repository behaviour changed, so the pipeline stays untouched.
+
+**Shortlist quality read (`ShortlistState.quality` → `ShortlistQuality`).** A snapshot-derived
+verdict with four bands — `NONE` (empty), `THIN` (nothing actionable), `BUILDING` (1–4
+actionable, or fewer than five with no top-band posting), `STRONG` (≥5 actionable including at
+least one `PRIORITY`). It reports the actionable count and its share of everything screened, the
+strongest readiness score, the number of countries represented, and the leading country (the one
+with the most actionable postings, or none). The detail line states plainly how many were
+screened and that the figures describe *what the listings state*, ending "verify before you
+invest time" — the same honesty rule as every other surface. `ApplicationReadiness.PRIORITY_MIN`
+/`READY_MIN` are now named constants so the dashboard band and `fromScore` can never drift apart.
+
+**Actionable ranking (`ShortlistState.rankedActionable` / `needsPreparation`).** The engine
+already sorts by readiness then match, so `rankedActionable` keeps that order instead of
+re-sorting. `needsPreparation` is everything not yet actionable **and not `RESTRICTED`** — a
+local-only posting has no route in, so it is never presented as "worth preparing for".
+
+**One next step per posting (`ShortlistEntry.nextStep`).** Derived from the hardest-hitting
+blocker (the same `orderedBlockers` the card already shows), so the advice and the score always
+agree. A posting with no blockers is "Ready to apply"; an unstated route is "Check eligibility
+first — ask before applying" (never a claim the employer refused); a documented-but-thin package
+is "Ask about the package … missing information, not a refusal"; a high scam risk is "Run the
+scam check"; a CV-match gap is "Tailor your CV"; a low profile completeness is "Complete your
+profile". `NextStepAction` drives the row's icon and tone.
+
+**Screen.** A `QualityDashboard` card sits below the existing summary (band pill, actionable
+share bar, three stats, honesty line). The list is split into "Ready to act on" (cards without a
+next-step row) and "Worth preparing for" (cards **with** the next-step row), the latter showing
+three at a time behind a "Show N more" button. When nothing is actionable, a `PreparationPrompt`
+says so plainly and offers "Browse all matches". The explanation sheet also carries the next
+step, so the advice is visible wherever the user reads the reasoning. All new icons come from
+`material-icons-extended`, already a dependency.
+
+Tests: `Stage26PipelineTest` (13: apply/eligibility/benefits/CV-gap/profile/scam next steps; a
+silent posting says "ask" not "refused"; actionable order preserved and local-only excluded from
+both lists; empty/thin/building/strong quality bands with their exact counts and shares; the
+leading country only appears when something is actionable). `Stage26ScreenTest` (4: the dashboard
+and its headline are reachable at 320 dp; a ready-only list shows no preparation section; a
+gapped posting shows its next step; the empty state still explains itself). Suite: **340 tests,
+0 failures** — the documented `Stage22AuditTest` flake stayed green this run.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
