@@ -1887,6 +1887,47 @@ indique le dernier succès de recherche et les sources en échec, avec **Review 
 `AiJobFinderRoot.kt`, `JobCard.kt`, `JobsScreen.kt`, `HomeScreen.kt`, `JobsFilterTest.kt`,
 `Stage44RefreshDiscoveryTest.kt`, `Stage15ScreenTest.kt`, `ScreenshotTest.kt`, `AGENTS.md`.
 
+## Étape 46 — Alertes intelligentes pour les bonnes opportunités internationales
+
+**Objectif.** L'étape 20 décidait déjà *quoi dire* dans une notification (barre de score +
+anti-doublon). Mais une annonce peut scorer haut et rester une mauvaise interruption : un
+scam, un poste réservé aux locaux, un métier hors du profil, ou un lien mort. Cette étape
+ajoute le filtre **qualité + nouveauté réelle** : une alerte intelligente ne concerne qu'une
+opportunité internationale **authentiquement nouvelle et de bonne qualité**.
+
+**Politique pure (`SmartAlertPolicy`).** Nouveau fichier
+`data/notifications/SmartAlertPolicy.kt`. `filter(jobs, newJobIds)` / `qualifies(...)`
+n'ajoutent jamais rien : ils ne font que retirer. Un poste est rejeté s'il est
+`ScamRisk.HIGH`, `MadagascarEligibility.RESTRICTED`, de `RoleFamily.UNRELATED`, si
+`verification.link.isNegative` (lien cassé/inaccessible), ou si `verification.isActionable`
+est faux (vacance expirée). Deux modes : `NEW_ONLY` (exige aussi `id ∈ newJobIds`, utilisé en
+arrière-plan) et `QUALITY_ONLY` (qualité seule). `reasonsAgainst(...)` nomme chaque raison, en
+clair, pour que le silence soit explicable.
+
+**Coordinateur (`JobNotificationsCoordinator`).** `notifyNewMatches` gagne un paramètre
+optionnel `newJobIds: Set<String>? = null`. `null` → comportement étape 20 inchangé (tout
+match fort peut être annoncé, p. ex. un passage manuel). Non-null → chemin intelligent :
+`SmartAlertPolicy.NEW_ONLY.filter(...)` **avant** la barre de score, puis la sélection et
+l'anti-doublon habituels. La porte ne fait que restreindre.
+
+**Worker (`JobRefreshRunner`).** Après `runLiveValidation()`, le runner lit
+`repository.newPostings.first().jobIds` (le registre de l'étape 44/45, partagé) et le passe au
+coordinateur : une passe planifiée n'annonce donc que les annonces **vues pour la première
+fois depuis la dernière revue**, jamais tout le flux. Le mode démo reste muet (inchangé).
+
+**UI (`ProfileScreen`).** Quand les alertes sont activées, la carte *Automatic job discovery*
+affiche une phrase honnête sous la description du seuil : « Smart alerts only announce
+genuinely new postings, and never scams, local-only roles, unrelated trades or postings whose
+link is broken. » Masquée quand les alertes sont désactivées. Aucune autre chaîne n'a changé.
+
+**Vérification.** Suite **580 tests, 0 échec, 0 erreur, 3 ignorés** (+16 : `Stage46SmartAlertTest`
+— 8 sur la porte qualité/nouveauté, 4 sur le coordinateur, 2 sur le runner via un faux dépôt ;
+`Stage46SmartAlertScreenTest` — 2 sur la copie UI). `compileDebugKotlin`, `testDebugUnitTest`
+et `assembleDebug` réussissent ; captures régénérées (profile-light/dark, 822×1782).
+Modifié : `SmartAlertPolicy.kt` (nouveau), `JobNotificationsCoordinator.kt`,
+`JobRefreshRunner.kt`, `ProfileScreen.kt`, `Stage46SmartAlertTest.kt` (nouveau),
+`Stage46SmartAlertScreenTest.kt` (nouveau), `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

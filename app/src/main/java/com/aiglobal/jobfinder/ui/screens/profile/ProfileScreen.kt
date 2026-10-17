@@ -1078,6 +1078,12 @@ internal fun RefreshAndNotificationsCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Text(
+                    text = "Smart alerts only announce genuinely new postings, and never " +
+                        "scams, local-only roles, unrelated trades or postings whose link is broken.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

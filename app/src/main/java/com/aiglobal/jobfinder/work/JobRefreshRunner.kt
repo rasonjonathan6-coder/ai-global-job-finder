@@ -31,10 +31,16 @@ class JobRefreshRunner(
         repository.runLiveValidation()
 
         val jobs = repository.jobs.first()
+        // The ledger already told the repository which ids were first seen on this read, so a
+        // scheduled refresh can announce only genuinely new postings rather than every strong
+        // match that still sits in the feed. The smart gate additionally drops the ones that
+        // are not worth an interruption even when new.
+        val newJobIds = repository.newPostings.first().jobIds.toSet()
         val posted = notifications.notifyNewMatches(
             jobs = jobs,
             enabled = notificationsEnabled.first(),
             minMatchScore = alertMinMatchScore.first(),
+            newJobIds = newJobIds,
         )
         return posted.map { it.jobId }
     }
