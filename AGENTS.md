@@ -1847,6 +1847,46 @@ réussissent. Nouveaux fichiers : `data/discovery/JobSeenLedger.kt`,
 `JobNotificationCenter.kt`, `ProfileScreen.kt`, `ViewModels.kt`, `Stage20DiscoveryTest.kt`,
 `Stage20ProfileScreenTest.kt`, `AGENTS.md`.
 
+## Étape 45 — « Nouvelles annonces » : filtre nouveau, revue et provenance
+
+**Objectif.** La recherche incrémentale de l'étape 44 enregistrait déjà ce qui est nouveau,
+mais l'interface ne le montrait pas. Cette étape expose le résultat honnête : un filtre
+**New only**, un compteur, une action **Mark reviewed**, et la provenance d'une trouvaille.
+
+**Registre (`JobSeenLedger`).** `NewPostings` remonte désormais `jobIds`, le `discoveredAtBy
+JobId` (première vue, pour dater « Discovered … »), `reviewedAtEpochMillis` et
+`baselineEstablished`. `newPostings()` ne renvoie que les annonces vues **strictement après**
+la ligne de base **et** après la dernière revue ; `markReviewed(at)` avance le filigrane et
+efface la liste. Une installation neuve (`baselineEstablished = false`) n'affiche donc rien :
+le marché initial n'est jamais présenté comme nouveau.
+
+**Dépôt.** `JobRepository.newPostings: Flow<NewPostings>` et `markNewPostingsReviewed()`.
+`LiveJobRepository` émet la liste persistée au démarrage et après chaque lecture ou revue ;
+`SampleJobRepository` répond par une liste vide (pas de notion de « première vue »).
+
+**ViewModels.** `JobsUiState` porte `newOnly`, `newJobIds`, `firstSeenAtByJobId`, avec
+`newCount`, `isNew(job)` et `firstSeenAt(job)`, et `newOnly` rejoint `hasActiveFilters` et
+`visibleJobs`. `HomeUiState` porte `newOpportunities` (liste **ordonnée par découverte**,
+issue du registre et non de `isNew`), `newPostingCount`, `discoveryBaselineEstablished` et le
+`discoverySummary`. `AppViewModel` arme une demande **one-shot** (`requestOpenNewPostings` /
+`consumeOpenNewPostings`) : la carte d'accueil ouvre l'onglet Jobs déjà filtré, mais une
+découverte en arrière-plan ne change jamais l'écran toute seule.
+
+**UI.** L'onglet Jobs gagne une puce **New (N)**, une bannière de revue (avec **Mark reviewed**)
+et, dans la feuille d'explication, un bloc **How this was found** (première vue, source,
+dernière vérification, lien officiel). La carte d'accueil « N new since your last review »
+indique le dernier succès de recherche et les sources en échec, avec **Review new** /
+**Mark reviewed**. La bande de statut des sources ajoute « · N new ». `JobCard` accepte
+`showNewBadge` (le registre, pas « publié récemment ») et `discoveredAtEpochMillis`.
+
+**Vérification.** Suite **564 tests, 0 échec, 0 erreur, 3 ignorés** (+4 : `JobsFilterTest` :
+`newOnly`/`newCount`/`firstSeenAt` ; `Stage44RefreshDiscoveryTest` : filigranes ligne de base
+→ revue ; `Stage15ScreenTest` : bannière + puce « New (1) »). `compileDebugKotlin`,
+`testDebugUnitTest` et `assembleDebug` réussissent. Modifié : `JobSeenLedger.kt`,
+`JobRepository.kt`, `LiveJobRepository.kt`, `SampleJobRepository.kt`, `ViewModels.kt`,
+`AiJobFinderRoot.kt`, `JobCard.kt`, `JobsScreen.kt`, `HomeScreen.kt`, `JobsFilterTest.kt`,
+`Stage44RefreshDiscoveryTest.kt`, `Stage15ScreenTest.kt`, `ScreenshotTest.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

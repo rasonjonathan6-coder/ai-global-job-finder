@@ -65,6 +65,8 @@ import com.aiglobal.jobfinder.ui.components.JobListSkeleton
 import com.aiglobal.jobfinder.ui.components.MatchScoreRing
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.ProgressBar
+import com.aiglobal.jobfinder.ui.components.relativeTime
+import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SkeletonBox
 import com.aiglobal.jobfinder.ui.components.StatCardSkeleton
@@ -85,6 +87,10 @@ fun HomeScreen(
     onOpenShortlist: () -> Unit = {},
     onToggleSaveJob: (String) -> Unit = {},
     onOpenAlerts: () -> Unit = {},
+    /** Opens the Jobs tab focused on the postings first seen since the last review. */
+    onOpenNewPostings: (List<String>) -> Unit = {},
+    /** Acknowledges the new postings so the discovery badge clears. */
+    onMarkNewReviewed: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -125,6 +131,8 @@ fun HomeScreen(
                 onOpenShortlist = onOpenShortlist,
                 onToggleSaveJob = onToggleSaveJob,
                 onOpenAlerts = onOpenAlerts,
+                onOpenNewPostings = onOpenNewPostings,
+                onMarkNewReviewed = onMarkNewReviewed,
             )
         }
     }
@@ -139,6 +147,10 @@ internal fun HomeContent(
     onOpenShortlist: () -> Unit = {},
     onToggleSaveJob: (String) -> Unit = {},
     onOpenAlerts: () -> Unit = {},
+    /** Opens the Jobs tab focused on the postings first seen since the last review. */
+    onOpenNewPostings: (List<String>) -> Unit = {},
+    /** Acknowledges the new postings so the discovery badge clears. */
+    onMarkNewReviewed: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     val profile = state.profile
@@ -170,6 +182,19 @@ internal fun HomeContent(
         item {
             Spacer(Modifier.height(spacing.lg))
             StatsRow(state = state)
+        }
+
+        if (state.discoveryBaselineEstablished) {
+            item {
+                Spacer(Modifier.height(spacing.lg))
+                Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
+                    NewPostingsHomeCard(
+                        state = state,
+                        onReview = { onOpenNewPostings(state.newOpportunities.map { it.id }) },
+                        onMarkReviewed = onMarkNewReviewed,
+                    )
+                }
+            }
         }
 
         item {
@@ -208,6 +233,7 @@ internal fun HomeContent(
                         expatScore = state.expatScore(job),
                         expatEvidenceCoverage = expat?.evidenceCoverage ?: 0,
                         expatLowEvidence = expat?.hasEvidence == true && expat.lowEvidence,
+                        showNewBadge = state.newOpportunities.any { it.id == job.id },
                     )
                 }
             }
@@ -218,8 +244,10 @@ internal fun HomeContent(
                 Spacer(Modifier.height(spacing.xl))
                 Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
                     SectionHeader(
-                        title = "New this week",
-                        subtitle = "Freshly posted roles worth a look",
+                        title = "New since your last review",
+                        subtitle = "${state.newOpportunities.size} found by the incremental search",
+                        actionLabel = "Review",
+                        onActionClick = { onOpenNewPostings(state.newOpportunities.map { it.id }) },
                     )
                 }
             }
@@ -507,7 +535,7 @@ private fun StatsRow(state: HomeUiState) {
             StatDivider()
             StatTile(
                 icon = Icons.Filled.Bolt,
-                value = "${stats.newOpportunities}",
+                value = "${state.newPostingCount}",
                 label = "New",
                 accent = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.weight(1f),
@@ -579,6 +607,104 @@ private fun StatTile(
         )
     }
 }
+
+/**
+ * The Home summary of incremental discovery. It states plainly when the last search ran and
+ * succeeded, how many postings are new since the last review, and which sources are failing.
+ * When nothing is new it still reports the last run, so "nothing new" reads as a result rather
+ * than as silence.
+ */
+@Composable
+private fun NewPostingsHomeCard(
+    state: HomeUiState,
+    onReview: () -> Unit,
+    onMarkReviewed: () -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    val summary = state.discoverySummary
+    val newCount = state.newOpportunities.size
+    val shape = RoundedCornerShape(20.dp)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, extendedColors.cardStroke, shape)
+            .padding(spacing.md),
+        verticalArrangement = Arrangement.spacedBy(spacing.sm),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Spacer(Modifier.width(spacing.sm))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (newCount > 0) "$newCount new since your last review" else "No new postings yet",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = discoveryRunLabel(summary.lastSuccessAtEpochMillis),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (summary.isRefreshing) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
+        if (summary.hasFailures) {
+            Text(
+                text = "${summary.failures.size} source${if (summary.failures.size == 1) "" else "s"} " +
+                    "could not be reached. Results may be incomplete.",
+                style = MaterialTheme.typography.bodySmall,
+                color = extendedColors.warning,
+            )
+        }
+
+        if (newCount > 0) {
+            Row(horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
+                PrimaryButton(
+                    text = "Review new",
+                    onClick = onReview,
+                    modifier = Modifier.weight(1f),
+                    height = 42.dp,
+                )
+                SecondaryButton(
+                    text = "Mark reviewed",
+                    onClick = onMarkReviewed,
+                    modifier = Modifier.weight(1f),
+                    height = 42.dp,
+                )
+            }
+        }
+    }
+}
+
+/** "Last search succeeded 5m ago", or an honest prompt when none has succeeded yet. */
+private fun discoveryRunLabel(lastSuccessAtEpochMillis: Long?): String =
+    if (lastSuccessAtEpochMillis == null) "No successful search yet"
+    else "Last search succeeded ${relativeTime(lastSuccessAtEpochMillis)}"
 
 /** Bottom banner explaining what the AI is doing in the background. */
 @Composable

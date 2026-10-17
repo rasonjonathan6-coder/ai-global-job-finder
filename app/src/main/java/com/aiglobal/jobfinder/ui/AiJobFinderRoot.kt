@@ -184,6 +184,7 @@ fun AiJobFinderRoot(
                         container.jobRepository,
                         container.applicationCenter,
                         appViewModel.expatPreferences,
+                        discoverySummary = container.discoverySummary,
                     ),
                 )
                 HomeScreen(
@@ -194,6 +195,12 @@ fun AiJobFinderRoot(
                     onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
                     onToggleSaveJob = { jobId -> vm.toggleSave(jobId) },
                     onOpenAlerts = { navController.navigate(SecondaryRoutes.ALERTS) },
+                    onOpenNewPostings = { ids ->
+                        // Reveal the new postings on the Jobs tab: arm the filter, then switch tabs.
+                        appViewModel.requestOpenNewPostings(ids)
+                        navController.navigateToTab(Destination.Jobs)
+                    },
+                    onMarkNewReviewed = { appViewModel.markNewPostingsReviewed() },
                 )
             }
             composable(Destination.Jobs.route) {
@@ -204,11 +211,21 @@ fun AiJobFinderRoot(
                         candidateProfile = container.candidateProfile,
                     ),
                 )
+                val pendingNewPostings by appViewModel.openNewPostings.collectAsStateWithLifecycle()
+                // The Home card arms a one-shot request; consume it here so the filter is applied
+                // exactly once and a background discovery never changes the screen on its own.
+                LaunchedEffect(pendingNewPostings) {
+                    if (pendingNewPostings != null) {
+                        vm.setNewOnly(true)
+                        appViewModel.consumeOpenNewPostings()
+                    }
+                }
                 JobsScreen(
                     viewModel = vm,
                     onOpenAi = { navController.navigateToTab(Destination.Ai) },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                     onOpenLink = { url -> context.openExternally(url) },
+                    onMarkNewReviewed = { appViewModel.markNewPostingsReviewed() },
                 )
             }
             composable(Destination.Applications.route) {

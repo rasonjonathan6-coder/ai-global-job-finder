@@ -137,6 +137,15 @@ class LiveJobRepository(
         _discovery.asStateFlow()
 
     /**
+     * The postings first seen since the user last reviewed them. Derived from the same ledger
+     * as [discovery], so the Home and Jobs surfaces show exactly the incremental signal the
+     * Profile summary describes — never the whole feed on a fresh install.
+     */
+    private val _newPostings = MutableStateFlow(com.aiglobal.jobfinder.data.discovery.NewPostings())
+    override val newPostings: StateFlow<com.aiglobal.jobfinder.data.discovery.NewPostings> =
+        _newPostings.asStateFlow()
+
+    /**
      * Per-source counts of postings that matched a target role on the last attempt. Kept
      * beside the feed (not derived from the displayed, filtered list) so the coverage report
      * describes the search, not the current filter.
@@ -273,9 +282,17 @@ class LiveJobRepository(
             userStateReady.value = true
         }
         scope.launch { runLiveValidation() }
+        // Emit the persisted "new postings" right away, so the Home and Jobs surfaces are
+        // correct on a cold start instead of showing zero until the next search completes.
+        scope.launch { _newPostings.value = seenLedger?.newPostings() ?: _newPostings.value }
     }
 
     override suspend fun refresh() = runLiveValidation()
+
+    override suspend fun markNewPostingsReviewed() {
+        seenLedger?.markReviewed()
+        _newPostings.value = seenLedger?.newPostings() ?: _newPostings.value
+    }
 
     /**
      * Reads every enabled source, records a diagnostic for each, validates the records and
@@ -418,7 +435,10 @@ class LiveJobRepository(
             // Incremental search: record what arrived and note what is genuinely new. A read
             // that returned nothing usable must not advance the ledger, or the next good read
             // would present its whole feed as already seen.
-            seenLedger?.let { _discovery.value = it.observe(stamped) }
+            seenLedger?.let { ledger ->
+                _discovery.value = ledger.observe(stamped)
+                _newPostings.value = ledger.newPostings()
+            }
         }
 
         val lastSuccess = if (anySuccess) attemptAt else _diagnostics.value.lastSuccessAtEpochMillis

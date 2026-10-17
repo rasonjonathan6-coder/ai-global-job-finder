@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Public
@@ -74,6 +75,17 @@ fun JobCard(
      * beside the CV match and the Expat Benefits Score so the three are never conflated.
      */
     internationalFit: com.aiglobal.jobfinder.data.model.InternationalFitAssessment? = null,
+    /**
+     * Whether to show the "NEW" badge. Defaults to the posting's own flag, but the Jobs screen
+     * passes the ledger-backed answer so "new" means "first seen since the last review" rather
+     * than "posted recently" — the two are different questions.
+     */
+    showNewBadge: Boolean = job.isNew,
+    /**
+     * When the app first saw this posting, or null when no first sighting is recorded. Shown
+     * as "Discovered …" so the incremental result is dated from the ledger, not guessed.
+     */
+    discoveredAtEpochMillis: Long? = null,
 ) {
     val spacing = com.aiglobal.jobfinder.ui.theme.LocalSpacing.current
     val visible = remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -114,7 +126,7 @@ fun JobCard(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false),
                             )
-                            if (job.isNew) {
+                            if (showNewBadge) {
                                 Spacer(Modifier.width(6.dp))
                                 Pill(
                                     text = "NEW",
@@ -220,6 +232,16 @@ fun JobCard(
                     FreshnessLabel(
                         text = postedAgeLabel(job.postedAtEpochMillis),
                         modifier = Modifier.weight(1f),
+                    )
+                }
+
+                // Only when the ledger recorded a first sighting: "Discovered 2h ago" is a fact
+                // about this app's search, distinct from when the employer published the role.
+                if (discoveredAtEpochMillis != null) {
+                    IconLabelRow(
+                        icon = Icons.Filled.NewReleases,
+                        text = "Discovered ${relativeTime(discoveredAtEpochMillis)}",
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                 }
 

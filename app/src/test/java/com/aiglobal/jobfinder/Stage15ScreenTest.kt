@@ -165,4 +165,40 @@ class Stage15ScreenTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Broad sample", substring = true).assertIsDisplayed()
     }
+
+    @Test
+    fun newOnlyFilterShowsTheBannerAndJustTheDiscoveredPostings() {
+        val jobs = SampleData.jobs(System.currentTimeMillis())
+        val newId = jobs.first().id
+        composeRule.setContent {
+            AiJobFinderTheme {
+                Box(Modifier.fillMaxSize()) {
+                    JobsContent(
+                        state = JobsUiState(
+                            isLoading = false,
+                            jobs = jobs,
+                            newOnly = true,
+                            newJobIds = setOf(newId),
+                            firstSeenAtByJobId = mapOf(newId to System.currentTimeMillis()),
+                        ),
+                        onQueryChange = {},
+                        onToggleSaved = {},
+                        onToggleEligible = {},
+                        onToggleSponsored = {},
+                        onCountryChange = {},
+                        onSourceChange = {},
+                        onSortChange = {},
+                        onClearFilters = {},
+                        onRefresh = {},
+                        onOpenAi = {},
+                        onToggleSaveJob = {},
+                    )
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        // The banner and the chip both state how many postings are new since the last review.
+        composeRule.onNodeWithText("Showing 1 new posting since your last review.").assertIsDisplayed()
+        composeRule.onNodeWithText("New (1)").assertIsDisplayed()
+    }
 }

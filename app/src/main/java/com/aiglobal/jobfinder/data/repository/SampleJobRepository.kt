@@ -159,4 +159,10 @@ class SampleJobRepository(
     /** The fixture has no notion of a first sighting, so the delta is always empty. */
     override val discovery: Flow<com.aiglobal.jobfinder.data.discovery.DiscoveryDelta> =
         MutableStateFlow(com.aiglobal.jobfinder.data.discovery.DiscoveryDelta())
+
+    /** The fixture has no persisted ledger, so there is nothing new to review. */
+    override val newPostings: Flow<com.aiglobal.jobfinder.data.discovery.NewPostings> =
+        MutableStateFlow(com.aiglobal.jobfinder.data.discovery.NewPostings(baselineEstablished = true))
+
+    override suspend fun markNewPostingsReviewed() = Unit
 }

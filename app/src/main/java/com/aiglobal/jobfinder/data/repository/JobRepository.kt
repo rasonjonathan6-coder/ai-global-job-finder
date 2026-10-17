@@ -54,6 +54,20 @@ interface JobRepository {
      */
     val discovery: Flow<com.aiglobal.jobfinder.data.discovery.DiscoveryDelta>
 
+    /**
+     * The postings first seen since the user last reviewed them, plus whether a baseline has
+     * been recorded. This is the same incremental signal as [discovery], projected for the Home
+     * and Jobs surfaces: the initial market snapshot is never counted, and marking the list
+     * reviewed clears it. Empty until the first attempt completes.
+     */
+    val newPostings: Flow<com.aiglobal.jobfinder.data.discovery.NewPostings>
+
+    /**
+     * Clears the "new postings" list by moving the reviewed watermark to now. Called when the
+     * user acknowledges the new opportunities, so the badge does not nag about what they saw.
+     */
+    suspend fun markNewPostingsReviewed()
+
     suspend fun refresh()
     suspend fun toggleSaved(jobId: String)
     fun jobById(id: String): Job?

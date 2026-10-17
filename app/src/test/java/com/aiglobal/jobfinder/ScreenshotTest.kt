@@ -153,7 +153,16 @@ class ScreenshotTest {
     }
 
     private val jobsState: JobsUiState by lazy {
-        JobsUiState(isLoading = false, jobs = runBlocking { repository.jobs.first() })
+        val jobs = runBlocking { repository.jobs.first() }
+        // Exercise the incremental-discovery surfaces: the two newest postings read as first
+        // seen since the last review, so the "New" chip, banner and card badge all render.
+        val newIds = jobs.sortedByDescending { it.matchScore }.take(2).map { it.id }.toSet()
+        JobsUiState(
+            isLoading = false,
+            jobs = jobs,
+            newJobIds = newIds,
+            firstSeenAtByJobId = newIds.associateWith { 1_760_000_000_000L },
+        )
     }
 
     /** A realistic analysed CV so the result sections are exercised in the screenshot run. */

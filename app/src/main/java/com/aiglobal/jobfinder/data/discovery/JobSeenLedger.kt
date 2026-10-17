@@ -28,6 +28,34 @@ data class SeenRecord(
 )
 
 /**
+ * The postings discovered since the user last reviewed them, plus whether a baseline has
+ * been recorded yet. "New" means genuinely first seen after the baseline was established —
+ * a re-written posting is an update, not a new opening — so this is the list the Jobs
+ * "New" filter and the Home card both read.
+ */
+@Immutable
+data class NewPostings(
+    /**
+     * Ids first seen strictly after the reviewed watermark. A fresh install has no baseline
+     * yet, so this is empty until the first read completes: the initial market snapshot is
+     * never presented as "new".
+     */
+    val jobIds: List<String> = emptyList(),
+    /**
+     * When each of [jobIds] was first seen, keyed by id. Carried beside the ids so a card can
+     * date its discovery from a recorded fact instead of re-deriving it.
+     */
+    val discoveredAtByJobId: Map<String, Long> = emptyMap(),
+    /** When the user last marked the new postings reviewed, or null when never. */
+    val reviewedAtEpochMillis: Long? = null,
+    /** True once the first read has recorded a baseline, so "no new postings" is meaningful. */
+    val baselineEstablished: Boolean = false,
+) {
+    val count: Int get() = jobIds.size
+    val isEmpty: Boolean get() = jobIds.isEmpty()
+}
+
+/**
  * What changed between the previous read and this one.
  *
  * The distinction is the point of incremental search: a posting the app has never seen is
@@ -80,7 +108,8 @@ class JobSeenLedger(
         notifyBaseline: Boolean = false,
     ): DiscoveryDelta = withContext(Dispatchers.IO) {
         mutex.withLock {
-            val existing = read()
+            val document = readDocument()
+            val existing = document.records
             val firstRun = existing.isEmpty()
             val now = clock()
             val next = LinkedHashMap<String, SeenRecord>(existing)
@@ -120,7 +149,14 @@ class JobSeenLedger(
                 .sortedByDescending { it.lastSeenAtEpochMillis }
                 .take(MAX_ENTRIES)
                 .associateBy { it.id }
-            write(capped)
+            writeDocument(
+                document.copy(
+                    records = capped,
+                    // The first read records the baseline; the moment is kept so "no new
+                    // postings yet" can be told apart from "not searching yet".
+                    baselineAtEpochMillis = document.baselineAtEpochMillis ?: now,
+                ),
+            )
 
             val announce = !firstRun || notifyBaseline
             DiscoveryDelta(
@@ -132,7 +168,52 @@ class JobSeenLedger(
         }
     }
 
-    suspend fun knownCount(): Int = withContext(Dispatchers.IO) { mutex.withLock { read().size } }
+    suspend fun knownCount(): Int = withContext(Dispatchers.IO) { mutex.withLock { readDocument().records.size } }
+
+    /**
+     * The postings first seen since the user last reviewed them. A fresh install has no
+     * baseline yet, so this stays empty until the first read completes: the initial market
+     * snapshot is never announced as new. Only genuinely new postings count — an update to a
+     * posting already known is not a new opening.
+     */
+    suspend fun newPostings(): NewPostings = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val document = readDocument()
+            val baseline = document.baselineAtEpochMillis
+            val reviewed = document.reviewedAtEpochMillis
+            val ids = if (baseline == null) {
+                emptyList()
+            } else {
+                document.records.values
+                    .filter { it.firstSeenAtEpochMillis > baseline && (reviewed == null || it.firstSeenAtEpochMillis > reviewed) }
+                    .sortedByDescending { it.firstSeenAtEpochMillis }
+                    .map { it.id }
+            }
+            NewPostings(
+                jobIds = ids,
+                discoveredAtByJobId = ids.associateWith { document.records.getValue(it).firstSeenAtEpochMillis },
+                reviewedAtEpochMillis = reviewed,
+                baselineEstablished = baseline != null,
+            )
+        }
+    }
+
+    /**
+     * Marks every posting discovered so far as reviewed, so the "new" list clears and a later
+     * discovery is measured from here. The watermark is the current time, which is always at or
+     * after every recorded `firstSeenAtEpochMillis`, so nothing already seen can re-appear as new.
+     */
+    suspend fun markReviewed(at: Long = clock()): Unit = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val document = readDocument()
+            writeDocument(
+                document.copy(
+                    reviewedAtEpochMillis = at,
+                    baselineAtEpochMillis = document.baselineAtEpochMillis ?: at,
+                ),
+            )
+        }
+    }
 
     /** Matches a posting already recorded under a different id but the same canonical URL. */
     private fun matchByUrl(existing: Map<String, SeenRecord>, canonicalUrl: String): SeenRecord? {
@@ -140,11 +221,11 @@ class JobSeenLedger(
         return existing.values.firstOrNull { it.canonicalUrl == canonicalUrl }
     }
 
-    private fun read(): Map<String, SeenRecord> = runCatching {
-        if (!file.isFile) return emptyMap()
+    private fun readDocument(): LedgerDocument = runCatching {
+        if (!file.isFile) return LedgerDocument()
         val root = JSONObject(file.readText())
-        val array = root.optJSONArray("seen") ?: return emptyMap()
-        (0 until array.length()).mapNotNull { index ->
+        val array = root.optJSONArray("seen") ?: JSONArray()
+        val records = (0 until array.length()).mapNotNull { index ->
             array.optJSONObject(index)?.let { obj ->
                 val id = obj.optString("id")
                 if (id.isBlank()) null
@@ -157,13 +238,18 @@ class JobSeenLedger(
                 )
             }
         }.toMap()
-    }.onFailure { runCatching { file.delete() } }.getOrDefault(emptyMap())
+        LedgerDocument(
+            records = records,
+            reviewedAtEpochMillis = root.optLongOrNull("reviewedAt"),
+            baselineAtEpochMillis = root.optLongOrNull("baselineAt"),
+        )
+    }.onFailure { runCatching { file.delete() } }.getOrDefault(LedgerDocument())
 
-    private fun write(records: Map<String, SeenRecord>) {
+    private fun writeDocument(document: LedgerDocument) {
         runCatching {
             file.parentFile?.mkdirs()
             val array = JSONArray()
-            records.values.forEach { record ->
+            document.records.values.forEach { record ->
                 array.put(
                     JSONObject().apply {
                         put("id", record.id)
@@ -176,6 +262,8 @@ class JobSeenLedger(
             }
             val root = JSONObject().apply {
                 put("version", SCHEMA_VERSION)
+                put("reviewedAt", document.reviewedAtEpochMillis ?: JSONObject.NULL)
+                put("baselineAt", document.baselineAtEpochMillis ?: JSONObject.NULL)
                 put("seen", array)
             }
             val temp = File(file.parentFile, "${file.name}.tmp")
@@ -208,3 +296,15 @@ class JobSeenLedger(
         ).joinToString("|")
     }
 }
+
+/** The persisted ledger file: the seen postings plus the review/baseline watermarks. */
+private data class LedgerDocument(
+    val records: Map<String, SeenRecord> = emptyMap(),
+    /** When the user last marked the new postings reviewed, or null when never. */
+    val reviewedAtEpochMillis: Long? = null,
+    /** When the first read established the baseline, or null before any read has finished. */
+    val baselineAtEpochMillis: Long? = null,
+)
+
+private fun JSONObject.optLongOrNull(key: String): Long? =
+    if (isNull(key) || !has(key)) null else optLong(key)

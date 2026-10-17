@@ -118,6 +118,33 @@ class Stage44RefreshDiscoveryTest {
         assertEquals(listOf("arbeitnow:1"), delta.newJobIds)
     }
 
+    @Test
+    fun theLedgerReportsOnlyPostingsFirstSeenAfterTheLastReview() = runBlocking {
+        val file = tempFile("newpostings")
+        var now = 1_000L
+        val ledger = JobSeenLedger(context, file = file, clock = { now })
+
+        // The first read records the baseline; the market it saw is not announced as new.
+        ledger.observe(listOf(raw("1")))
+        assertTrue(ledger.newPostings().isEmpty)
+        assertTrue(ledger.newPostings().baselineEstablished)
+
+        now = 2_000L
+        ledger.observe(listOf(raw("1"), raw("2", title = "Welder")))
+        val afterSecond = ledger.newPostings()
+        assertEquals(listOf("arbeitnow:2"), afterSecond.jobIds)
+        assertEquals(2_000L, afterSecond.discoveredAtByJobId.getValue("arbeitnow:2"))
+
+        // Reviewing clears the list and moves the watermark forward.
+        ledger.markReviewed(at = 3_000L)
+        assertTrue(ledger.newPostings().isEmpty)
+
+        // A later discovery is measured from the review, not from the original baseline.
+        now = 4_000L
+        ledger.observe(listOf(raw("1"), raw("2", title = "Welder"), raw("3", title = "Fitter")))
+        assertEquals(listOf("arbeitnow:3"), ledger.newPostings().jobIds)
+    }
+
     // ------------------------------------------------------ discovery summary
 
     @Test

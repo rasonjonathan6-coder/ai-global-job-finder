@@ -193,4 +193,21 @@ class JobsFilterTest {
         assertEquals(2, state.eligibleCount)
         assertTrue(state.hasActiveFilters.not())
     }
+
+    @Test
+    fun newOnlyKeepsJustThePostingsDiscoveredSinceTheLastReview() {
+        val state = JobsUiState(jobs = jobs, newJobIds = setOf("2", "4"))
+        assertEquals(2, state.newCount)
+        assertTrue(state.isNew(jobs.first { it.id == "2" }))
+        assertFalse(state.isNew(jobs.first { it.id == "1" }))
+        assertEquals(listOf("4", "2"), state.copy(newOnly = true).visibleJobs.map { it.id })
+        assertTrue("the new-only chip must count as an active filter", state.copy(newOnly = true).hasActiveFilters)
+    }
+
+    @Test
+    fun firstSeenIsReportedOnlyWhenTheLedgerRecordedIt() {
+        val state = JobsUiState(jobs = jobs, firstSeenAtByJobId = mapOf("2" to 1_700_000_000_000L))
+        assertEquals(1_700_000_000_000L, state.firstSeenAt(jobs.first { it.id == "2" }))
+        assertTrue("an unrecorded posting has no first sighting", state.firstSeenAt(jobs.first { it.id == "1" }) == null)
+    }
 }

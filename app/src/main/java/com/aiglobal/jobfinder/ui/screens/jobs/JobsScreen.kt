@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.FilterAltOff
 import androidx.compose.material.icons.filled.HelpCenter
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
@@ -94,6 +95,7 @@ import com.aiglobal.jobfinder.ui.components.OfferVerificationBadge
 import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.relativeTime
+import com.aiglobal.jobfinder.ui.components.retrievedLabel
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.VerificationAxisChip
@@ -110,6 +112,8 @@ fun JobsScreen(
     onOpenAi: () -> Unit,
     onOpenJob: (String) -> Unit = {},
     onOpenLink: (String) -> Unit = {},
+    /** Clears the "new postings" list once the user has acknowledged it. */
+    onMarkNewReviewed: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     JobsContent(
@@ -126,6 +130,7 @@ fun JobsScreen(
         onToggleVerifiedFlights = viewModel::toggleVerifiedFlightsFilter,
         onToggleOpenVacancy = viewModel::toggleOpenVacancyFilter,
         onToggleRecentlyVerified = viewModel::toggleRecentlyVerifiedFilter,
+        onToggleNew = viewModel::toggleNewFilter,
         onCountryChange = viewModel::onCountryChange,
         onSourceChange = viewModel::onSourceChange,
         onSortChange = viewModel::onSortChange,
@@ -136,6 +141,7 @@ fun JobsScreen(
         onToggleSaveJob = viewModel::toggleSave,
         onOpenJob = onOpenJob,
         onOpenLink = onOpenLink,
+        onMarkNewReviewed = onMarkNewReviewed,
     )
 }
 
@@ -154,6 +160,7 @@ internal fun JobsContent(
     onToggleVerifiedFlights: () -> Unit = {},
     onToggleOpenVacancy: () -> Unit = {},
     onToggleRecentlyVerified: () -> Unit = {},
+    onToggleNew: () -> Unit = {},
     onCountryChange: (String?) -> Unit,
     onSourceChange: (String?) -> Unit,
     onSortChange: (JobSort) -> Unit,
@@ -165,6 +172,8 @@ internal fun JobsContent(
     onOpenJob: (String) -> Unit = {},
     /** Launches the posting URL once the candidate has confirmed the destination. */
     onOpenLink: (String) -> Unit = {},
+    /** Clears the "new postings" list once the user has acknowledged it. */
+    onMarkNewReviewed: () -> Unit = {},
 ) {
     var explainJob by remember { mutableStateOf<Job?>(null) }
     var applyJob by remember { mutableStateOf<Job?>(null) }
@@ -177,12 +186,14 @@ internal fun JobsContent(
             coverage = state.coverage,
             eligibleCount = state.eligibleCount,
             totalCount = state.jobs.size,
+            newCount = state.newCount,
             onRefresh = onRefresh,
             onOpenFilters = { showFilters = true },
             filtersActive = state.hasActiveFilters,
         )
         JobsFilterRow(
             state = state,
+            onToggleNew = onToggleNew,
             onToggleSaved = onToggleSaved,
             onToggleEligible = onToggleEligible,
             onToggleSponsored = onToggleSponsored,
@@ -196,6 +207,8 @@ internal fun JobsContent(
             onToggleRecentlyVerified = onToggleRecentlyVerified,
             onMinExpatScoreChange = onMinExpatScoreChange,
         )
+
+        NewPostingsBanner(state = state, onMarkReviewed = onMarkNewReviewed)
 
         when {
             state.isLoading && state.jobs.isEmpty() -> {
@@ -254,6 +267,8 @@ internal fun JobsContent(
                             expatEvidenceCoverage = expat.evidenceCoverage,
                             expatLowEvidence = expat.hasEvidence && expat.lowEvidence,
                             internationalFit = state.internationalFitOf(job),
+                            showNewBadge = state.isNew(job),
+                            discoveredAtEpochMillis = state.firstSeenAt(job),
                         )
                     }
                 }
@@ -275,6 +290,7 @@ internal fun JobsContent(
                 explainJob = null
                 onOpenJob(job.id)
             },
+            discoveredAtEpochMillis = state.firstSeenAt(job),
         )
     }
 
@@ -396,9 +412,61 @@ private fun SearchField(
     }
 }
 
+/**
+ * The incremental-discovery banner. It appears only when the ledger has genuinely new postings,
+ * names how many were found and when, offers a one-tap filter to them, and a way to acknowledge
+ * them so the badge clears. A failed or empty read shows nothing here rather than an empty box.
+ */
+@Composable
+private fun NewPostingsBanner(state: JobsUiState, onMarkReviewed: () -> Unit) {
+    if (state.newCount == 0) return
+    val spacing = LocalSpacing.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.gutter)
+            .padding(bottom = spacing.sm)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.NewReleases,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = if (state.newOnly) {
+                "Showing ${state.newCount} new ${if (state.newCount == 1) "posting" else "postings"} since your last review."
+            } else {
+                "${state.newCount} new ${if (state.newCount == 1) "posting" else "postings"} found since your last review."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        if (state.newOnly) {
+            Text(
+                text = "Mark reviewed",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onMarkReviewed)
+                    .padding(horizontal = spacing.xs, vertical = spacing.xxs),
+            )
+        }
+    }
+}
+
 @Composable
 private fun JobsFilterRow(
     state: JobsUiState,
+    onToggleNew: () -> Unit,
     onToggleSaved: () -> Unit,
     onToggleEligible: () -> Unit,
     onToggleSponsored: () -> Unit,
@@ -419,6 +487,16 @@ private fun JobsFilterRow(
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (state.newCount > 0) {
+            item {
+                FilterChip(
+                    label = "New (${state.newCount})",
+                    selected = state.newOnly,
+                    onClick = onToggleNew,
+                    leadingIcon = Icons.Filled.NewReleases,
+                )
+            }
+        }
         item {
             FilterChip(
                 label = "My trade only",
@@ -536,6 +614,7 @@ private fun SourceStatusStrip(
     coverage: SearchCoverage,
     eligibleCount: Int,
     totalCount: Int,
+    newCount: Int = 0,
     onRefresh: () -> Unit,
     onOpenFilters: () -> Unit,
     filtersActive: Boolean,
@@ -569,7 +648,8 @@ private fun SourceStatusStrip(
                     modifier = Modifier.size(15.dp),
                 )
                 Text(
-                    text = sourceSummary(syncState, totalCount, eligibleCount),
+                    text = sourceSummary(syncState, totalCount, eligibleCount) +
+                        if (newCount > 0) " · $newCount new" else "",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -636,6 +716,8 @@ private fun JobExplanationSheet(
     onDismiss: () -> Unit,
     onOpenSource: () -> Unit,
     onWriteLetter: () -> Unit,
+    /** When the app first saw this posting, or null when no first sighting is recorded. */
+    discoveredAtEpochMillis: Long? = null,
 ) {
     val spacing = LocalSpacing.current
     ModalBottomSheet(
@@ -676,6 +758,13 @@ private fun JobExplanationSheet(
 
             OfferVerificationSection(job = job)
 
+            if (discoveredAtEpochMillis != null) {
+                DiscoveryProvenanceSection(
+                    discoveredAtEpochMillis = discoveredAtEpochMillis,
+                    job = job,
+                )
+            }
+
             SectionHeader(
                 title = "Why this match score",
                 subtitle = "Every point of the ${job.matchScore}% comes from one of these signals",
@@ -711,6 +800,79 @@ private fun JobExplanationSheet(
                 text = "Always confirm the details on the employer's own page before you apply.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * The incremental-discovery provenance block: when this app first saw the posting, which source
+ * supplied it, when it was last fetched, and a way to open the employer's own page. Each line is
+ * a recorded fact, so the user can trace a "new" find back to its origin instead of trusting it.
+ */
+@Composable
+private fun DiscoveryProvenanceSection(discoveredAtEpochMillis: Long, job: Job) {
+    val spacing = LocalSpacing.current
+    SectionHeader(
+        title = "How this was found",
+        subtitle = "Discovered by the incremental search, from a source you can check",
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.xs)) {
+        DiscoveryFactRow(
+            icon = Icons.Filled.NewReleases,
+            label = "First seen",
+            value = relativeTime(discoveredAtEpochMillis),
+        )
+        DiscoveryFactRow(
+            icon = Icons.Filled.Public,
+            label = "Source",
+            value = job.source.ifBlank { "Unknown source" },
+        )
+        DiscoveryFactRow(
+            icon = Icons.Filled.Refresh,
+            label = "Last checked",
+            value = retrievedLabel(job.retrievedAtEpochMillis),
+        )
+        if (job.sourceUrl.isNotBlank()) {
+            DiscoveryFactRow(
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                label = "Official posting",
+                value = job.sourceUrl,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiscoveryFactRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+) {
+    val spacing = LocalSpacing.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(16.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

@@ -92,6 +92,44 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     private val _searchingNow = kotlinx.coroutines.flow.MutableStateFlow(false)
     val searchingNow: StateFlow<Boolean> = _searchingNow.asStateFlow()
 
+    /**
+     * The postings discovered since the user last reviewed them. Shared by Home and Jobs, so
+     * both surfaces show the same incremental list and neither can drift from the ledger.
+     */
+    val newPostings: StateFlow<com.aiglobal.jobfinder.data.discovery.NewPostings> =
+        container.jobRepository.newPostings
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                com.aiglobal.jobfinder.data.discovery.NewPostings(),
+            )
+
+    /**
+     * One-shot signal carrying the ids to reveal on the Jobs screen when the user taps the Home
+     * "new opportunities" card. Null when nothing is pending, so the navigation is driven only
+     * by an explicit tap and never by a background discovery.
+     */
+    private val _openNewPostings = kotlinx.coroutines.flow.MutableStateFlow<List<String>?>(null)
+    val openNewPostings: StateFlow<List<String>?> = _openNewPostings.asStateFlow()
+
+    /** Asks the Jobs tab to open filtered to these newly discovered postings. */
+    fun requestOpenNewPostings(ids: List<String>) {
+        _openNewPostings.value = ids.takeIf { it.isNotEmpty() }
+    }
+
+    /** Consumes the pending request so it fires at most once. */
+    fun consumeOpenNewPostings() {
+        _openNewPostings.value = null
+    }
+
+    /**
+     * Clears the "new postings" list once the user has reviewed the new opportunities, so the
+     * badge does not keep announcing what has already been seen.
+     */
+    fun markNewPostingsReviewed() {
+        viewModelScope.launch { container.jobRepository.markNewPostingsReviewed() }
+    }
+
     fun setAutoRefreshEnabled(enabled: Boolean) {
         viewModelScope.launch { container.preferencesRepository.setAutoRefreshEnabled(enabled) }
     }
@@ -304,6 +342,19 @@ data class JobsUiState(
      * instantly, even when the underlying feed has not re-emitted the saved flag yet.
      */
     val savedJobIds: Set<String> = emptySet(),
+    /**
+     * When true, only postings first seen since the user last reviewed the new opportunities
+     * are shown. Reads the same ledger the Home card and Profile summary use, so "new" means
+     * the same thing everywhere and a posting already known never appears as new.
+     */
+    val newOnly: Boolean = false,
+    /** Ids of the postings the incremental search discovered since the last review. */
+    val newJobIds: Set<String> = emptySet(),
+    /**
+     * When each posting was first seen by the app, keyed by id. Used to date "discovered"
+     * honestly; a posting absent from this map has no recorded first sighting.
+     */
+    val firstSeenAtByJobId: Map<String, Long> = emptyMap(),
 ) {
     /** Countries present in the current result set, for the country filter. */
     val countries: List<String>
@@ -324,7 +375,16 @@ data class JobsUiState(
             source != null || minMatch > 0 || minExpatScore > 0 || visaDocumentedOnly ||
             strongInternationalFitOnly || tradeOnly || query.isNotBlank() ||
             verifiedVisaOnly || verifiedAccommodationOnly || verifiedFlightsOnly ||
-            openVacancyOnly || recentlyVerifiedOnly
+            openVacancyOnly || recentlyVerifiedOnly || newOnly
+
+    /** How many of the loaded postings were first seen since the last review. */
+    val newCount: Int get() = jobs.count { newJobIds.contains(it.id) }
+
+    /** True when a posting was discovered since the user last reviewed the new opportunities. */
+    fun isNew(job: Job): Boolean = newJobIds.contains(job.id)
+
+    /** When the app first saw a posting, or null when no first sighting is recorded. */
+    fun firstSeenAt(job: Job): Long? = firstSeenAtByJobId[job.id]
 
     /** Expat Benefits Score for one posting, or the honest empty state when unknown. */
     fun expatScore(job: Job): Int? = expatAssessments[job.id]?.score
@@ -342,6 +402,7 @@ data class JobsUiState(
     val visibleJobs: List<Job>
         get() {
             var result = jobs
+            if (newOnly) result = result.filter { newJobIds.contains(it.id) }
             if (savedOnly) result = result.filter { isSaved(it) }
             if (eligibleOnly) result = result.filter { it.applyableFromMadagascar }
             if (sponsoredOnly) result = result.filter {
@@ -490,6 +551,18 @@ class JobsViewModel(
                 uiStateInternal.update { it.copy(coverage = coverage) }
             }
         }
+        // The incremental discovery list drives the "New" filter and the NEW badge, so it is
+        // collected from the same ledger the Home card reads — the two can never disagree.
+        viewModelScope.launch {
+            repository.newPostings.collect { newPostings ->
+                uiStateInternal.update {
+                    it.copy(
+                        newJobIds = newPostings.jobIds.toSet(),
+                        firstSeenAtByJobId = newPostings.discoveredAtByJobId,
+                    )
+                }
+            }
+        }
         // Re-score every posting whenever the feed or the user's priorities change, so the
         // Expat Benefits Score always reflects the current postings and the current wishes.
         viewModelScope.launch {
@@ -571,8 +644,15 @@ class JobsViewModel(
             verifiedFlightsOnly = false,
             openVacancyOnly = false,
             recentlyVerifiedOnly = false,
+            newOnly = false,
         )
     }
+
+    /** Shows only postings first seen since the user last reviewed the new opportunities. */
+    fun toggleNewFilter() = uiStateInternal.update { it.copy(newOnly = !it.newOnly) }
+
+    /** Turns the "new" filter on or off explicitly, used when opening from the Home card. */
+    fun setNewOnly(enabled: Boolean) = uiStateInternal.update { it.copy(newOnly = enabled) }
 
     fun onMinExpatScoreChange(value: Int) = uiStateInternal.update { it.copy(minExpatScore = value) }
 
@@ -637,7 +717,23 @@ data class HomeUiState(
     val profile: UserProfile? = null,
     val stats: DashboardStats = DashboardStats(0, 0, 0, 0),
     val bestMatches: List<Job> = emptyList(),
+    /**
+     * Postings first seen since the user last reviewed the new opportunities, newest first.
+     * Sourced from the incremental discovery ledger, so the initial market snapshot is never
+     * shown here — only genuine incremental finds.
+     */
     val newOpportunities: List<Job> = emptyList(),
+    /** How many of [totalJobs] were first seen since the last review. */
+    val newPostingCount: Int = 0,
+    /** Whether the first read has recorded a baseline, so "no new postings" is meaningful. */
+    val discoveryBaselineEstablished: Boolean = false,
+    /**
+     * The state of automatic discovery: when a search last ran and succeeded, how much is new,
+     * and which sources are failing. Mirrored from the repository so the Home card and the
+     * Profile summary describe the same event.
+     */
+    val discoverySummary: com.aiglobal.jobfinder.data.discovery.DiscoverySummary =
+        com.aiglobal.jobfinder.data.discovery.DiscoverySummary(),
     val totalJobs: Int = 0,
     val applications: List<ApplicationRecord> = emptyList(),
     val reminders: List<ApplicationReminder> = emptyList(),
@@ -668,6 +764,12 @@ class HomeViewModel(
     private val applicationCenter: com.aiglobal.jobfinder.data.applications.ApplicationCenter,
     private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> = kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
     private val expatEngine: ExpatBenefitsEngine = ExpatBenefitsEngine(),
+    /**
+     * The plain-language state of automatic discovery, so the Home card can say when a search
+     * last ran and how much is new without re-deriving it from the diagnostics.
+     */
+    private val discoverySummary: kotlinx.coroutines.flow.Flow<com.aiglobal.jobfinder.data.discovery.DiscoverySummary> =
+        kotlinx.coroutines.flow.flowOf(com.aiglobal.jobfinder.data.discovery.DiscoverySummary()),
 ) : ViewModel() {
 
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(HomeUiState())
@@ -684,24 +786,34 @@ class HomeViewModel(
             repository.syncState.collect { sync -> _uiState.update { it.copy(syncState = sync) } }
         }
         viewModelScope.launch {
-            kotlinx.coroutines.flow.combine(repository.jobs, expatPreferences) { jobs, prefs ->
-                jobs to prefs
-            }.collect { (jobs, prefs) ->
-                _uiState.update {
-                    it.copy(
-                        bestMatches = jobs.sortedByDescending { job -> job.matchScore }.take(4),
-                        newOpportunities = jobs.filter { job -> job.isNew },
-                        totalJobs = jobs.size,
-                        expatAssessments = jobs.associate { job ->
-                            job.id to expatEngine.assess(
-                                benefits = job.benefitEvidence,
-                                preferences = prefs,
-                                salaryEurPerYear = homeEurPerYear(job),
-                            )
-                        },
-                    )
+            kotlinx.coroutines.flow.combine(
+                repository.jobs,
+                expatPreferences,
+                repository.newPostings,
+            ) { jobs, prefs, newPostings -> Triple(jobs, prefs, newPostings) }
+                .collect { (jobs, prefs, newPostings) ->
+                    val newIds = newPostings.jobIds.toSet()
+                    _uiState.update {
+                        it.copy(
+                            bestMatches = jobs.sortedByDescending { job -> job.matchScore }.take(4),
+                            // Newest discovery first, so the freshest find leads the rail.
+                            newOpportunities = newPostings.jobIds.mapNotNull { id -> jobs.firstOrNull { it.id == id } },
+                            newPostingCount = jobs.count { job -> newIds.contains(job.id) },
+                            discoveryBaselineEstablished = newPostings.baselineEstablished,
+                            totalJobs = jobs.size,
+                            expatAssessments = jobs.associate { job ->
+                                job.id to expatEngine.assess(
+                                    benefits = job.benefitEvidence,
+                                    preferences = prefs,
+                                    salaryEurPerYear = homeEurPerYear(job),
+                                )
+                            },
+                        )
+                    }
                 }
-            }
+        }
+        viewModelScope.launch {
+            discoverySummary.collect { summary -> _uiState.update { it.copy(discoverySummary = summary) } }
         }
         viewModelScope.launch {
             applicationCenter.applications.collect { apps ->
@@ -745,10 +857,12 @@ class HomeViewModelFactory(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val applicationCenter: com.aiglobal.jobfinder.data.applications.ApplicationCenter,
     private val expatPreferences: kotlinx.coroutines.flow.Flow<ExpatPreferences> = kotlinx.coroutines.flow.flowOf(ExpatPreferences()),
+    private val discoverySummary: kotlinx.coroutines.flow.Flow<com.aiglobal.jobfinder.data.discovery.DiscoverySummary> =
+        kotlinx.coroutines.flow.flowOf(com.aiglobal.jobfinder.data.discovery.DiscoverySummary()),
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        HomeViewModel(repository, applicationCenter, expatPreferences) as T
+        HomeViewModel(repository, applicationCenter, expatPreferences, discoverySummary = discoverySummary) as T
 }
 
 data class ApplicationsUiState(
