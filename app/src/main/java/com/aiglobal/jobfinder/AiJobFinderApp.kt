@@ -30,6 +30,7 @@ import com.aiglobal.jobfinder.data.jobs.provider.JoobleProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JobicyProvider
 import com.aiglobal.jobfinder.data.jobs.provider.LeverProvider
 import com.aiglobal.jobfinder.data.jobs.provider.RemotiveProvider
+import com.aiglobal.jobfinder.data.jobs.provider.SmartRecruitersProvider
 import com.aiglobal.jobfinder.data.jobs.provider.WorkdayProvider
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.ProviderSettings
@@ -150,6 +151,11 @@ open class AppContainer(application: Application) {
             add(GreenhouseProvider(feed = HttpJsonFeed))
             add(AshbyProvider(feed = HttpJsonFeed))
             add(LeverProvider(feed = HttpJsonFeed))
+            // SmartRecruiters is keyless and supports server-side keyword search, so the
+            // inspection, testing and industrial-service employers it hosts (SGS, Wabtec,
+            // Konecranes, Bosch) can be narrowed to the candidate's own trades across the
+            // Gulf and Africa rather than returning a broad sample.
+            add(SmartRecruitersProvider(feed = HttpJsonFeed))
             add(adzunaProvider)
             add(
                 JoobleProvider(

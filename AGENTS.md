@@ -1451,7 +1451,7 @@ n'existe gratuitement :
 | Adzuna | Clé gratuite, mais **16–20 pays, aucun pays du Golfe** ; dans la région, seule l'Afrique du Sud. |
 | The Muse / ReliefWeb v2 | **Fermés** : appname/Referer approuvé obligatoire (403). |
 | Findwork | Clé requise (401). |
-| SmartRecruiters | Sans clé, recherche serveur `q=` et filtre `country=`, mais **couverture Golfe/Afrique négligeable** (Bosch : Arabie saoudite 2, EAU 0, Qatar 0 ; Afrique du Sud 1). |
+| SmartRecruiters | Sans clé, recherche serveur `q=` et filtre `country=`. **Écarté en Stage 36 sur un échantillon trop étroit** (Bosch seul). **Réexaminé et retenu en Stage 43** : la curation SGS/Wabtec/Konecranes remonte de vrais postes de métier en Arabie saoudite, EAU, Mozambique, Afrique du Sud et Kenya (voir Stage 43). |
 | Workday / Lever / Greenhouse / Ashby | **Sans clé**, le poste est celui de l'employeur (le plus fiable). |
 | GulfTalent, Naukrigulf, Bayt, agences de main-d'œuvre | Publient bien les postes du Golfe mais **sans API gratuite** (pages web seules). |
 
@@ -1730,6 +1730,66 @@ réussit. Nouveaux fichiers : `data/model/OfferVerification.kt`,
 `Job.kt`, `JobMapper.kt`, `SampleJobRepository.kt`, `ViewModels.kt`, `Badges.kt`, `JobCard.kt`,
 `JobsScreen.kt`, `JobProvider.kt`, `WorkdayProvider.kt`, `JobCache.kt`.
 
+
+## Stage 43 — plus d'offres réelles et pertinentes via les boards SmartRecruiters
+
+**Objet.** Augmenter **la quantité ET la pertinence** des offres internationales réelles pour un
+candidat malgache à profil technique (maintenance industrielle/mécanique, réparation de pompes et
+de garnitures mécaniques, réparation de composants, dépannage d'équipement industriel), sans
+nouvelle clé et sans toucher à l'architecture ni à l'UI.
+
+**Pourquoi SmartRecruiters, réexaminé.** Stage 36 avait écarté cette source sur un échantillon
+réduit à **Bosch** (« couverture Golfe/Afrique négligeable »). L'audit Stage 43 a re-mesuré
+l'API publique **sans clé** sur des employeurs d'inspection et d'équipement industriel, qui
+publient précisément les métiers visés :
+
+| Board (sans clé) | Postes métier visibles en Afrique / Golfe |
+| --- | --- |
+| **SGS** | Arabie saoudite (« Rotating Equipment Inspector », « Sr. Mechanical Inspectors », « NDT Technician »), EAU (« NDT Technician » Abu Dhabi), Mozambique (Maputo/Nacala), Afrique du Sud, Kenya (Mombasa « Calibration Technician ») |
+| **Wabtec** | Afrique du Sud (Pretoria « Repair Technician », Rustenburg « Control Room Operator ») |
+| **Konecranes** | Afrique du Sud (Durban « Service Technician ») |
+| **Bosch** | Australie (« Mechanical Fitter – Hydraulic Power Units », « Field Service Technician – Hydraulics ») |
+
+Contrairement à Stage 36, la valeur ne vient donc **pas** de la couverture globale de Bosch mais de
+la curation d'employeurs de services industriels à sites africains et du Golfe.
+
+**Ajout.** Nouveau fournisseur `SmartRecruitersProvider` (`data/jobs/provider/`), `ProviderKind.
+EMPLOYER_BOARD`, **sans clé**, `capabilities.serverSideKeyword = true` (l'API accepte `q=` et
+filtre réellement côté serveur). Curation : `SGS`, `Wabtec`, `Konecranes`, `BoschGroup` — chacune
+vérifiée en direct. Le flux suit exactement le contrat des autres fournisseurs employeur
+(Workday/Greenhouse) :
+
+1. **Recherche serveur.** Une requête par mot-clé cible (`q=`), page de 100 lignes.
+2. **Détails bornés.** La ligne de liste porte le titre et la localisation mais **pas** la
+   description ; un budget de **4 appels détail concurrents par board** lit le texte du poste, le
+   pays réel et l'URL. Le budget est **ciblé métier d'abord** via le même `RoleClassifier` que le
+   reste du pipeline (les titres de métier sont lus avant le reste), exactement comme Greenhouse.
+3. **Cartographie honnête.** `active = false` ⇒ le poste est écarté (l'employeur a retiré
+   l'annonce). `descriptionHtml` = concaténation des quatre sections réelles
+   (`jobDescription`, `qualifications`, `additionalInformation`, `companyDescription`).
+   `location` = `fullLocation` publiée. `company` = nom réel de l'employeur (repli sur le label).
+   `externalId` = `identifier-id` (déduplication inter-sources déjà en place).
+
+**Fidélité au contrat.** Aucune invention : un champ absent reste `null`, `isRemote` lit le
+drapeau `remote` de la source, `postedAtEpochMillis` lit `releasedDate`. Un board dont le plan n'a
+pas de flux public répond **vide**, jamais en erreur : c'est « rien publié », pas « source cassée ».
+Si **tous** les boards échouent, le fournisseur lève une `JobProviderException` classée (comme les
+autres) pour que l'UI distingue « 0 offre » de « source en panne ». Rien n'a été ajouté à l'UI,
+aux thèmes, à la navigation ni aux moteurs de score : le nouveau poste traverse le pipeline
+existant (validation, dédup, pertinence, éligibilité Madagascar, badges).
+
+**Limite honnête.** Le budget détail est borné à **4/board** et une seule page de recherche est
+lue par mot-clé : un board publiant plus de 4 titres pertinents n'en montre qu'une partie à ce
+passage, et le classement `q=` de l'API est partiel. C'est un compromis assumé contre un
+téléchargement multi-mégaoctets et contre la limite de débit par IP de l'API publique.
+
+**Vérification.** Suite **541 tests, 0 échec, 0 erreur, 3 ignorés** (+10 : `Stage43SmartRecruiters
+Test` : cartographie honnête, mot-clé réellement envoyé et encodé, titres de métier lus en premier
+avec budget borné inchangé, ordre source préservé quand aucun titre n'est un métier, poste fermé
+écarté, board vide ≠ source cassée, panne totale → erreur classée, curation bien formée). Lint
+**0 erreur / 52 avertissements** (inchangé). `assembleDebug` réussit. Nouveaux fichiers :
+`data/jobs/provider/SmartRecruitersProvider.kt`, `Stage43SmartRecruitersTest.kt`. Modifié :
+`AiJobFinderApp.kt` (enregistrement du fournisseur), `AGENTS.md`.
 
 ## Conventions
 
