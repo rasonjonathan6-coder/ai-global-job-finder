@@ -57,6 +57,8 @@ class JobNotificationCenter(private val context: Context) {
         notifications.forEach { notification ->
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                // Carry the posting id so tapping the alert opens that job, not just the app.
+                putExtra(EXTRA_JOB_ID, notification.jobId)
             }
             val pending = PendingIntent.getActivity(
                 context,
@@ -77,7 +79,13 @@ class JobNotificationCenter(private val context: Context) {
         }
     }
 
-    private companion object {
-        const val CHANNEL_ID = "job_matches"
+    companion object {
+        private const val CHANNEL_ID = "job_matches"
+
+        /**
+         * Intent extra carrying the posting id, so tapping an alert opens that job. Public so
+         * the activity that receives it reads the same constant the poster wrote.
+         */
+        const val EXTRA_JOB_ID = "com.aiglobal.jobfinder.extra.JOB_ID"
     }
 }

@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Email
@@ -51,13 +53,17 @@ import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -98,7 +104,9 @@ import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.Skill
 import com.aiglobal.jobfinder.data.model.UserProfile
+import com.aiglobal.jobfinder.data.discovery.DiscoverySummary
 import com.aiglobal.jobfinder.data.notifications.NotificationPermission
+import com.aiglobal.jobfinder.data.refresh.AlertThreshold
 import com.aiglobal.jobfinder.data.refresh.RefreshInterval
 import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import com.aiglobal.jobfinder.ui.components.AppCard
@@ -112,6 +120,7 @@ import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SkeletonBox
 import com.aiglobal.jobfinder.ui.components.isDarkTheme
+import com.aiglobal.jobfinder.ui.components.relativeTime
 import com.aiglobal.jobfinder.ui.screens.diagnostics.SourceStatusBadge
 import com.aiglobal.jobfinder.ui.screens.diagnostics.providerDetail
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
@@ -144,6 +153,8 @@ fun ProfileScreen(
     val diagnostics by viewModel.diagnostics.collectAsStateWithLifecycle()
     val refreshPreferences by appViewModel.refreshPreferences.collectAsStateWithLifecycle()
     val notificationsEnabled by appViewModel.notificationsEnabled.collectAsStateWithLifecycle()
+    val discoverySummary by appViewModel.discoverySummary.collectAsStateWithLifecycle()
+    val searchingNow by appViewModel.searchingNow.collectAsStateWithLifecycle()
 
     val current = profile
     if (current == null) {
@@ -295,8 +306,8 @@ fun ProfileScreen(
 
         item {
             SectionHeader(
-                title = "Automatic refresh",
-                subtitle = "Find new jobs while the app is closed",
+                title = "Automatic job discovery",
+                subtitle = "Finds new openings while the app is closed",
             )
         }
 
@@ -304,9 +315,13 @@ fun ProfileScreen(
             RefreshAndNotificationsCard(
                 preferences = refreshPreferences,
                 notificationsEnabled = notificationsEnabled,
+                summary = discoverySummary,
+                searchingNow = searchingNow,
                 onAutoRefreshChange = appViewModel::setAutoRefreshEnabled,
                 onIntervalChange = appViewModel::setRefreshInterval,
                 onNotificationsChange = appViewModel::setNotificationsEnabled,
+                onAlertThresholdChange = appViewModel::setAlertThreshold,
+                onSearchNow = appViewModel::searchNow,
             )
         }
 
@@ -889,19 +904,26 @@ private fun DemoModeCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
 }
 
 /**
- * Automatic refresh and new-match notifications. Two independent switches: refresh decides
- * whether the background worker exists at all; notifications decide whether a discovered
- * strong match is announced. The interval is described as approximate because Android may
- * defer background work — the app never promises an exact time.
+ * Automatic job discovery, new-match notifications and the discovery status.
+ *
+ * Two independent switches: refresh decides whether the background worker exists at all;
+ * notifications decide whether a discovered strong match is announced. The relevance bar
+ * (the alert threshold) and the search-now action sit beside them. The interval is described
+ * as approximate because Android may defer background work — the app never promises an exact
+ * time, and the status lines report what actually happened, not what was requested.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RefreshAndNotificationsCard(
     preferences: RefreshPreferences,
     notificationsEnabled: Boolean,
+    summary: DiscoverySummary = DiscoverySummary(),
+    searchingNow: Boolean = false,
     onAutoRefreshChange: (Boolean) -> Unit,
     onIntervalChange: (RefreshInterval) -> Unit,
     onNotificationsChange: (Boolean) -> Unit,
+    onAlertThresholdChange: (AlertThreshold) -> Unit = {},
+    onSearchNow: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     val context = LocalContext.current
@@ -973,6 +995,10 @@ internal fun RefreshAndNotificationsCard(
                 }
             }
 
+            DiscoveryStatus(summary = summary, searchingNow = searchingNow, onSearchNow = onSearchNow)
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -996,7 +1022,7 @@ internal fun RefreshAndNotificationsCard(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "Only strong matches you have not seen before",
+                        text = "Only new matches at or above your bar",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1028,7 +1054,132 @@ internal fun RefreshAndNotificationsCard(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+
+            if (notificationsEnabled) {
+                Text(
+                    text = "Alert me when a new match reaches",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                    verticalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    AlertThreshold.entries.forEach { threshold ->
+                        FilterChip(
+                            label = threshold.label,
+                            selected = threshold == preferences.alertThreshold,
+                            onClick = { onAlertThresholdChange(threshold) },
+                        )
+                    }
+                }
+                Text(
+                    text = preferences.alertThreshold.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+    }
+}
+
+/**
+ * The compact discovery status: what the last search did, and a way to run one now. It
+ * reports the observed outcome — last success, how much was newly found, and which sources
+ * failed — rather than a promise about the schedule.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DiscoveryStatus(
+    summary: DiscoverySummary,
+    searchingNow: Boolean,
+    onSearchNow: () -> Unit,
+) {
+    val spacing = LocalSpacing.current
+    val busy = searchingNow || summary.isRefreshing
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        val statusText = when {
+            busy -> "Searching the job sources…"
+            summary.showingCachedOnly -> "Every source failed — showing your last saved results."
+            summary.lastSuccessAtEpochMillis == null -> "No search has finished yet."
+            summary.discoveredCount > 0 -> buildString {
+                append("Last search found ")
+                append(discoveredCountLabel(summary))
+                append(" ${relativeTime(summary.lastSuccessAtEpochMillis)}.")
+            }
+            else -> "Last search ${relativeTime(summary.lastSuccessAtEpochMillis)} — nothing new since."
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(15.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Icon(
+                    imageVector = when {
+                        summary.showingCachedOnly -> Icons.Filled.CloudOff
+                        summary.hasFailures -> Icons.Filled.CloudOff
+                        else -> Icons.Filled.CloudDone
+                    },
+                    contentDescription = null,
+                    tint = when {
+                        summary.showingCachedOnly || summary.hasFailures -> extendedColors.warning
+                        else -> extendedColors.success
+                    },
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Spacer(Modifier.width(spacing.xs))
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (summary.hasFailures) {
+            Text(
+                text = failureSummary(summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = extendedColors.warning,
+            )
+        }
+
+        if (summary.knownCount > 0) {
+            Text(
+                text = "${summary.knownCount} postings tracked so far.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        SecondaryButton(
+            text = "Search now",
+            onClick = onSearchNow,
+            leadingIcon = Icons.Filled.Search,
+            enabled = !busy,
+            height = 44.dp,
+        )
+    }
+}
+
+private fun discoveredCountLabel(summary: DiscoverySummary): String = buildString {
+    if (summary.newCount > 0) append("${summary.newCount} new")
+    if (summary.newCount > 0 && summary.updatedCount > 0) append(" and ")
+    if (summary.updatedCount > 0) append("${summary.updatedCount} updated")
+    append(if (summary.discoveredCount == 1) " posting" else " postings")
+}
+
+private fun failureSummary(summary: DiscoverySummary): String {
+    val names = summary.failures.joinToString(", ") { it.name }
+    val rateLimited = summary.rateLimitedCount
+    return when {
+        rateLimited > 0 -> "$names temporarily refused requests. The app will wait before trying again."
+        summary.failures.size == 1 -> "$names could not be reached on the last search."
+        else -> "${summary.failures.size} sources could not be reached on the last search: $names."
     }
 }
 

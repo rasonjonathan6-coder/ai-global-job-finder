@@ -84,6 +84,12 @@ class LiveJobRepository(
     private val savedIdsFlow: Flow<Set<String>> = MutableStateFlow(emptySet()),
     /** Persists the bookmarked ids. */
     private val savedIdsSetter: suspend (Set<String>) -> Unit = {},
+    /**
+     * Remembers which postings have already been seen, so a scheduled read can report what is
+     * genuinely new rather than treating the whole feed as news. Optional: when absent, the
+     * repository still works but reports no incremental delta.
+     */
+    private val seenLedger: com.aiglobal.jobfinder.data.discovery.JobSeenLedger? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val perProviderLimit: Int = 60,
     /** Hard ceiling on a single source, so one slow feed cannot hold up the whole refresh. */
@@ -121,6 +127,14 @@ class LiveJobRepository(
      */
     private val _coverage = MutableStateFlow(SearchCoverage())
     override val coverage: StateFlow<SearchCoverage> = _coverage.asStateFlow()
+
+    /**
+     * The incremental-search delta from the most recent read. Kept as a StateFlow so the
+     * Profile summary can render the last delta immediately, before any new read completes.
+     */
+    private val _discovery = MutableStateFlow(com.aiglobal.jobfinder.data.discovery.DiscoveryDelta())
+    override val discovery: StateFlow<com.aiglobal.jobfinder.data.discovery.DiscoveryDelta> =
+        _discovery.asStateFlow()
 
     /**
      * Per-source counts of postings that matched a target role on the last attempt. Kept
@@ -330,7 +344,7 @@ class LiveJobRepository(
     }
 
     /** Validates, de-duplicates and stores the outcome of one full attempt. */
-    private fun finishAttempt(attemptAt: Long, results: List<ProviderOutcome>, online: Boolean) {
+    private suspend fun finishAttempt(attemptAt: Long, results: List<ProviderOutcome>, online: Boolean) {
         val diagnostics = mutableListOf<ProviderDiagnostic>()
         val collected = mutableListOf<RawJob>()
         var anySuccess = false
@@ -401,6 +415,10 @@ class LiveJobRepository(
             val stamped = dedup.kept.map { if (it.retrievedAtEpochMillis == null) it.copy(retrievedAtEpochMillis = attemptAt) else it }
             rawJobs.value = stamped
             cache.write(stamped)
+            // Incremental search: record what arrived and note what is genuinely new. A read
+            // that returned nothing usable must not advance the ledger, or the next good read
+            // would present its whole feed as already seen.
+            seenLedger?.let { _discovery.value = it.observe(stamped) }
         }
 
         val lastSuccess = if (anySuccess) attemptAt else _diagnostics.value.lastSuccessAtEpochMillis

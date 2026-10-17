@@ -1791,6 +1791,62 @@ avec budget borné inchangé, ordre source préservé quand aucun titre n'est un
 `data/jobs/provider/SmartRecruitersProvider.kt`, `Stage43SmartRecruitersTest.kt`. Modifié :
 `AiJobFinderApp.kt` (enregistrement du fournisseur), `AGENTS.md`.
 
+## Étape 44 — Recherche incrémentale, seuil d'alerte et reprise honnête
+
+**Objectif.** La veille en arrière-plan doit dire *ce qui est réellement nouveau*, laisser
+l'utilisateur régler la barre de pertinence des alertes, et ne réessayer que lorsque cela peut
+aider. Aucune invention : le statut affiché décrit ce qui s'est **réellement** passé.
+
+**Recherche incrémentale.** `data/discovery/JobSeenLedger.kt` — un petit registre persistant
+(un fichier JSON, écrit atomiquement, plafonné à 3 000 entrées) des annonces déjà vues. Une
+annonce est identifiée par `providerId:externalId` et, à défaut, rapprochée par son **URL
+canonique** (`CanonicalUrl.of`), donc la même offre arrivant d'un autre board n'est pas
+« nouvelle ». `observe()` renvoie un `DiscoveryDelta` : `newJobIds` (jamais vues),
+`updatedJobIds` (déjà connues mais **contenu modifié** — titre, employeur, lieu, salaire ou
+longueur de description via une signature bon marché), `knownCount`, `firstRun`. **Le premier
+passage enregistre une ligne de base en silence** (`notifyBaseline = false` par défaut) : une
+installation neuve ne doit pas annoncer tout le marché d'un coup. Un passage sans résultat
+exploitable **n'avance pas** le registre.
+
+**Statut lisible.** `data/discovery/DiscoverySummary.kt` — assemble le diagnostic du
+dépôt (`ProviderDiagnostics`) et le dernier `DiscoveryDelta` : dernière tentative, dernier
+succès, combien de nouveau/mis à jour, sources en échec (avec catégorie), `showingCachedOnly`.
+C'est ce que la carte du Profil affiche, en clair, sans ouvrir le tableau de diagnostic complet.
+
+**Seuil d'alerte.** `AlertThreshold` (`data/refresh/RefreshPreferences.kt`) — la barre de
+pertinence d'une alerte, avec les **mêmes** paliers de score que le reste de l'app
+(Excellent 90 / Strong 75 / Good 60 / Fair 45), pour que « Strong » veuille dire la même chose
+sur une carte d'offre et dans une alerte. Défaut conservateur : `STRONG`
+(`JobNotificationPolicy.DEFAULT_MIN_MATCH = 75`), donc une installation neuve reste calme.
+La préférence est stockée (`alert_min_match_score`) et transmise au coordinateur et au worker,
+si bien qu'un changement prend effet au prochain passage.
+
+**Reprise (retry).** `work/RefreshRetryPolicy.kt` — décide si WorkManager doit réessayer :
+en ligne sans réseau → oui (la contrainte réseau retiendra la tâche) ; un passage ayant produit
+**quoi que ce soit** d'utilisable → non (le cache contient déjà le dernier bon flux) ; tous les
+fournisseurs en échec → oui **seulement** si l'échec est transitoire (réseau, délai, HTTP,
+inconnu). Une clé absente, des identifiants refusés ou une source *rate-limitée* ne sont
+**jamais** réessayés : cela ne se répare pas tout seul et userait la batterie.
+
+**UI (Profil).** La carte « Automatic job discovery » montre désormais le statut d'exploration
+(dernier succès, « N new / M updated », sources en échec), un bouton **Search now** (lancé et
+attendu pour afficher la progression), et le **choix du seuil** quand les alertes sont
+activées. Un appui sur une notification de correspondance **ouvre directement l'annonce**
+(`MainActivity` lit `JobNotificationCenter.EXTRA_JOB_ID` et le transmet à la navigation).
+
+**Vérification.** Suite **560 tests, 0 échec, 0 erreur, 3 ignorés** (+19 : `Stage44Refresh
+DiscoveryTest` : ligne de base silencieuse, nouveau vs mis à jour, même offre via URL, résumé
+honnête, reprise transitoire vs permanente vs rate-limitée ; `Stage20ProfileScreenTest` :
+statut, seuil, « Search now »). `compileDebugKotlin`, `testDebugUnitTest` et `assembleDebug`
+réussissent. Nouveaux fichiers : `data/discovery/JobSeenLedger.kt`,
+`data/discovery/DiscoverySummary.kt`, `work/RefreshRetryPolicy.kt`,
+`Stage44RefreshDiscoveryTest.kt`. Modifié : `RefreshPreferences.kt`,
+`UserPreferencesRepository.kt`, `JobNotificationPolicy.kt`, `JobNotificationsCoordinator.kt`,
+`JobRepository.kt`, `LiveJobRepository.kt`, `SampleJobRepository.kt`, `JobRefreshWorker.kt`,
+`JobRefreshRunner.kt`, `AiJobFinderApp.kt`, `MainActivity.kt`, `AiJobFinderRoot.kt`,
+`JobNotificationCenter.kt`, `ProfileScreen.kt`, `ViewModels.kt`, `Stage20DiscoveryTest.kt`,
+`Stage20ProfileScreenTest.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

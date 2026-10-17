@@ -47,6 +47,13 @@ interface JobRepository {
      */
     suspend fun runLiveValidation()
 
+    /**
+     * What the incremental search found on the most recent read: postings the app had never
+     * seen, postings whose content changed, and how many it now knows in total. Empty until
+     * the first attempt completes.
+     */
+    val discovery: Flow<com.aiglobal.jobfinder.data.discovery.DiscoveryDelta>
+
     suspend fun refresh()
     suspend fun toggleSaved(jobId: String)
     fun jobById(id: String): Job?

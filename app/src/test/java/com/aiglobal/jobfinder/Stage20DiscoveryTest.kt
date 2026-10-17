@@ -10,6 +10,7 @@ import com.aiglobal.jobfinder.data.model.ScamRisk
 import com.aiglobal.jobfinder.data.model.VisaSupport
 import com.aiglobal.jobfinder.data.model.WorkMode
 import com.aiglobal.jobfinder.data.notifications.JobNotificationPolicy
+import com.aiglobal.jobfinder.data.refresh.AlertThreshold
 import com.aiglobal.jobfinder.data.refresh.RefreshInterval
 import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import org.junit.Assert.assertEquals
@@ -178,5 +179,17 @@ class Stage20DiscoveryTest {
         val defaults = RefreshPreferences()
         assertTrue(defaults.enabled)
         assertEquals(RefreshInterval.TWICE_DAILY, defaults.interval)
+    }
+
+    @Test
+    fun theDefaultAlertBarMatchesTheStrongTier() {
+        assertEquals(AlertThreshold.STRONG, RefreshPreferences().alertThreshold)
+        assertEquals(JobNotificationPolicy.DEFAULT_MIN_MATCH, RefreshPreferences().alertMinMatchScore)
+    }
+
+    @Test
+    fun anUnknownStoredThresholdFallsBackToStrong() {
+        assertEquals(AlertThreshold.STRONG, AlertThreshold.fromScore(73))
+        assertEquals(AlertThreshold.EXCELLENT, AlertThreshold.fromScore(90))
     }
 }

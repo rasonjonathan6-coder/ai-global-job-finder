@@ -72,6 +72,7 @@ class UserPreferencesRepository(
     private val autoRefreshEnabledKey = booleanPreferencesKey("auto_refresh_enabled")
     private val refreshIntervalHoursKey = intPreferencesKey("refresh_interval_hours")
     private val notificationsEnabledKey = booleanPreferencesKey("notifications_enabled")
+    private val alertMinMatchScoreKey = intPreferencesKey("alert_min_match_score")
 
     val themeMode: Flow<ThemeMode> = dataStore.data.map { prefs ->
         runCatching { ThemeMode.valueOf(prefs[themeKey] ?: ThemeMode.System.name) }
@@ -124,6 +125,8 @@ class UserPreferencesRepository(
                 enabled = prefs[autoRefreshEnabledKey] ?: true,
                 intervalHours = prefs[refreshIntervalHoursKey]
                     ?: com.aiglobal.jobfinder.data.refresh.RefreshInterval.TWICE_DAILY.hours,
+                alertMinMatchScore = prefs[alertMinMatchScoreKey]
+                    ?: com.aiglobal.jobfinder.data.refresh.AlertThreshold.STRONG.score,
             )
         }
 
@@ -133,6 +136,15 @@ class UserPreferencesRepository(
 
     suspend fun setRefreshIntervalHours(hours: Int) {
         dataStore.edit { prefs -> prefs[refreshIntervalHoursKey] = hours }
+    }
+
+    /**
+     * The minimum match score a newly discovered posting must reach to raise an alert.
+     * Stored as the score itself (not the enum name) so the value is self-describing and a
+     * future threshold can be added without a migration.
+     */
+    suspend fun setAlertMinMatchScore(score: Int) {
+        dataStore.edit { prefs -> prefs[alertMinMatchScoreKey] = score.coerceIn(0, 100) }
     }
 
     /**

@@ -3,6 +3,7 @@ package com.aiglobal.jobfinder.data.notifications
 import androidx.compose.runtime.Immutable
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
+import com.aiglobal.jobfinder.data.model.VerificationState
 import com.aiglobal.jobfinder.data.model.VisaSupport
 
 /**
@@ -18,6 +19,8 @@ data class JobNotification(
     val company: String,
     val body: String,
     val matchScore: Int,
+    /** The source that supplied the posting, so attribution travels with the alert. */
+    val sourceName: String = "",
 )
 
 /**
@@ -25,18 +28,21 @@ data class JobNotification(
  *
  * Three rules, in order:
  *  1. Only postings that score at or above [minMatchScore] are considered — a notification
- *     is a claim the app is confident enough to interrupt the user for.
+ *     is a claim the app is confident enough to interrupt the user for. The threshold is the
+ *     user's to set (see [com.aiglobal.jobfinder.data.refresh.AlertThreshold]); [DEFAULT_MIN_MATCH]
+ *     is the conservative default.
  *  2. A posting the user has already been told about is never repeated, even across
  *     restarts, because the set of notified ids is persisted.
  *  3. The body states only facts from the listing. Sponsorship and "open to international
  *     applicants" are mentioned *only* when the eligibility engine already found official
- *     evidence for them; otherwise the wording stays neutral.
+ *     evidence for them; otherwise the wording stays neutral. The source is always named,
+ *     and the verification read is quoted only when it has something to say.
  *
  * The result is also capped at [maxPerRun] so a big feed cannot fire a dozen notifications
  * at once; the strongest matches win.
  */
 class JobNotificationPolicy(
-    private val minMatchScore: Int = 65,
+    private val minMatchScore: Int = DEFAULT_MIN_MATCH,
     private val maxPerRun: Int = 3,
 ) {
 
@@ -70,12 +76,35 @@ class JobNotificationPolicy(
             MadagascarEligibility.UNCLEAR -> "Check whether they accept applicants from Madagascar."
             MadagascarEligibility.RESTRICTED -> "This one looks local-only — probably not a fit."
         }
+        val lines = buildList {
+            add("${job.company}$where")
+            add(eligibility)
+            job.matchedTargetRole?.let { add("Matches your target role: $it.") }
+            verificationNote(job)?.let(::add)
+            if (job.source.isNotBlank()) add("Source: ${job.source}.")
+        }
         return JobNotification(
             jobId = job.id,
             title = "${job.matchScore}% match: ${job.title}",
             company = job.company,
-            body = "${job.company}$where\n$eligibility",
+            body = lines.joinToString("\n"),
             matchScore = job.matchScore,
+            sourceName = job.source,
         )
+    }
+
+    /**
+     * A short verification line, or null when the app has nothing to say. A broken link is
+     * the one finding worth interrupting for, because it changes whether applying is worth it.
+     */
+    private fun verificationNote(job: Job): String? = when {
+        job.verification.link.isNegative -> "The application link looks broken — check the posting first."
+        job.verification.activity == VerificationState.CONFIRMED -> "The source confirms it is still open."
+        else -> null
+    }
+
+    companion object {
+        /** The conservative default: only strong matches interrupt the user until they change it. */
+        const val DEFAULT_MIN_MATCH = 75
     }
 }

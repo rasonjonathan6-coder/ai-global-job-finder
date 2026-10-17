@@ -21,12 +21,18 @@ class JobNotificationsCoordinator(
     /**
      * @param jobs the current feed (already scored against the CV)
      * @param enabled the user's notification switch
+     * @param minMatchScore the user's relevance threshold; postings below it stay silent
      * @return the notifications posted, for diagnostics and tests
      */
-    suspend fun notifyNewMatches(jobs: List<Job>, enabled: Boolean): List<JobNotification> {
+    suspend fun notifyNewMatches(
+        jobs: List<Job>,
+        enabled: Boolean,
+        minMatchScore: Int = JobNotificationPolicy.DEFAULT_MIN_MATCH,
+    ): List<JobNotification> {
         if (!enabled || jobs.isEmpty()) return emptyList()
         val already = history.notifiedIds()
-        val selected = policy.select(jobs, already)
+        // The threshold is per-run, so the same coordinator serves a user who has moved it.
+        val selected = JobNotificationPolicy(minMatchScore = minMatchScore).select(jobs, already)
         if (selected.isEmpty()) return emptyList()
         // Record first: a post that races a permission denial still must not repeat later.
         history.record(selected.map { it.jobId })

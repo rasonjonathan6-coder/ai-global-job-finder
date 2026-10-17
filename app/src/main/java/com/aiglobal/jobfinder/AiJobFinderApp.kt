@@ -179,6 +179,7 @@ open class AppContainer(application: Application) {
         autoApplySetter = { enabled -> preferencesRepository.setAutoApplyEnabled(enabled) },
         savedIdsFlow = preferencesRepository.savedJobIds,
         savedIdsSetter = { ids -> preferencesRepository.setSavedJobIds(ids) },
+        seenLedger = jobSeenLedger,
     )
 
     /**
@@ -307,6 +308,26 @@ open class AppContainer(application: Application) {
 
     /** The one periodic background refresh. Created here; the schedule follows the preference. */
     val jobRefreshScheduler: JobRefreshScheduler by lazy { JobRefreshScheduler(application) }
+
+    /**
+     * The incremental-search ledger: what the app has already seen, so a scheduled run can
+     * tell a genuinely new opening apart from one it has shown before. Shared by the
+     * repository (which records each read) and the Profile summary (which reports the delta).
+     */
+    val jobSeenLedger: com.aiglobal.jobfinder.data.discovery.JobSeenLedger by lazy {
+        com.aiglobal.jobfinder.data.discovery.JobSeenLedger(application)
+    }
+
+    /**
+     * The plain-language state of automatic discovery, assembled from the repository's
+     * diagnostics and the last incremental delta, so the settings section can show when a
+     * search last ran and succeeded, how much is new, and which sources are failing.
+     */
+    val discoverySummary: Flow<com.aiglobal.jobfinder.data.discovery.DiscoverySummary> by lazy {
+        combine(jobRepository.diagnostics, jobRepository.discovery) { diagnostics, delta ->
+            com.aiglobal.jobfinder.data.discovery.DiscoverySummary.from(diagnostics, delta)
+        }
+    }
 
     /** The current CV-derived profile, read synchronously for the auto-apply prep pass. */
     private fun candidateProfileValue(): CandidateProfile = candidateProfileState.value

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -132,12 +133,27 @@ private val CV_MIME_TYPES = arrayOf(
 fun AiJobFinderRoot(
     container: AppContainer,
     appViewModel: AppViewModel,
+    /**
+     * A posting id a notification asked to open, or null. Consumed once via
+     * [onPendingJobConsumed] so it does not re-open on recomposition.
+     */
+    pendingJobId: String? = null,
+    onPendingJobConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val current = Destination.fromRoute(currentRoute)
+
+    // A tapped match notification deep-links straight to that posting. The signal is one-shot,
+    // so this fires at most once per tap and never fights the user's own navigation.
+    LaunchedEffect(pendingJobId) {
+        if (!pendingJobId.isNullOrBlank()) {
+            navController.navigate(SecondaryRoutes.coverLetter(pendingJobId))
+            onPendingJobConsumed()
+        }
+    }
     // Secondary screens are pushed on top of a tab, so they hide the tab bar and offer
     // their own back affordance instead.
     val showBottomBar = Destination.entries.any { it.route == currentRoute }

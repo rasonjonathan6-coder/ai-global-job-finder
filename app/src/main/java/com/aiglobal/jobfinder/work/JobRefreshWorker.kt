@@ -6,6 +6,7 @@ import androidx.work.WorkerParameters
 import com.aiglobal.jobfinder.AiJobFinderApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
@@ -13,10 +14,11 @@ import kotlinx.coroutines.withContext
  * it pulls the real repository and notification coordinator from [AiJobFinderApp.container]
  * so a scheduled run uses exactly the same feed, cache and scoring as the foreground app.
  *
- * Retry policy: a run that produced data — even partially — succeeds, because the repository
- * already kept the last good cache and deduplicated what arrived. A run that came back with
- * nothing usable (offline at the moment the work ran, or every source failed) returns
- * [Result.retry], which is what lets WorkManager's exponential backoff do its job.
+ * Retry policy: delegated to [RefreshRetryPolicy], which retries only when a later attempt
+ * could plausibly help — offline, or every source failed transiently. A run that produced
+ * data, even partially, succeeds, because the repository already kept the last good cache
+ * and deduplicated what arrived; a permanent failure (a missing key, rejected credentials)
+ * is not retried, so the app does not spend battery repeating something that cannot change.
  */
 class JobRefreshWorker(
     context: Context,
@@ -31,6 +33,8 @@ class JobRefreshWorker(
             repository = container.jobRepository,
             notifications = container.jobNotificationsCoordinator,
             notificationsEnabled = container.preferencesRepository.notificationsEnabled,
+            alertMinMatchScore = container.preferencesRepository.refreshPreferences
+                .map { it.alertMinMatchScore },
             demoMode = container.demoMode,
         )
 
@@ -43,10 +47,6 @@ class JobRefreshWorker(
         }
 
         val diagnostics = container.jobRepository.diagnostics.first()
-        when {
-            !diagnostics.networkAvailable -> Result.retry()
-            diagnostics.showingCachedOnly -> Result.retry()
-            else -> Result.success()
-        }
+        if (RefreshRetryPolicy.shouldRetry(diagnostics)) Result.retry() else Result.success()
     }
 }

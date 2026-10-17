@@ -1,9 +1,11 @@
 package com.aiglobal.jobfinder.work
 
+import com.aiglobal.jobfinder.data.notifications.JobNotificationPolicy
 import com.aiglobal.jobfinder.data.notifications.JobNotificationsCoordinator
 import com.aiglobal.jobfinder.data.repository.JobRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * The single unit of work a background refresh performs: read the feeds, then decide whether
@@ -14,6 +16,8 @@ class JobRefreshRunner(
     private val repository: JobRepository,
     private val notifications: JobNotificationsCoordinator,
     private val notificationsEnabled: Flow<Boolean>,
+    /** The user's alert relevance bar, read fresh each run so a changed setting takes effect. */
+    private val alertMinMatchScore: Flow<Int> = flowOf(JobNotificationPolicy.DEFAULT_MIN_MATCH),
     private val demoMode: Flow<Boolean>,
 ) {
 
@@ -27,7 +31,11 @@ class JobRefreshRunner(
         repository.runLiveValidation()
 
         val jobs = repository.jobs.first()
-        val posted = notifications.notifyNewMatches(jobs, enabled = notificationsEnabled.first())
+        val posted = notifications.notifyNewMatches(
+            jobs = jobs,
+            enabled = notificationsEnabled.first(),
+            minMatchScore = alertMinMatchScore.first(),
+        )
         return posted.map { it.jobId }
     }
 }

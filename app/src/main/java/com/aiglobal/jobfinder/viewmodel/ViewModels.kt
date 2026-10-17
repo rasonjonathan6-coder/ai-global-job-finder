@@ -27,6 +27,7 @@ import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import com.aiglobal.jobfinder.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -74,6 +75,23 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     val notificationsEnabled: StateFlow<Boolean> = container.preferencesRepository.notificationsEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /**
+     * The state of automatic discovery: when a search last ran and succeeded, how much is new,
+     * and which sources are failing. Assembled from the repository's own diagnostics, so it
+     * describes what actually happened rather than what was requested.
+     */
+    val discoverySummary: StateFlow<com.aiglobal.jobfinder.data.discovery.DiscoverySummary> =
+        container.discoverySummary
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                com.aiglobal.jobfinder.data.discovery.DiscoverySummary(),
+            )
+
+    /** True while a user-initiated "search now" is in flight, so the button can show progress. */
+    private val _searchingNow = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val searchingNow: StateFlow<Boolean> = _searchingNow.asStateFlow()
+
     fun setAutoRefreshEnabled(enabled: Boolean) {
         viewModelScope.launch { container.preferencesRepository.setAutoRefreshEnabled(enabled) }
     }
@@ -84,6 +102,28 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch { container.preferencesRepository.setNotificationsEnabled(enabled) }
+    }
+
+    /** Moves the relevance bar a newly discovered posting must clear to raise an alert. */
+    fun setAlertThreshold(threshold: com.aiglobal.jobfinder.data.refresh.AlertThreshold) {
+        viewModelScope.launch { container.preferencesRepository.setAlertMinMatchScore(threshold.score) }
+    }
+
+    /**
+     * Runs one search immediately and waits for it, so the settings section can show live
+     * progress and an updated result. A second tap while one is running is ignored rather
+     * than queued, matching the repository's own single-flight behaviour.
+     */
+    fun searchNow() {
+        if (_searchingNow.value) return
+        viewModelScope.launch {
+            _searchingNow.value = true
+            try {
+                container.jobRepository.runLiveValidation()
+            } finally {
+                _searchingNow.value = false
+            }
+        }
     }
 
     /**

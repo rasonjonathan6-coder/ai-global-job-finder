@@ -155,4 +155,8 @@ class SampleJobRepository(
 
     /** The fixture is already sample data, so demo mode has nothing to switch. */
     override suspend fun setDemoMode(enabled: Boolean) = Unit
+
+    /** The fixture has no notion of a first sighting, so the delta is always empty. */
+    override val discovery: Flow<com.aiglobal.jobfinder.data.discovery.DiscoveryDelta> =
+        MutableStateFlow(com.aiglobal.jobfinder.data.discovery.DiscoveryDelta())
 }

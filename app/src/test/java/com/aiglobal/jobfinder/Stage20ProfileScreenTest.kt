@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.aiglobal.jobfinder.data.discovery.DiscoverySummary
+import com.aiglobal.jobfinder.data.refresh.AlertThreshold
 import com.aiglobal.jobfinder.data.refresh.RefreshInterval
 import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import com.aiglobal.jobfinder.ui.screens.profile.RefreshAndNotificationsCard
@@ -31,18 +33,26 @@ class Stage20ProfileScreenTest {
     private fun render(
         preferences: RefreshPreferences = RefreshPreferences(),
         notificationsEnabled: Boolean = false,
+        summary: DiscoverySummary = DiscoverySummary(),
+        searchingNow: Boolean = false,
         onAutoRefreshChange: (Boolean) -> Unit = {},
         onIntervalChange: (RefreshInterval) -> Unit = {},
         onNotificationsChange: (Boolean) -> Unit = {},
+        onAlertThresholdChange: (AlertThreshold) -> Unit = {},
+        onSearchNow: () -> Unit = {},
     ) {
         composeRule.setContent {
             AiJobFinderTheme {
                 RefreshAndNotificationsCard(
                     preferences = preferences,
                     notificationsEnabled = notificationsEnabled,
+                    summary = summary,
+                    searchingNow = searchingNow,
                     onAutoRefreshChange = onAutoRefreshChange,
                     onIntervalChange = onIntervalChange,
                     onNotificationsChange = onNotificationsChange,
+                    onAlertThresholdChange = onAlertThresholdChange,
+                    onSearchNow = onSearchNow,
                 )
             }
         }
@@ -72,5 +82,42 @@ class Stage20ProfileScreenTest {
         render(preferences = RefreshPreferences(enabled = false))
         composeRule.onNodeWithText("Every 6 hours").assertDoesNotExist()
         composeRule.onNodeWithText("Off — jobs refresh only when you open the app").assertIsDisplayed()
+    }
+
+    @Test
+    fun theAlertBarIsHiddenWhenNotificationsAreOff() {
+        render(notificationsEnabled = false)
+        composeRule.onNodeWithText("Alert me when a new match reaches").assertDoesNotExist()
+    }
+
+    @Test
+    fun theAlertBarReportsAChosenThreshold() {
+        var chosen: AlertThreshold? = null
+        render(notificationsEnabled = true, onAlertThresholdChange = { chosen = it })
+        composeRule.onNodeWithText("Alert me when a new match reaches").assertIsDisplayed()
+        composeRule.onNodeWithText("Excellent only").performClick()
+        composeRule.waitForIdle()
+        assertEquals(AlertThreshold.EXCELLENT, chosen)
+    }
+
+    @Test
+    fun theStatusLineDescribesTheLastSearchHonestly() {
+        render(
+            summary = DiscoverySummary(
+                lastSearchAtEpochMillis = 1_000,
+                lastSuccessAtEpochMillis = 1_000,
+                newCount = 2,
+                knownCount = 40,
+            ),
+        )
+        composeRule.onNodeWithText("2 new postings", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("40 postings tracked so far.").assertIsDisplayed()
+        composeRule.onNodeWithText("Search now").assertIsDisplayed()
+    }
+
+    @Test
+    fun aFreshInstallSaysNoSearchHasFinishedYet() {
+        render()
+        composeRule.onNodeWithText("No search has finished yet.").assertIsDisplayed()
     }
 }
