@@ -20,9 +20,24 @@ import com.aiglobal.jobfinder.data.model.JobBenefitTypes
  */
 class ExpatBenefitExtractor {
 
-    fun extract(title: String, description: String, tags: List<String> = emptyList()): List<BenefitEvidence> {
+    /**
+     * @param source the source name the text came from, recorded on each finding so the
+     *   claim can be traced back to where it was read.
+     * @param verifiedAtEpochMillis when the text was read, recorded on each finding so a
+     *   later reader can tell a fresh claim from a stale one. Null means "not recorded",
+     *   which is left null rather than filled with a plausible-looking timestamp.
+     */
+    fun extract(
+        title: String,
+        description: String,
+        tags: List<String> = emptyList(),
+        source: String = "",
+        verifiedAtEpochMillis: Long? = null,
+    ): List<BenefitEvidence> {
         val sentences = sentencesOf(listOf(title, tags.joinToString(" "), description).joinToString(". "))
-        return JobBenefitTypes.all.map { type -> assess(type, sentences) }
+        return JobBenefitTypes.all.map { type ->
+            assess(type, sentences).copy(source = source, verifiedAtEpochMillis = verifiedAtEpochMillis)
+        }
     }
 
     private fun assess(type: BenefitType, sentences: List<String>): BenefitEvidence {
@@ -129,6 +144,20 @@ class ExpatBenefitExtractor {
                     "without sponsorship", "no sponsorship",
                 ),
             ),
+            JobBenefitTypes.WORK_PERMIT.key to Rules(
+                strong = listOf(
+                    "work permit", "work permits", "work permit support", "work permit provided",
+                    "work permit assistance", "we obtain your work permit", "work authorisation",
+                    "work authorization", "right to work", "work visa", "employment permit",
+                    "residence permit", "we handle the work permit", "permit sponsorship",
+                ),
+                hedged = listOf("permit assistance", "work permit support available"),
+                refusals = listOf(
+                    "no work permit", "work permit not provided", "must have the right to work",
+                    "must already have the right to work", "no work authorisation",
+                    "no work authorization",
+                ),
+            ),
             JobBenefitTypes.RELOCATION_SUPPORT.key to Rules(
                 strong = listOf(
                     "relocation package", "relocation support", "relocation assistance",
@@ -172,6 +201,15 @@ class ExpatBenefitExtractor {
                 ),
                 hedged = listOf("health care"),
                 refusals = listOf("no health insurance", "no medical insurance"),
+            ),
+            JobBenefitTypes.PAID_LEAVE.key to Rules(
+                strong = listOf(
+                    "paid leave", "paid annual leave", "annual leave", "paid vacation",
+                    "paid holiday", "holiday entitlement", "leave entitlement", "paid time off",
+                    "annual leave allowance", "vacation allowance", "rotation leave",
+                ),
+                hedged = listOf("leave allowance", "days leave"),
+                refusals = listOf("no paid leave", "unpaid leave only"),
             ),
             JobBenefitTypes.MEALS.key to Rules(
                 strong = listOf(

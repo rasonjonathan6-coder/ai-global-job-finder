@@ -58,6 +58,7 @@ class Stage48ExpatRankingTest {
 
     private val confirmedVerification = OfferVerification(
         activity = VerificationState.CONFIRMED,
+        deadline = VerificationState.CONFIRMED,
         link = VerificationState.CONFIRMED,
         visa = VerificationState.CONFIRMED,
         relocation = VerificationState.CONFIRMED,

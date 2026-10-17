@@ -55,6 +55,10 @@ enum class RecordRejectionReason(val label: String, val explanation: String) {
         "No longer accepting applicants",
         "The source itself reports the posting is closed to new applicants, so applying would lead nowhere.",
     ),
+    EXPIRED(
+        "Application deadline passed",
+        "The posting stated an application deadline that has already passed, so applying would be too late.",
+    ),
 }
 
 /** The outcome of validating one record. */
@@ -140,6 +144,12 @@ class RecordValidationEngine(
 
         reasons += salaryIssues(raw)
         reasons += ageIssues(raw, now)
+
+        // A deadline the source stated that has already passed is positive evidence the
+        // posting is closed, so it is dropped with its own reason. A posting with no stated
+        // deadline is never rejected here: "unknown" is not "expired".
+        val expires = raw.expiresAtEpochMillis
+        if (expires != null && expires <= now) reasons += RecordRejectionReason.EXPIRED
 
         // A posting the source itself marks as closed is not shown as if it were open. This
         // is a stated fact, not an age guess, so it is surfaced with its own reason.

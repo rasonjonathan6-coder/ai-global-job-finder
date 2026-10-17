@@ -79,6 +79,10 @@ class JobMapper(
             title = raw.title,
             description = plainDescription,
             tags = raw.tags,
+            // Record where and when each claim was read, so a benefit can be re-checked
+            // later and a stale claim shown as stale rather than as current.
+            source = raw.providerName,
+            verifiedAtEpochMillis = raw.retrievedAtEpochMillis ?: now,
         )
 
         val relevance = RoleClassifier.classify(
@@ -115,6 +119,7 @@ class JobMapper(
             // Never invent a publication date: a month-old posting shown as "just now"
             // misleads the candidate. Keep null when the source did not state one.
             postedAtEpochMillis = raw.postedAtEpochMillis,
+            expiresAtEpochMillis = raw.expiresAtEpochMillis,
             retrievedAtEpochMillis = raw.retrievedAtEpochMillis ?: now,
             source = raw.providerName,
             sourceUrl = raw.url,

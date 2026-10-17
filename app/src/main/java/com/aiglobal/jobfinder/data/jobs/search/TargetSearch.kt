@@ -59,6 +59,11 @@ object TargetSearch {
             titleSignals = listOf("rotating equipment", "rotating machinery"),
         ),
         TargetRole(
+            canonical = "Mechanical Seal Technician",
+            searchPhrases = listOf("mechanical seal technician", "mechanical seals technician", "mechanical seal fitter", "mechanical seals"),
+            titleSignals = listOf("mechanical seal", "mechanical seals", "seal technician"),
+        ),
+        TargetRole(
             canonical = "Mining Maintenance Technician",
             searchPhrases = listOf("mining maintenance technician", "mine maintenance", "mining maintenance"),
             titleSignals = listOf("mine maintenance", "mining maintenance", "mining technician"),
@@ -72,6 +77,11 @@ object TargetSearch {
             canonical = "Equipment Service Technician",
             searchPhrases = listOf("equipment service technician", "field service technician", "service technician"),
             titleSignals = listOf("service technician", "field service"),
+        ),
+        TargetRole(
+            canonical = "On-site Services Technician",
+            searchPhrases = listOf("site services technician", "onsite services technician", "field service engineer", "site maintenance services"),
+            titleSignals = listOf("site services", "onsite services", "on-site services"),
         ),
         TargetRole(
             canonical = "Production Maintenance Technician",
@@ -109,6 +119,8 @@ object TargetSearch {
      */
     val equipmentTerms: List<String> = listOf(
         "pump", "pumps", "conveyor", "conveyors", "rotating equipment", "rotating machinery",
+        "mechanical seal", "mechanical seals", "seal kit", "gasket", "impeller", "wear ring",
+        "coupling", "laser alignment", "vibration analysis", "condition monitoring",
         "compressor", "gearbox", "bearing", "hydraulic", "hydraulics", "pneumatic",
         "pneumatics", "turbine", "diesel", "generator", "motor", "valve", "pipeline",
         "crusher", "mill", "kiln", "boiler", "chiller", "hvac",

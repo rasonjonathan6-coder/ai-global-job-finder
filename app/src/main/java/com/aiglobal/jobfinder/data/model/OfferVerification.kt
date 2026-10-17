@@ -45,6 +45,7 @@ enum class VerificationAspect(val label: String) {
     SOURCE("Source"),
     APPLICATION_LINK("Application link"),
     VACANCY_ACTIVITY("Vacancy activity"),
+    APPLICATION_DEADLINE("Application deadline"),
     VISA("Visa / sponsorship"),
     RELOCATION("Relocation"),
     FRESHNESS("Verification age"),
@@ -90,6 +91,8 @@ data class VerificationFact(
 data class OfferVerification(
     /** Whether the vacancy appears to be taking applicants. */
     val activity: VerificationState,
+    /** Whether the employer published an application deadline that has not passed. */
+    val deadline: VerificationState,
     /** Whether the application link is present and plausibly usable. */
     val link: VerificationState,
     /** Whether the employer documents a route in for a Madagascar applicant. */
@@ -112,11 +115,12 @@ data class OfferVerification(
      * it is closed, or the application link is unusable. A known dead end is never allowed
      * to outrank a live posting in a "best fit" sort.
      */
-    val isActionable: Boolean get() = !activity.isNegative && !link.isNegative
+    val isActionable: Boolean get() = !activity.isNegative && !link.isNegative && !deadline.isNegative
 
     /** True when the app has no evidence at all, so the UI shows "unknown" rather than a tick. */
     val isEntirelyUnknown: Boolean
-        get() = activity.isUnknown && link.isUnknown && visa.isUnknown && relocation.isUnknown
+        get() = activity.isUnknown && deadline.isUnknown && link.isUnknown &&
+            visa.isUnknown && relocation.isUnknown
 
     companion object {
         /**
@@ -125,6 +129,7 @@ data class OfferVerification(
          */
         val UNKNOWN = OfferVerification(
             activity = VerificationState.UNKNOWN,
+            deadline = VerificationState.UNKNOWN,
             link = VerificationState.UNKNOWN,
             visa = VerificationState.UNKNOWN,
             relocation = VerificationState.UNKNOWN,

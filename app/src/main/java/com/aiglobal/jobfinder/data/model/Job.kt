@@ -71,6 +71,12 @@ data class Job(
     val scamRisk: ScamRisk,
     /** When the source published the posting, or null when it did not state a date. */
     val postedAtEpochMillis: Long?,
+    /**
+     * The application deadline the source itself published, when it published one. Null
+     * means the source stated no deadline, which is not the same as "no deadline exists".
+     * A stated deadline that has already passed is positive evidence the posting is expired.
+     */
+    val expiresAtEpochMillis: Long? = null,
     /** When the app retrieved this posting. Null only for records built before Stage 13. */
     val retrievedAtEpochMillis: Long? = null,
     val source: String,

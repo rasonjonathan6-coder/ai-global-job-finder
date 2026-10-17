@@ -56,6 +56,7 @@ class JobCache(private val directory: File) {
         put("tags", JSONArray(tags))
         put("employmentType", employmentType ?: JSONObject.NULL)
         put("postedAt", postedAtEpochMillis ?: JSONObject.NULL)
+        put("expiresAt", expiresAtEpochMillis ?: JSONObject.NULL)
         put("retrievedAt", retrievedAtEpochMillis ?: JSONObject.NULL)
         put("isRemote", isRemote)
         put("salaryMin", salaryMin ?: JSONObject.NULL)
@@ -78,6 +79,7 @@ class JobCache(private val directory: File) {
         tags = json.optJSONArray("tags").toStringList(),
         employmentType = json.optStringOrNull("employmentType"),
         postedAtEpochMillis = json.optLongOrNull("postedAt"),
+        expiresAtEpochMillis = json.optLongOrNull("expiresAt"),
         retrievedAtEpochMillis = json.optLongOrNull("retrievedAt"),
         isRemote = json.optBoolean("isRemote", false),
         salaryMin = json.optIntOrNull("salaryMin"),

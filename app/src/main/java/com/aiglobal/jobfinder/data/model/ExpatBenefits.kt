@@ -24,10 +24,23 @@ data class BenefitType(
  */
 object JobBenefitTypes {
     val VISA_SPONSORSHIP = BenefitType("visa_sponsorship", "Visa sponsorship", "Visa", "🛂", defaultPriority = 3)
+    /**
+     * A work permit or work authorisation is a distinct thing from visa sponsorship: an
+     * employer can help you obtain the right to work without sponsoring a visa, and the
+     * candidate needs to see which of the two a listing actually promises. Kept separate
+     * rather than folded into [VISA_SPONSORSHIP] so the two are never blurred.
+     */
+    val WORK_PERMIT = BenefitType("work_permit", "Work permit support", "Work permit", "📄", defaultPriority = 2)
     val RELOCATION_SUPPORT = BenefitType("relocation_support", "Relocation support", "Relocation", "📦", defaultPriority = 2)
     val ACCOMMODATION = BenefitType("accommodation", "Accommodation provided", "Housing", "🏠", defaultPriority = 2)
     val FLIGHTS_HOME = BenefitType("flights_home", "Annual flights home", "Flights", "✈️", defaultPriority = 1)
     val HEALTH_INSURANCE = BenefitType("health_insurance", "Health insurance", "Health cover", "🏥", defaultPriority = 1)
+    /**
+     * Paid leave / annual leave is a core contract term for an expat posting — often the
+     * deciding factor for a rotation or a family move — so it is tracked as its own benefit
+     * rather than left implicit. It is read from the posting text like the others.
+     */
+    val PAID_LEAVE = BenefitType("paid_leave", "Paid leave / annual leave", "Leave", "🌴", defaultPriority = 1)
     val MEALS = BenefitType("meals", "Meals provided", "Meals", "🍽️", defaultPriority = 0)
     val TRANSPORT = BenefitType("transport", "Transport / allowance", "Transport", "🚌", defaultPriority = 0)
     val LANGUAGE_TRAINING = BenefitType("language_training", "Language training", "Language", "🗣️", defaultPriority = 0)
@@ -43,10 +56,12 @@ object JobBenefitTypes {
     /** Stable display order for the benefits read from the posting text. */
     val all: List<BenefitType> = listOf(
         VISA_SPONSORSHIP,
+        WORK_PERMIT,
         RELOCATION_SUPPORT,
         ACCOMMODATION,
         FLIGHTS_HOME,
         HEALTH_INSURANCE,
+        PAID_LEAVE,
         FAMILY_SUPPORT,
         MEALS,
         TRANSPORT,
@@ -93,18 +108,48 @@ enum class BenefitPriority(val weight: Int, val label: String) {
  * One benefit finding, carrying the evidence it was derived from. [evidence] is the
  * sentence (or phrase) in the posting that produced the status, so the user can read the
  * employer's own words instead of trusting a score.
+ *
+ * [source] and [verifiedAtEpochMillis] record *where* and *when* that evidence was read.
+ * They exist so a benefit can be re-checked later: a claim read from a listing months ago
+ * is not the same as one read today, and a stale claim must be shown as stale rather than
+ * presented as current. Both default to "not recorded" so a caller that has no provenance
+ * (a hand-built test finding, say) is honest about the gap instead of inventing one.
  */
 @Immutable
 data class BenefitEvidence(
     val type: BenefitType,
     val status: BenefitStatus,
     val evidence: String,
+    /** Where the evidence came from, e.g. the source name; blank when not recorded. */
+    val source: String = "",
+    /** When the evidence was read from the source, in epoch millis; null when not recorded. */
+    val verifiedAtEpochMillis: Long? = null,
 ) {
     /** True when the finding rests on something the posting actually said. */
     val isDocumented: Boolean
         get() = status == BenefitStatus.CONFIRMED ||
             status == BenefitStatus.NOT_OFFERED ||
             status == BenefitStatus.NEEDS_VERIFICATION
+
+    /** True when the finding carries enough provenance to be re-checked later. */
+    val hasProvenance: Boolean
+        get() = source.isNotBlank() && verifiedAtEpochMillis != null
+
+    /**
+     * True when the evidence is older than [staleDays]. A finding with no recorded
+     * verification date is not stale — it is unverifiable, which is a different thing the
+     * caller must handle separately (see [hasProvenance]).
+     */
+    fun isStale(now: Long, staleDays: Int = DEFAULT_STALE_DAYS): Boolean {
+        val verified = verifiedAtEpochMillis ?: return false
+        if (verified > now) return false
+        return (now - verified) / DAY_MS > staleDays
+    }
+
+    companion object {
+        const val DEFAULT_STALE_DAYS = 30
+        private const val DAY_MS = 86_400_000L
+    }
 }
 
 /**

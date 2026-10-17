@@ -41,6 +41,7 @@ class OfferVerificationEngine(
 
     fun assess(job: Job, now: Long = System.currentTimeMillis()): OfferVerification {
         val activity = activityState(job)
+        val deadline = deadlineState(job, now)
         val linkState = linkState(job)
         val visa = visaState(job)
         val relocation = relocationState(job)
@@ -49,16 +50,18 @@ class OfferVerificationEngine(
         val facts = buildList {
             add(sourceFact(job))
             add(activityFact(job, activity))
+            add(deadlineFact(job, deadline))
             add(linkFact(job, linkState))
             add(visaFact(job, visa))
             add(relocationFact(job, relocation))
             add(freshnessFact(job, freshness, now))
         }
 
-        val caveats = caveatsFor(job, activity, linkState, visa, freshness)
+        val caveats = caveatsFor(job, activity, deadline, linkState, visa, freshness)
 
         return OfferVerification(
             activity = activity,
+            deadline = deadline,
             link = linkState,
             visa = visa,
             relocation = relocation,
@@ -66,7 +69,7 @@ class OfferVerificationEngine(
             freshness = freshness,
             facts = facts,
             caveats = caveats,
-            summary = summaryFor(activity, linkState, visa, freshness),
+            summary = summaryFor(activity, deadline, linkState, visa, freshness),
         )
     }
 
@@ -77,6 +80,19 @@ class OfferVerificationEngine(
         false -> VerificationState.EXPIRED
         // No flag: age is not proof of expiry, so the honest answer is "unknown".
         null -> VerificationState.UNKNOWN
+    }
+
+    // ---- Deadline: only the employer's own stated date can expire a posting -----
+
+    /**
+     * Reads the employer's own application deadline. A posting with no stated deadline is
+     * [VerificationState.UNKNOWN], never [VerificationState.EXPIRED]: silence about a deadline
+     * is not a claim that one passed. Only a date the employer published that is already
+     * behind [now] becomes [VerificationState.EXPIRED].
+     */
+    private fun deadlineState(job: Job, now: Long): VerificationState {
+        val expires = job.expiresAtEpochMillis ?: return VerificationState.UNKNOWN
+        return if (expires <= now) VerificationState.EXPIRED else VerificationState.CONFIRMED
     }
 
     // ---- Link: present and plausible, or positively unusable -------------------
@@ -169,6 +185,18 @@ class OfferVerificationEngine(
         return VerificationFact(VerificationAspect.VACANCY_ACTIVITY, strengthFor(state), label, detail, job.sourceUrl)
     }
 
+    private fun deadlineFact(job: Job, state: VerificationState): VerificationFact {
+        val label = "Application deadline"
+        val detail = when (state) {
+            VerificationState.EXPIRED ->
+                "The employer stated an application deadline of ${dateOf(job.expiresAtEpochMillis)}, which has passed."
+            VerificationState.CONFIRMED ->
+                "The employer states applications close ${dateOf(job.expiresAtEpochMillis)}."
+            else -> "The posting does not state an application deadline. Confirm the closing date before you rely on it."
+        }
+        return VerificationFact(VerificationAspect.APPLICATION_DEADLINE, strengthFor(state), label, detail, job.sourceUrl)
+    }
+
     private fun linkFact(job: Job, state: VerificationState): VerificationFact {
         val inspection = linkInspector.inspect(job)
         val detail = when (state) {
@@ -233,11 +261,21 @@ class OfferVerificationEngine(
         }
     }
 
+    /** A stated calendar date, rendered in UTC so the same instant reads the same everywhere. */
+    private fun dateOf(epochMillis: Long?): String {
+        if (epochMillis == null) return "a date the posting did not show"
+        return java.time.Instant.ofEpochMilli(epochMillis)
+            .atZone(java.time.ZoneOffset.UTC)
+            .toLocalDate()
+            .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy"))
+    }
+
     // ---- Caveats and summary ---------------------------------------------------
 
     private fun caveatsFor(
         job: Job,
         activity: VerificationState,
+        deadline: VerificationState,
         link: VerificationState,
         visa: VerificationState,
         freshness: VerificationState,
@@ -247,6 +285,9 @@ class OfferVerificationEngine(
         }
         if (activity == VerificationState.EXPIRED) {
             add("The source reports this posting is no longer accepting applicants.")
+        }
+        if (deadline == VerificationState.EXPIRED) {
+            add("The application deadline the employer stated has passed, so an application would be too late.")
         }
         if (job.eligibility == MadagascarEligibility.RESTRICTED) {
             add("The posting is limited to local applicants, so a Madagascar application is unlikely to be considered.")
@@ -263,12 +304,14 @@ class OfferVerificationEngine(
 
     private fun summaryFor(
         activity: VerificationState,
+        deadline: VerificationState,
         link: VerificationState,
         visa: VerificationState,
         freshness: VerificationState,
     ): String = buildString {
         when {
             link == VerificationState.INACCESSIBLE -> append("No usable application link.")
+            deadline == VerificationState.EXPIRED -> append("The stated application deadline has passed.")
             activity == VerificationState.EXPIRED -> append("The source reports this posting is closed.")
             activity == VerificationState.CONFIRMED -> append("The source reports this posting is open.")
             else -> append("The app cannot confirm whether this posting is still open.")

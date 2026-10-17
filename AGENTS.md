@@ -2109,6 +2109,50 @@ Modifié : `OfficialSubmissionAudit.kt`, `SubmissionLifecycle.kt`, `SubmissionPr
 `ApplicationsScreen.kt`, `DraftApprovalCard.kt`, `LiveSearchValidationScreen.kt`,
 `AiJobFinderRoot.kt`, `AGENTS.md`.
 
+## Étape 50 — qualité de l'offre et vérification en direct
+
+**Types de bénéfices manquants.** `JobBenefitTypes` ne couvrait pas tout ce qu'un poste
+international documente réellement : ajout de `RELOCATION_SUPPORT`, `ACCOMMODATION`,
+`MINIMUM_SALARY`, `WORK_PERMIT` et `PAID_LEAVE` (ce dernier **distinct** du visa : obtenir un
+permis n'est pas la même chose que l'employeur sponsorise un visa). `ExpatBenefitExtractor`
+gagne des blocs de règles `WORK_PERMIT` (après le visa) et `PAID_LEAVE` (après la santé), avec
+des phrases de relocalisation restaurées. `BenefitEvidence` porte désormais `source` et
+`verifiedAtEpochMillis` (défaut « non enregistré », jamais inventé) pour qu'une affirmation lue
+il y a des mois puisse être détectée comme périmée (`hasProvenance`, `isStale`).
+
+**Couverture des rôles.** `TargetSearch` reconnaît de nouveaux intitulés de métier
+(mechanical fitter, plant maintenance technician, equipment service technician) et un jeu de
+`equipmentTerms`, pour que les offres de maintenance industrielle réelles ne soient pas
+écartées comme hors-sujet.
+
+**La date limite comme axe à part entière.** `RawJob` portait déjà `expiresAtEpochMillis`, mais
+la lecture de vérification ne l'exposait pas. `Job` et `OfferVerification` portent maintenant
+`expiresAtEpochMillis` et un axe `deadline` (`VerificationAspect.APPLICATION_DEADLINE`).
+`OfferVerificationEngine` lit la date **de l'employeur** : une date publiée déjà passée est
+`EXPIRED` ; une offre sans date reste `UNKNOWN` — le silence n'est **jamais** une expiration.
+`isActionable` exclut aussi un `deadline` négatif, donc une offre expirée ne peut pas
+surclasser une offre vivante. La date est persistée (`JobCache` : clé `expiresAt`) et affichée
+dans le panneau « Verified before you apply » (les faits sont rendus génériquement).
+
+**Écran diagnostics plus honnête.** `SourceDiagnosticCard` (LiveSearchValidationScreen) affiche
+désormais, sur un échec, « Kept from the last good read … » pour que les compteurs de la carte
+(issus du dernier succès) ne soient pas lus comme ceux de la tentative qui vient d'échouer.
+Le bandeau hors-ligne et la carte `SourceDiagnosticCard`/`SourceDiagnosticsUiState` restent les
+points de lecture uniques de l'état des sources.
+
+**Tests.** `Stage50OfferQualityTest` (18 tests : expiration, lien cassé, restriction locale lue
+comme refus, route visa inconnue non refusée, provenance des bénéfices, permis de travail vs
+visa, congés payés, rôles techniques, et les 4 nouveaux cas de vérification de la date limite)
+et `Stage50ProviderAuditTest` (8 tests). Deux fixtures de pipeline qui se déclaraient
+« entièrement documentées » ont été mises à jour pour inclure les deux nouveaux bénéfices, et
+`Stage42OfferVerificationTest` attend le nouvel axe `APPLICATION_DEADLINE`.
+
+Modifié : `ExpatBenefits.kt`, `ExpatBenefitExtractor.kt`, `TargetSearch.kt`, `Job.kt`,
+`OfferVerification.kt`, `OfferVerificationEngine.kt`, `JobMapper.kt`, `JobCache.kt`,
+`JobProvider.kt`, `RecordValidationEngine.kt`, `LiveSearchValidationScreen.kt`, `JobsScreen.kt`,
+`Stage50OfferQualityTest.kt` (nouveau), `Stage11PipelineTest.kt`, `Stage26PipelineTest.kt`,
+`Stage42OfferVerificationTest.kt`, `Stage48ExpatRankingTest.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

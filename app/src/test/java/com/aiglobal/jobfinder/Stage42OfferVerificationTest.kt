@@ -237,6 +237,7 @@ class Stage42OfferVerificationTest {
             setOf(
                 VerificationAspect.SOURCE,
                 VerificationAspect.VACANCY_ACTIVITY,
+                VerificationAspect.APPLICATION_DEADLINE,
                 VerificationAspect.APPLICATION_LINK,
                 VerificationAspect.VISA,
                 VerificationAspect.RELOCATION,
@@ -247,6 +248,8 @@ class Stage42OfferVerificationTest {
         // The gap is visible, not dropped: an unknown fact is present with UNKNOWN strength.
         val visaFact = result.facts.first { it.aspect == VerificationAspect.VISA }
         assertEquals(EvidenceStrength.UNKNOWN, visaFact.strength)
+        val deadlineFact = result.facts.first { it.aspect == VerificationAspect.APPLICATION_DEADLINE }
+        assertEquals(EvidenceStrength.UNKNOWN, deadlineFact.strength)
     }
 
     @Test

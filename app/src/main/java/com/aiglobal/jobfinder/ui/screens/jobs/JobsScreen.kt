@@ -879,9 +879,10 @@ private fun DiscoveryFactRow(
 }
 
 /**
- * The verification read as its own section: is the vacancy still taking applicants, does
- * the link work, and are the visa / relocation claims documented. Each row is backed by a
- * recorded fact, so a claim can always be traced back to the employer's own words.
+ * The verification read as its own section: is the vacancy still taking applicants, has the
+ * employer's stated deadline passed, does the link work, and are the visa / relocation claims
+ * documented. Each row is backed by a recorded fact, so a claim can always be traced back to
+ * the employer's own words.
  */
 @Composable
 private fun OfferVerificationSection(job: Job) {

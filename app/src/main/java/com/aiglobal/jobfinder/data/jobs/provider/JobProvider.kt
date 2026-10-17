@@ -23,6 +23,13 @@ data class RawJob(
     val tags: List<String> = emptyList(),
     val employmentType: String? = null,
     val postedAtEpochMillis: Long? = null,
+    /**
+     * The application deadline the source itself published, when it published one. Null means
+     * the source stated no deadline — which is not the same as "no deadline exists", so a
+     * missing value never causes a rejection. A stated deadline that has already passed is
+     * positive evidence the posting is no longer worth applying to, and is treated as such.
+     */
+    val expiresAtEpochMillis: Long? = null,
     /** When the app fetched this posting, so an offline cache can report its real age. */
     val retrievedAtEpochMillis: Long? = null,
     val isRemote: Boolean = false,

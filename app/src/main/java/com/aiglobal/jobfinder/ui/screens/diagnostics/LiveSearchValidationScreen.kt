@@ -401,6 +401,18 @@ private fun SourceDiagnosticCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            // A failure does not throw away the last good read, so say so plainly. Without
+            // this the counts on the card (from the older successful attempt) would look like
+            // they came from the attempt that just failed.
+            if (provider.status.isFailure && provider.lastSuccessAtEpochMillis != null) {
+                Text(
+                    text = "Kept from the last good read ${relativeTime(provider.lastSuccessAtEpochMillis)}. " +
+                        "This failure did not empty the list.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = extendedColors.warning,
+                )
+            }
+
             if (audit != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

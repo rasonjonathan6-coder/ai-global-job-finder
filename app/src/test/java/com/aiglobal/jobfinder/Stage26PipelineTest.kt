@@ -55,6 +55,8 @@ class Stage26PipelineTest {
         BenefitEvidence(JobBenefitTypes.ACCOMMODATION, BenefitStatus.CONFIRMED, "Accommodation is provided."),
         BenefitEvidence(JobBenefitTypes.FLIGHTS_HOME, BenefitStatus.CONFIRMED, "One flight home each year."),
         BenefitEvidence(JobBenefitTypes.HEALTH_INSURANCE, BenefitStatus.CONFIRMED, "Private health insurance."),
+        BenefitEvidence(JobBenefitTypes.WORK_PERMIT, BenefitStatus.CONFIRMED, "We obtain your work permit."),
+        BenefitEvidence(JobBenefitTypes.PAID_LEAVE, BenefitStatus.CONFIRMED, "30 days paid annual leave."),
         BenefitEvidence(JobBenefitTypes.FAMILY_SUPPORT, BenefitStatus.CONFIRMED, "Dependants are supported."),
     )
 
