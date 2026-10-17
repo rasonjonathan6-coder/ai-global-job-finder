@@ -207,6 +207,21 @@ class EligibilityEngine {
             "must be a citizen",
             "residing in the country",
             "must reside in",
+            // An explicit refusal of sponsorship is a hard restriction, not a missing
+            // fact. Without these, "this position is not eligible for visa sponsorship"
+            // contains "visa sponsorship" and was read as a *confirmation* of sponsorship,
+            // telling a Madagascar applicant they could apply when the employer said the
+            // opposite. Read as a refusal, the posting is RESTRICTED.
+            "not eligible for visa sponsorship",
+            "not eligible for sponsorship",
+            "visa sponsorship is not available",
+            "no visa sponsorship available",
+            "unable to provide sponsorship",
+            "unable to offer sponsorship",
+            "do not offer sponsorship",
+            "does not offer sponsorship",
+            "do not provide sponsorship",
+            "not able to sponsor",
         )
 
         val SPONSORSHIP_MARKERS = listOf(

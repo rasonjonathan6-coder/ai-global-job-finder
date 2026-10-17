@@ -2153,6 +2153,72 @@ Modifié : `ExpatBenefits.kt`, `ExpatBenefitExtractor.kt`, `TargetSearch.kt`, `J
 `Stage50OfferQualityTest.kt` (nouveau), `Stage11PipelineTest.kt`, `Stage26PipelineTest.kt`,
 `Stage42OfferVerificationTest.kt`, `Stage48ExpatRankingTest.kt`, `AGENTS.md`.
 
+## Étape 51 — validation de bout en bout et préparation à la production
+
+**But.** Vérifier la chaîne complète (sources réelles → analyse → score → éligibilité
+Madagascar → tri) sur des données vivantes, et livrer un état « prêt pour la production ».
+Aucune nouvelle fonctionnalité : l'étape est une validation, plus la correction des défauts
+réels qu'elle révèle.
+
+**Environnement.** JDK 21, SDK `android-34`, Gradle 8.7. Le conteneur n'a **ni `/dev/kvm`, ni
+émulateur, ni appareil** : la validation « sur appareil » est impossible ici et est déclarée
+comme telle plutôt que simulée. L'UI est vérifiée sans appareil via Robolectric
+(`ScreenshotTest` 33 cas, `NavigationTest` 8 cas, clair + sombre, PNG dans
+`app/build/screenshots/`).
+
+**Suite complète.** `./gradlew :app:testDebugUnitTest` → **653 tests, 0 échec, 0 erreur,
+3 ignorés**. Les 3 ignorés sont exactement les sondes réseau gardées par `LIVE_PROBE=1`
+(Stages 14, 17, 37) : elles ne s'exécutent jamais par défaut, donc la suite reste hors-ligne.
+
+**Sondes réseau (`LIVE_PROBE=1`).** Exécutées pour de vrai : Stage 14 atteint les sources sans
+clé (Arbeitnow 60, Remotive 13, Jobicy 50, Himalayas 20 ; Adzuna sans clé = `NOT_CONFIGURED`,
+jamais inventé), Stage 37 atteint les boards Workday (Weir, Sulzer, EPSA, First Quantum).
+Arbeitnow répond 301 → suivi automatiquement (`HttpJsonClient.instanceFollowRedirects = true`).
+
+**Défaut réel trouvé et corrigé — un refus lu comme une offre.** La sonde Stage 14 a montré
+une annonce dont le texte dit *« This position is **not** eligible for visa sponsorship »*
+classée `VISA_SPONSORED` avec `visa_sponsorship=CONFIRMED`. Cause : « visa sponsorship » est
+une phrase forte et la table de négation ne couvrait pas « not eligible », donc un **refus**
+était lu comme une **confirmation**. Deux couches corrigées, car chacune suffisait à tromper :
+- `ExpatBenefitExtractor.NEGATION` couvre désormais `not eligible`, `not able to`,
+  `no sponsorship` (le refus prime sur la phrase forte).
+- `EligibilityEngine.LOCAL_ONLY_MARKERS` liste les refus explicites (« not eligible for visa
+  sponsorship », « unable to provide sponsorship », …), donc un refus devient `RESTRICTED` au
+  lieu de `VISA_SPONSORED`.
+
+Sur données vivantes, le résultat passe de `VISA_SPONSORED`/`CONFIRMED` à
+`RESTRICTED`/`NOT_OFFERED` : dire à un candidat malgache qu'il peut postuler quand l'employeur
+écrit l'inverse est exactement le mensonge que l'app ne doit jamais produire. Trois tests de
+non-régression ajoutés (`Stage50OfferQualityTest`, désormais 21 tests), dont un garde-fou
+prouvant qu'une **vraie** offre de visa reste lue `CONFIRMED` (pas de sur-négation).
+
+**Sources (11 fournisseurs audités).** `ProviderAuditRegistry` décrit chaque source depuis le
+fournisseur lui-même (pas de table tenue à la main) : `id`, `kind`, `dataSource`,
+`documentationUrl`, capacités, `requiresCredentials`, `botGated`. Points clés :
+Arbeitnow/Remotive/Jobicy/Himalayas = sans clé ; EURES = service public (POST) ; Workday,
+Greenhouse, Ashby, Lever, SmartRecruiters = boards employeurs (l'offre est celle de
+l'employeur) ; Adzuna et Jooble = agrégateurs **avec clé** (Jooble est de plus `botGated`).
+`realSubmissionSupported = false` partout : aucune source ne reçoit de candidature réelle.
+
+**Frontières de sécurité vérifiées (verts).** `Stage47DraftApprovalTest` : un brouillon non
+approuvé ne peut pas être envoyé, éditer après approbation exige une nouvelle approbation,
+une même offre ne part pas deux fois, une soumission interrompue est reprise et non perdue,
+et un envoi est enregistré comme **simulation** sans jamais prétendre avoir envoyé.
+`Stage48`/`Stage49` : aucun fournisseur ne se déclare capable d'envoyer, l'audit explique
+pourquoi, et `Simulated ≠ Sent` est prouvé.
+
+**Livrables.** `lintDebug` : **0 erreur**, 53 avertissements (ressources inutilisées /
+dépréciations), 1 information. `assembleDebug` et `assembleRelease` réussissent. La clé API
+NVIDIA n'étant pas fournie dans cet environnement, le chemin d'inférence IA réel (Stage 17,
+Stage 18) est **ignoré**, pas contourné : il est déclaré non vérifié plutôt que faussement vert.
+
+**Limite déclarée.** Aucune exécution sur appareil/émulateur dans ce conteneur ; l'UI est
+validée sans appareil (Robolectric) et par revue des états vide / erreur / chargement
+(`Skeletons.kt`, `EmptyState`, `ErrorState`) présents et rendus.
+
+Modifié : `ExpatBenefitExtractor.kt`, `EligibilityEngine.kt`, `Stage50OfferQualityTest.kt`,
+`AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

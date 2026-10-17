@@ -104,7 +104,8 @@ class ExpatBenefitExtractor {
          */
         val NEGATION = Regex(
             "\\b(cannot|can not|can't|do not|don't|does not|doesn't|will not|won't|unable to|" +
-                "not available|not offered|not provided|isn't|aren't|no longer)\\b",
+                "not available|not offered|not provided|not eligible|not able to|" +
+                "isn't|aren't|no longer|no sponsorship)\\b",
             RegexOption.IGNORE_CASE,
         )
 

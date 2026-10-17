@@ -5,6 +5,7 @@ import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
 import com.aiglobal.jobfinder.data.geo.CurrencyConverter
 import com.aiglobal.jobfinder.data.jobs.JobMapper
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityEngine
+import com.aiglobal.jobfinder.data.jobs.engine.EligibilityInput
 import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
 import com.aiglobal.jobfinder.data.jobs.engine.OfferVerificationEngine
 import com.aiglobal.jobfinder.data.jobs.engine.RecordRejectionReason
@@ -20,6 +21,7 @@ import com.aiglobal.jobfinder.data.model.OfferVerification
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
 import com.aiglobal.jobfinder.data.model.VerificationAspect
 import com.aiglobal.jobfinder.data.model.VerificationState
+import com.aiglobal.jobfinder.data.model.VisaSupport
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -283,6 +285,54 @@ class Stage50OfferQualityTest {
         // The honest empty read must include the new axis, so nothing is left silently claimed.
         assertTrue(OfferVerification.UNKNOWN.deadline.isUnknown)
         assertTrue(OfferVerification.UNKNOWN.isEntirelyUnknown)
+    }
+
+    // ---- Stage 51: a stated refusal must not read as an offer -----------------
+
+    @Test
+    fun aStatedRefusalOfSponsorshipIsReadAsNotOfferedNotConfirmed() {
+        // Found in a live probe: the posting "This position is not eligible for visa
+        // sponsorship" was read as CONFIRMED sponsorship because "visa sponsorship" is a
+        // strong phrase and the negation table did not cover "not eligible". Reading a
+        // refusal as an offer tells the applicant the opposite of what the employer wrote.
+        val visa = ExpatBenefitExtractor()
+            .extract(
+                title = "Senior Clinical Applications Associate",
+                description = "This position is not eligible for visa sponsorship.",
+            )
+            .first { it.type.key == JobBenefitTypes.VISA_SPONSORSHIP.key }
+
+        assertEquals(BenefitStatus.NOT_OFFERED, visa.status)
+    }
+
+    @Test
+    fun aRefusedSponsorshipMakesThePostingRestrictedNotSponsored() {
+        // The eligibility engine must reach the same conclusion: an employer who says it
+        // cannot sponsor has stated a hard restriction, so the posting is RESTRICTED — not
+        // VISA_SPONSORED, which would invite a Madagascar applicant to apply.
+        val assessment = EligibilityEngine().assess(
+            EligibilityInput(
+                title = "Maintenance Technician",
+                location = "United States",
+                description = "This position is not eligible for visa sponsorship.",
+            ),
+        )
+
+        assertEquals(MadagascarEligibility.RESTRICTED, assessment.eligibility)
+        assertEquals(VisaSupport.LOCAL_ONLY, assessment.visaSupport)
+    }
+
+    @Test
+    fun aGenuineSponsorshipStatementStillReadsAsConfirmed() {
+        // Guard against over-negation: a real offer must still be read as an offer.
+        val visa = ExpatBenefitExtractor()
+            .extract(
+                title = "Mechanical Fitter",
+                description = "We provide visa sponsorship and a relocation package for this role.",
+            )
+            .first { it.type.key == JobBenefitTypes.VISA_SPONSORSHIP.key }
+
+        assertEquals(BenefitStatus.CONFIRMED, visa.status)
     }
 
     // ---- Helpers --------------------------------------------------------------
