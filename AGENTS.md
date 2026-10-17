@@ -1676,6 +1676,61 @@ filtre. `clearFilters()` réinitialise le nouveau filtre.
 `AiJobFinderRoot.kt` (profil au factory), `ui/components/Badges.kt` + `JobCard.kt` (badge),
 `ui/screens/jobs/JobsScreen.kt` (fiche de détail, filtre, câblage).
 
+## Stage 42 — une lecture vérifiable « cette offre est-elle encore réelle et joignable ? »
+
+**Besoin.** L'app tenait déjà quatre nombres distincts : correspondance CV, éligibilité
+Madagascar, avantages expat documentés et fit international. Aucun ne répond à la question que le
+candidat doit régler **avant** de dépenser son temps : « cette annonce est-elle toujours ouverte,
+le lien est-il utilisable, y a-t-il une route visa documentée, et de quand date la vérification ? ».
+
+**Ajout.** Un cinquième objet, `OfferVerification`, répond à ces quatre questions **séparément**,
+chaque axe avec son propre état. Il reste à part du match, de l'éligibilité, de l'expat et du fit,
+donc jamais fondu dedans.
+
+**Moteur.** `data/jobs/engine/OfferVerificationEngine.kt` (pur, horloge injectée) produit un
+`OfferVerification` avec quatre axes + une fraîcheur, chacun `VerificationState` :
+
+1. **Activité.** Seul le drapeau de la source confirme qu'un poste est ouvert (`canApply = true`
+   → `CONFIRMED`). Absent ⇒ `UNKNOWN`, **jamais** « fermé » : l'âge n'est pas une preuve de
+   fermeture. `canApply = false` ⇒ `EXPIRED`.
+2. **Lien.** Délégué à `ApplicationUrlInspector` : lien absent/invalide ⇒ `INACCESSIBLE`, lien
+   réel mais avec réserve (http, domaine gratuit…) ⇒ `POSSIBLE`, sinon `CONFIRMED`.
+3. **Visa.** Preuve documentée de sponsoring ⇒ `CONFIRMED` ; « peut-être » ⇒ `POSSIBLE` ; refus
+   explicite (éligibilité `RESTRICTED` ou avantage `NOT_OFFERED`) ⇒ `NOT_OFFERED` — un fait
+   **distinct** de « non mentionné » (`UNKNOWN`).
+4. **Relogement.** Axe séparé du visa, lu sur l'avantage `RELOCATION_SUPPORT`.
+5. **Fraîcheur.** L'âge de la dernière récupération est classé : ≤3 j ⇒ `CONFIRMED`, ≤21 j ⇒
+   `POSSIBLE`, au-delà ⇒ `UNKNOWN` (une vérification ancienne n'est pas une preuve de mort).
+
+Trois règles d'honnêteté, identiques au reste du pipeline : le silence est `UNKNOWN` (jamais
+négatif), rien n'est inventé (les faits sont lus, jamais devinés), et `isActionable` n'est faux
+que sur **preuve positive** d'impasse (fermé, ou lien inutilisable).
+
+**UI.** `OfferVerificationBadge` réutilise l'échelle couleur existante
+(succès/info/avertissement/danger) et un « unknown » volontairement neutre ; la carte `JobCard`
+l'affiche seulement quand la lecture n'est pas entièrement vide. La fiche de détail
+(`JobExplanationSheet`) ouvre une section « Verified before you apply » listant chaque fait avec
+son icône et sa force de preuve, puis la note « Always confirm the details on the employer's own
+page before you apply. » Nouveaux filtres : « Open now », « Visa verified », « Housing verified »,
+« Flights verified », « Recently checked ».
+
+**Tri.** Dans `expatFitOrder` et `internationalFitOrder`, une offre à impasse connue est
+**rétrogradée** sous toute offre vivante, quel que soit son score ; « inconnu » reste neutre et
+n'est jamais traité comme mort.
+
+**Câblage.** `RawJob.openToApplicants` (défaut `null`) est posé par `WorkdayProvider` uniquement
+sur `canApply = true`, persisté dans `JobCache`, transporté jusqu'à `Job.openToApplicants`.
+`JobMapper` construit `Job` puis lui attache la vérification ; `SampleJobRepository` exécute le
+même moteur sur la fixture, donc le fixture et le pipeline live ne peuvent pas diverger.
+
+**Vérification.** Suite **531 tests, 0 échec, 0 erreur, 3 ignorés** (+15 :
+`Stage42OfferVerificationTest`). Lint **0 erreur / 52 avertissements** (inchangé). `assembleDebug`
+réussit. Nouveaux fichiers : `data/model/OfferVerification.kt`,
+`data/jobs/engine/OfferVerificationEngine.kt`, `Stage42OfferVerificationTest.kt`. Modifiés :
+`Job.kt`, `JobMapper.kt`, `SampleJobRepository.kt`, `ViewModels.kt`, `Badges.kt`, `JobCard.kt`,
+`JobsScreen.kt`, `JobProvider.kt`, `WorkdayProvider.kt`, `JobCache.kt`.
+
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

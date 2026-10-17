@@ -15,15 +15,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +53,9 @@ import com.aiglobal.jobfinder.data.model.InternationalFitAssessment
 import com.aiglobal.jobfinder.data.model.InternationalFitBand
 import com.aiglobal.jobfinder.data.model.MadagascarEligibility
 import com.aiglobal.jobfinder.data.model.MatchTier
+import com.aiglobal.jobfinder.data.model.OfferVerification
 import com.aiglobal.jobfinder.data.model.ScamRisk
+import com.aiglobal.jobfinder.data.model.VerificationState
 import com.aiglobal.jobfinder.data.model.VisaSupport
 import com.aiglobal.jobfinder.ui.theme.extendedColors
 
@@ -386,6 +392,87 @@ fun InternationalFitBadge(
         containerColor = content.copy(alpha = 0.14f),
         contentColor = content,
         leadingIcon = icon,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Color for one verification axis, on the existing success/info/warning/danger scale so
+ * the verification read never introduces a new visual language. A negative state
+ * (expired, inaccessible) is danger, a confirmed one is success, a possible one is info,
+ * a stated refusal is warning, and "unknown" is deliberately neutral — not stated is not
+ * the same as refused.
+ */
+@Composable
+fun verificationStateColor(state: VerificationState): Color = when (state) {
+    VerificationState.CONFIRMED -> extendedColors.success
+    VerificationState.POSSIBLE -> extendedColors.info
+    VerificationState.NOT_OFFERED -> extendedColors.warning
+    VerificationState.EXPIRED, VerificationState.INACCESSIBLE -> extendedColors.danger
+    VerificationState.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/** Short label for a verification axis, kept distinct from the enum's own display label. */
+private fun verificationShortLabel(state: VerificationState): String = when (state) {
+    VerificationState.CONFIRMED -> "Verified"
+    VerificationState.POSSIBLE -> "Possible"
+    VerificationState.NOT_OFFERED -> "Not offered"
+    VerificationState.EXPIRED -> "Closed"
+    VerificationState.INACCESSIBLE -> "Link unusable"
+    VerificationState.UNKNOWN -> "Not stated"
+}
+
+/**
+ * The whole verification read as one scannable chip: whether the vacancy is confirmed open
+ * and whether a visa route is documented. It answers "is this listing real and reachable?"
+ * — a question distinct from the CV match, eligibility, expat and international-fit
+ * numbers, so it is shown as its own chip and never blended into them.
+ */
+@Composable
+fun OfferVerificationBadge(
+    verification: OfferVerification,
+    modifier: Modifier = Modifier,
+) {
+    val worst = listOf(verification.link, verification.activity).firstOrNull { it.isNegative }
+    val content = worst?.let { verificationStateColor(it) } ?: verificationStateColor(verification.activity)
+    val icon = when {
+        verification.link.isNegative -> Icons.Filled.LinkOff
+        verification.activity.isNegative -> Icons.Filled.EventBusy
+        verification.activity == VerificationState.CONFIRMED -> Icons.Filled.Verified
+        else -> Icons.AutoMirrored.Filled.HelpOutline
+    }
+    val label = when {
+        verification.link == VerificationState.INACCESSIBLE -> "Link unusable"
+        verification.activity == VerificationState.EXPIRED -> "Closed to applicants"
+        verification.activity == VerificationState.CONFIRMED -> "Open · verified by source"
+        else -> "Open status not stated"
+    }
+    val visaNote = when (verification.visa) {
+        VerificationState.CONFIRMED -> " · visa verified"
+        VerificationState.NOT_OFFERED -> " · no visa"
+        else -> ""
+    }
+    Pill(
+        text = label + visaNote,
+        containerColor = content.copy(alpha = 0.14f),
+        contentColor = content,
+        leadingIcon = icon,
+        modifier = modifier,
+    )
+}
+
+/** Compact per-axis chip, e.g. "Visa · Verified", for the detail panel. */
+@Composable
+fun VerificationAxisChip(
+    label: String,
+    state: VerificationState,
+    modifier: Modifier = Modifier,
+) {
+    val content = verificationStateColor(state)
+    Pill(
+        text = "$label · ${verificationShortLabel(state)}",
+        containerColor = content.copy(alpha = 0.14f),
+        contentColor = content,
         modifier = modifier,
     )
 }

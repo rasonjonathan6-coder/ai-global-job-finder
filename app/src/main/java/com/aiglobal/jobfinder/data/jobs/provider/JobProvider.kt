@@ -38,6 +38,13 @@ data class RawJob(
      * flag never means "closed".
      */
     val closedToNewApplicants: Boolean = false,
+    /**
+     * The source's own statement that the posting is *open* to new applicants, when it
+     * says so (Workday's `canApply = true`). Null means the source did not state it — which
+     * is not the same as "closed". Kept separate from [closedToNewApplicants] so the app can
+     * tell "the employer confirmed it is open" apart from "the employer said nothing".
+     */
+    val openToApplicants: Boolean? = null,
 )
 
 /**

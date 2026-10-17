@@ -201,6 +201,9 @@ fun JobCard(
                     if (internationalFit != null) {
                         InternationalFitBadge(assessment = internationalFit)
                     }
+                    if (!job.verification.isEntirelyUnknown) {
+                        OfferVerificationBadge(verification = job.verification)
+                    }
                     if (job.scamRisk != com.aiglobal.jobfinder.data.model.ScamRisk.LOW) {
                         ScamRiskBadge(job.scamRisk)
                     }

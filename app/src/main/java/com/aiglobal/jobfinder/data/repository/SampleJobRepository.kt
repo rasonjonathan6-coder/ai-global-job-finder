@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.repository
 
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
+import com.aiglobal.jobfinder.data.jobs.engine.OfferVerificationEngine
 import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
 import com.aiglobal.jobfinder.data.jobs.search.SearchCoverageSource
 import com.aiglobal.jobfinder.data.model.DashboardStats
@@ -37,14 +38,18 @@ class SampleJobRepository(
      */
     private val benefitExtractor = ExpatBenefitExtractor()
 
+    /** Runs the same verification read the live pipeline runs, so the fixture cannot drift. */
+    private val verificationEngine = OfferVerificationEngine()
+
     private val _jobs = MutableStateFlow(
         SampleData.jobs(now).map { job ->
-            job.copy(
+            val withBenefits = job.copy(
                 benefitEvidence = benefitExtractor.extract(
                     title = job.title,
                     description = job.summary + " " + job.responsibilities.joinToString(" ") + " " + job.benefits.joinToString(". "),
                 ),
             )
+            withBenefits.copy(verification = verificationEngine.assess(withBenefits, now))
         },
     )
     override val jobs: Flow<List<Job>> = _jobs.asStateFlow()

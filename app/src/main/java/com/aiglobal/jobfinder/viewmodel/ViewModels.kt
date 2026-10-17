@@ -242,6 +242,24 @@ data class JobsUiState(
      */
     val tradeOnly: Boolean = false,
     /**
+     * When true, only postings whose employer *documents* visa sponsorship are shown. This
+     * reads the verified visa state, so a posting that merely hints at a route in is not
+     * presented as a documented one.
+     */
+    val verifiedVisaOnly: Boolean = false,
+    /** When true, only postings whose employer documents accommodation are shown. */
+    val verifiedAccommodationOnly: Boolean = false,
+    /** When true, only postings whose employer documents annual flights home are shown. */
+    val verifiedFlightsOnly: Boolean = false,
+    /**
+     * When true, only postings the source itself confirms are still accepting applicants are
+     * shown. A posting that simply does not state it is excluded here — the filter narrows to
+     * what is confirmed, it does not assume the rest are closed.
+     */
+    val openVacancyOnly: Boolean = false,
+    /** When true, only postings retrieved recently enough to rely on are shown. */
+    val recentlyVerifiedOnly: Boolean = false,
+    /**
      * Ids the candidate has shortlisted. Mirrored here so a bookmark tap flips the card
      * instantly, even when the underlying feed has not re-emitted the saved flag yet.
      */
@@ -264,7 +282,9 @@ data class JobsUiState(
     val hasActiveFilters: Boolean
         get() = savedOnly || eligibleOnly || sponsoredOnly || country != null ||
             source != null || minMatch > 0 || minExpatScore > 0 || visaDocumentedOnly ||
-            strongInternationalFitOnly || tradeOnly || query.isNotBlank()
+            strongInternationalFitOnly || tradeOnly || query.isNotBlank() ||
+            verifiedVisaOnly || verifiedAccommodationOnly || verifiedFlightsOnly ||
+            openVacancyOnly || recentlyVerifiedOnly
 
     /** Expat Benefits Score for one posting, or the honest empty state when unknown. */
     fun expatScore(job: Job): Int? = expatAssessments[job.id]?.score
@@ -297,6 +317,27 @@ data class JobsUiState(
             if (tradeOnly) result = result.filter { it.isMaintenanceRelevant }
             if (strongInternationalFitOnly) result = result.filter {
                 internationalFit[it.id]?.band?.isActionable == true
+            }
+            if (verifiedVisaOnly) result = result.filter {
+                it.verification.visa == com.aiglobal.jobfinder.data.model.VerificationState.CONFIRMED
+            }
+            if (verifiedAccommodationOnly) result = result.filter {
+                it.benefitEvidence.any { evidence ->
+                    evidence.type.key == com.aiglobal.jobfinder.data.model.JobBenefitTypes.ACCOMMODATION.key &&
+                        evidence.status == com.aiglobal.jobfinder.data.model.BenefitStatus.CONFIRMED
+                }
+            }
+            if (verifiedFlightsOnly) result = result.filter {
+                it.benefitEvidence.any { evidence ->
+                    evidence.type.key == com.aiglobal.jobfinder.data.model.JobBenefitTypes.FLIGHTS_HOME.key &&
+                        evidence.status == com.aiglobal.jobfinder.data.model.BenefitStatus.CONFIRMED
+                }
+            }
+            if (openVacancyOnly) result = result.filter {
+                it.verification.activity == com.aiglobal.jobfinder.data.model.VerificationState.CONFIRMED
+            }
+            if (recentlyVerifiedOnly) result = result.filter {
+                it.verification.freshness == com.aiglobal.jobfinder.data.model.VerificationState.CONFIRMED
             }
             country?.let { selected -> result = result.filter { it.country == selected } }
             source?.let { selected -> result = result.filter { it.providerId == selected } }
@@ -332,7 +373,11 @@ data class JobsUiState(
      * reproducible rather than a hunch.
      */
     private val expatFitOrder: Comparator<Job> =
-        compareByDescending<Job> { expatAssessments[it.id]?.score ?: -1 }
+        // A posting with a known dead end (closed, or an unusable link) is demoted below any
+        // live posting, whatever its score, so a "best fit" list never leads with an offer the
+        // candidate cannot act on. Unknown stays neutral: it is not treated as dead.
+        compareByDescending<Job> { it.verification.isActionable }
+            .thenByDescending { expatAssessments[it.id]?.score ?: -1 }
             .thenByDescending { it.eligibility.rank }
             .thenByDescending { job ->
                 job.benefitEvidence.any {
@@ -350,7 +395,8 @@ data class JobsUiState(
      * ranks high here can always be explained by the facts behind it.
      */
     private val internationalFitOrder: Comparator<Job> =
-        compareByDescending<Job> { internationalFit[it.id]?.score ?: -1 }
+        compareByDescending<Job> { it.verification.isActionable }
+            .thenByDescending { internationalFit[it.id]?.score ?: -1 }
             .thenByDescending { it.eligibility.rank }
             .thenByDescending { job ->
                 job.benefitEvidence.any {
@@ -480,6 +526,11 @@ class JobsViewModel(
             visaDocumentedOnly = false,
             strongInternationalFitOnly = false,
             tradeOnly = false,
+            verifiedVisaOnly = false,
+            verifiedAccommodationOnly = false,
+            verifiedFlightsOnly = false,
+            openVacancyOnly = false,
+            recentlyVerifiedOnly = false,
         )
     }
 
@@ -494,6 +545,26 @@ class JobsViewModel(
 
     /** Shows only postings whose title is the candidate's own trade. */
     fun toggleTradeOnlyFilter() = uiStateInternal.update { it.copy(tradeOnly = !it.tradeOnly) }
+
+    /** Shows only postings whose employer documents visa sponsorship. */
+    fun toggleVerifiedVisaFilter() =
+        uiStateInternal.update { it.copy(verifiedVisaOnly = !it.verifiedVisaOnly) }
+
+    /** Shows only postings whose employer documents accommodation. */
+    fun toggleVerifiedAccommodationFilter() =
+        uiStateInternal.update { it.copy(verifiedAccommodationOnly = !it.verifiedAccommodationOnly) }
+
+    /** Shows only postings whose employer documents annual flights home. */
+    fun toggleVerifiedFlightsFilter() =
+        uiStateInternal.update { it.copy(verifiedFlightsOnly = !it.verifiedFlightsOnly) }
+
+    /** Shows only postings the source itself confirms are still accepting applicants. */
+    fun toggleOpenVacancyFilter() =
+        uiStateInternal.update { it.copy(openVacancyOnly = !it.openVacancyOnly) }
+
+    /** Shows only postings retrieved recently enough to rely on. */
+    fun toggleRecentlyVerifiedFilter() =
+        uiStateInternal.update { it.copy(recentlyVerifiedOnly = !it.recentlyVerifiedOnly) }
 
     /**
      * Flips the saved flag locally first so the bookmark reacts immediately, then persists.

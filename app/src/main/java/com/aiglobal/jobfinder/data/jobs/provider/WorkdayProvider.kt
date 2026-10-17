@@ -136,8 +136,11 @@ class WorkdayProvider(
 
         // Workday states whether the posting still accepts applicants. When it says no, the
         // posting is closed and must not be shown as if it were open. The field is absent on
-        // some rows; absent means "not stated", never "closed".
-        val closedToNewApplicants = has("canApply") && !optBoolean("canApply")
+        // some rows; absent means "not stated", never "closed". `openToApplicants` records
+        // the affirmative case so the verification read can confirm a live vacancy from the
+        // source's own flag rather than inferring it from age.
+        val canApply = if (has("canApply")) optBoolean("canApply") else null
+        val closedToNewApplicants = canApply == false
 
         return RawJob(
             providerId = this@WorkdayProvider.id,
@@ -152,6 +155,7 @@ class WorkdayProvider(
             postedAtEpochMillis = IsoDates.epochMillis(optString("startDate")),
             isRemote = false,
             closedToNewApplicants = closedToNewApplicants,
+            openToApplicants = canApply,
         )
     }
 

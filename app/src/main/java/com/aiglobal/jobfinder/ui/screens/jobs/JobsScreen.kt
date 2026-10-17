@@ -90,11 +90,14 @@ import com.aiglobal.jobfinder.ui.components.InternationalFitBadge
 import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.components.JobListSkeleton
 import com.aiglobal.jobfinder.ui.components.MatchChip
+import com.aiglobal.jobfinder.ui.components.OfferVerificationBadge
 import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.relativeTime
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
+import com.aiglobal.jobfinder.ui.components.VerificationAxisChip
+import com.aiglobal.jobfinder.ui.components.verificationStateColor
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
 import com.aiglobal.jobfinder.ui.theme.extendedColors
 import com.aiglobal.jobfinder.viewmodel.JobSort
@@ -118,6 +121,11 @@ fun JobsScreen(
         onToggleVisaDocumented = viewModel::toggleVisaDocumentedFilter,
         onToggleTradeOnly = viewModel::toggleTradeOnlyFilter,
         onToggleStrongInternationalFit = viewModel::toggleStrongInternationalFitFilter,
+        onToggleVerifiedVisa = viewModel::toggleVerifiedVisaFilter,
+        onToggleVerifiedAccommodation = viewModel::toggleVerifiedAccommodationFilter,
+        onToggleVerifiedFlights = viewModel::toggleVerifiedFlightsFilter,
+        onToggleOpenVacancy = viewModel::toggleOpenVacancyFilter,
+        onToggleRecentlyVerified = viewModel::toggleRecentlyVerifiedFilter,
         onCountryChange = viewModel::onCountryChange,
         onSourceChange = viewModel::onSourceChange,
         onSortChange = viewModel::onSortChange,
@@ -141,6 +149,11 @@ internal fun JobsContent(
     onToggleVisaDocumented: () -> Unit = {},
     onToggleTradeOnly: () -> Unit = {},
     onToggleStrongInternationalFit: () -> Unit = {},
+    onToggleVerifiedVisa: () -> Unit = {},
+    onToggleVerifiedAccommodation: () -> Unit = {},
+    onToggleVerifiedFlights: () -> Unit = {},
+    onToggleOpenVacancy: () -> Unit = {},
+    onToggleRecentlyVerified: () -> Unit = {},
     onCountryChange: (String?) -> Unit,
     onSourceChange: (String?) -> Unit,
     onSortChange: (JobSort) -> Unit,
@@ -176,6 +189,11 @@ internal fun JobsContent(
             onToggleVisaDocumented = onToggleVisaDocumented,
             onToggleTradeOnly = onToggleTradeOnly,
             onToggleStrongInternationalFit = onToggleStrongInternationalFit,
+            onToggleVerifiedVisa = onToggleVerifiedVisa,
+            onToggleVerifiedAccommodation = onToggleVerifiedAccommodation,
+            onToggleVerifiedFlights = onToggleVerifiedFlights,
+            onToggleOpenVacancy = onToggleOpenVacancy,
+            onToggleRecentlyVerified = onToggleRecentlyVerified,
             onMinExpatScoreChange = onMinExpatScoreChange,
         )
 
@@ -387,6 +405,11 @@ private fun JobsFilterRow(
     onToggleVisaDocumented: () -> Unit,
     onToggleTradeOnly: () -> Unit,
     onToggleStrongInternationalFit: () -> Unit,
+    onToggleVerifiedVisa: () -> Unit,
+    onToggleVerifiedAccommodation: () -> Unit,
+    onToggleVerifiedFlights: () -> Unit,
+    onToggleOpenVacancy: () -> Unit,
+    onToggleRecentlyVerified: () -> Unit,
     onMinExpatScoreChange: (Int) -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -402,6 +425,46 @@ private fun JobsFilterRow(
                 selected = state.tradeOnly,
                 onClick = onToggleTradeOnly,
                 leadingIcon = Icons.Filled.Construction,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Open now",
+                selected = state.openVacancyOnly,
+                onClick = onToggleOpenVacancy,
+                leadingIcon = Icons.Filled.Verified,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Visa verified",
+                selected = state.verifiedVisaOnly,
+                onClick = onToggleVerifiedVisa,
+                leadingIcon = Icons.Filled.VerifiedUser,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Housing verified",
+                selected = state.verifiedAccommodationOnly,
+                onClick = onToggleVerifiedAccommodation,
+                leadingIcon = Icons.Filled.CardGiftcard,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Flights verified",
+                selected = state.verifiedFlightsOnly,
+                onClick = onToggleVerifiedFlights,
+                leadingIcon = Icons.Filled.CardGiftcard,
+            )
+        }
+        item {
+            FilterChip(
+                label = "Recently checked",
+                selected = state.recentlyVerifiedOnly,
+                onClick = onToggleRecentlyVerified,
+                leadingIcon = Icons.Filled.Refresh,
             )
         }
         item {
@@ -611,6 +674,8 @@ private fun JobExplanationSheet(
 
             InternationalFitSection(fit)
 
+            OfferVerificationSection(job = job)
+
             SectionHeader(
                 title = "Why this match score",
                 subtitle = "Every point of the ${job.matchScore}% comes from one of these signals",
@@ -650,6 +715,75 @@ private fun JobExplanationSheet(
         }
     }
 }
+
+/**
+ * The verification read as its own section: is the vacancy still taking applicants, does
+ * the link work, and are the visa / relocation claims documented. Each row is backed by a
+ * recorded fact, so a claim can always be traced back to the employer's own words.
+ */
+@Composable
+private fun OfferVerificationSection(job: Job) {
+    val spacing = LocalSpacing.current
+    val verification = job.verification
+
+    SectionHeader(
+        title = "Verified before you apply",
+        subtitle = "What the app could confirm about this posting, and what it could not",
+    )
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+    ) {
+        OfferVerificationBadge(verification = verification)
+        if (verification.freshness == com.aiglobal.jobfinder.data.model.VerificationState.CONFIRMED) {
+            VerificationAxisChip("Freshness", verification.freshness)
+        }
+    }
+
+    verification.facts.forEach { fact ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+        ) {
+            Icon(
+                imageVector = when (fact.strength) {
+                    EvidenceStrength.DOCUMENTED -> Icons.Filled.Verified
+                    EvidenceStrength.REFUSED -> Icons.Filled.Block
+                    EvidenceStrength.NEEDS_VERIFICATION -> Icons.Filled.HelpCenter
+                    EvidenceStrength.INFERRED -> Icons.Filled.Insights
+                    EvidenceStrength.UNKNOWN -> Icons.AutoMirrored.Filled.HelpOutline
+                },
+                contentDescription = null,
+                tint = verificationStateColor(fact.strength.toVerificationState()),
+                modifier = Modifier.size(16.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = fact.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = fact.detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** Maps an evidence strength onto the shared verification colour scale. */
+private fun EvidenceStrength.toVerificationState(): com.aiglobal.jobfinder.data.model.VerificationState =
+    when (this) {
+        EvidenceStrength.DOCUMENTED -> com.aiglobal.jobfinder.data.model.VerificationState.CONFIRMED
+        EvidenceStrength.REFUSED -> com.aiglobal.jobfinder.data.model.VerificationState.NOT_OFFERED
+        EvidenceStrength.NEEDS_VERIFICATION -> com.aiglobal.jobfinder.data.model.VerificationState.POSSIBLE
+        EvidenceStrength.INFERRED -> com.aiglobal.jobfinder.data.model.VerificationState.POSSIBLE
+        EvidenceStrength.UNKNOWN -> com.aiglobal.jobfinder.data.model.VerificationState.UNKNOWN
+    }
 
 /**
  * The International Fit block for the detail sheet. It shows the one number that folds the

@@ -8,6 +8,7 @@ import com.aiglobal.jobfinder.data.jobs.engine.EligibilityInput
 import com.aiglobal.jobfinder.data.jobs.engine.JobEvidenceEngine
 import com.aiglobal.jobfinder.data.jobs.engine.MatchInput
 import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
+import com.aiglobal.jobfinder.data.jobs.engine.OfferVerificationEngine
 import com.aiglobal.jobfinder.data.jobs.provider.HtmlText
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
 import com.aiglobal.jobfinder.data.jobs.search.QualificationMatcher
@@ -36,6 +37,7 @@ class JobMapper(
     private val eligibilityEngine: EligibilityEngine,
     private val benefitExtractor: ExpatBenefitExtractor = ExpatBenefitExtractor(),
     private val evidenceEngine: JobEvidenceEngine = JobEvidenceEngine(),
+    private val verificationEngine: OfferVerificationEngine = OfferVerificationEngine(),
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -94,7 +96,7 @@ class JobMapper(
             sourceUrl = raw.url,
         )
 
-        return Job(
+        val job = Job(
             id = "${raw.providerId}:${raw.externalId}",
             title = raw.title.ifBlank { "Untitled role" },
             company = raw.company.ifBlank { "Unknown employer" },
@@ -136,8 +138,13 @@ class JobMapper(
             requirements = requirements,
             qualificationGaps = gaps,
             evidence = evidence,
+            openToApplicants = raw.openToApplicants,
             isNew = postedDaysAgo != null && postedDaysAgo <= 3,
         )
+
+        // The verification read depends on fields the Job now carries (link, eligibility,
+        // documented benefits, retrieval time), so it is built from the assembled Job.
+        return job.copy(verification = verificationEngine.assess(job, now))
     }
 
     /** Adds the normalised salary signal without changing the raw display values. */

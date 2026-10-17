@@ -113,6 +113,18 @@ data class Job(
     val qualificationGaps: List<QualificationGap> = emptyList(),
     /** Typed, source-linked evidence for every claim the app makes about this posting. */
     val evidence: List<Evidence> = emptyList(),
+    /**
+     * The source's own statement that the posting is still open to new applicants, or null
+     * when the source did not say. A null here is never read as "closed".
+     */
+    val openToApplicants: Boolean? = null,
+    /**
+     * The transparent reliability read for this posting: is the vacancy still open, is the
+     * link usable, is there a documented visa route, and how fresh is the check. Kept
+     * separate from the match, eligibility, expat and international-fit numbers so a
+     * candidate can see exactly what was verified and what was merely not stated.
+     */
+    val verification: OfferVerification = OfferVerification.UNKNOWN,
     val isSaved: Boolean = false,
     val isNew: Boolean = false,
 ) {

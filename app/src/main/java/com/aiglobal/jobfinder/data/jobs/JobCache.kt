@@ -63,6 +63,7 @@ class JobCache(private val directory: File) {
         put("salaryCurrency", salaryCurrency ?: JSONObject.NULL)
         put("salaryPeriod", salaryPeriod?.name ?: JSONObject.NULL)
         put("closedToNewApplicants", closedToNewApplicants)
+        put("openToApplicants", openToApplicants ?: JSONObject.NULL)
     }
 
     private fun fromJson(json: JSONObject): RawJob = RawJob(
@@ -85,6 +86,11 @@ class JobCache(private val directory: File) {
         salaryPeriod = json.optStringOrNull("salaryPeriod")
             ?.let { runCatching { SalaryPeriod.valueOf(it) }.getOrNull() },
         closedToNewApplicants = json.optBoolean("closedToNewApplicants", false),
+        openToApplicants = if (json.isNull("openToApplicants") || !json.has("openToApplicants")) {
+            null
+        } else {
+            json.optBoolean("openToApplicants")
+        },
     )
 
     private companion object {
