@@ -479,6 +479,7 @@ class LiveJobRepository(
             enabled = true,
             serverSideSearch = serverSideSearch,
             requiresCredentials = provider.requiresCredentials,
+            realSubmissionSupported = provider.capabilities.realSubmissionSupported,
             credentialsConfigured = hasCredentials(provider),
             validJobCount = fetched.size,
             lastAttemptAtEpochMillis = attemptAt,
@@ -505,6 +506,7 @@ class LiveJobRepository(
         enabled = true,
         serverSideSearch = serverSideSearch,
         requiresCredentials = provider.requiresCredentials,
+        realSubmissionSupported = provider.capabilities.realSubmissionSupported,
         credentialsConfigured = hasCredentials(provider),
         lastAttemptAtEpochMillis = attemptAt,
         lastDurationMillis = durationMillis,
@@ -626,6 +628,7 @@ class LiveJobRepository(
         enabled = !isDisabled(provider.id),
         serverSideSearch = provider.capabilities.serverSideKeyword,
         requiresCredentials = provider.requiresCredentials,
+        realSubmissionSupported = provider.capabilities.realSubmissionSupported,
         credentialsConfigured = !provider.requiresCredentials || hasCredentials(provider),
         message = if (provider.requiresCredentials && !hasCredentials(provider)) {
             ProviderErrorCategory.NOT_CONFIGURED.explanation

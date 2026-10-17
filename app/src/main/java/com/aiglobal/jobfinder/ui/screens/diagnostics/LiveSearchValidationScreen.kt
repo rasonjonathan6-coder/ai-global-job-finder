@@ -320,6 +320,21 @@ private fun SourceDiagnosticCard(
                         contentColor = extendedColors.warning,
                     )
                 }
+                if (!provider.realSubmissionSupported) {
+                    Pill(
+                        text = "No auto-send",
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (!provider.realSubmissionSupported) {
+                Text(
+                    text = "Applications from this source are prepared and simulated — the app never sends them for you.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {

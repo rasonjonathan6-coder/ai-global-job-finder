@@ -79,6 +79,14 @@ data class ProviderCapabilities(
     val applicationLinks: Boolean = true,
     /** The API is documented as an authorized application-submission endpoint. */
     val submissionEndpoint: Boolean = false,
+    /**
+     * Whether this source's postings expose an application route the app itself can drive
+     * end-to-end. False everywhere today: no verified submission integration exists, so
+     * every application is prepared and then simulated rather than sent. Kept on the
+     * capability record so the diagnostics screen can state it per source instead of
+     * implying a capability the app does not have.
+     */
+    val realSubmissionSupported: Boolean = false,
 ) {
     /**
      * True when a keyword sent to this source genuinely narrows the feed. When false, the

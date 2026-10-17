@@ -84,6 +84,12 @@ data class ProviderDiagnostic(
     val serverSideSearch: Boolean = false,
     /** True when the source needs credentials at all. */
     val requiresCredentials: Boolean = false,
+    /**
+     * Whether this source exposes an application route the app itself can drive. False
+     * everywhere today, so the diagnostics screen can say so per source rather than leave
+     * the user to assume the app can submit.
+     */
+    val realSubmissionSupported: Boolean = false,
     /** Whether usable credentials are saved. Never the credential value itself. */
     val credentialsConfigured: Boolean = true,
     /** Valid postings this attempt returned. */

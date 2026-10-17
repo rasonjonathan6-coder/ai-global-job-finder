@@ -1322,6 +1322,7 @@ private fun JobSourcesCardContent(
                     status = provider.status,
                     enabled = provider.enabled,
                     onToggle = { enabled -> onToggleSource(provider.providerId, enabled) },
+                    realSubmissionSupported = provider.realSubmissionSupported,
                 )
             }
 
@@ -1830,6 +1831,7 @@ private fun DiagnosticRow(
     status: ProviderStatus,
     enabled: Boolean,
     onToggle: (Boolean) -> Unit,
+    realSubmissionSupported: Boolean = false,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
@@ -1840,6 +1842,13 @@ private fun DiagnosticRow(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 SourceStatusBadge(status)
+                if (!realSubmissionSupported) {
+                    Pill(
+                        text = "No auto-send",
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             Text(
                 text = detail,

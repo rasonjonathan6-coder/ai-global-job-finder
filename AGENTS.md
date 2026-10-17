@@ -2032,6 +2032,37 @@ classe rien. Ajout d'une capture `expat-ranking-light/dark` dans `ScreenshotTest
 Modifié : `ExpatRankingScreen.kt` (nouveau) ; `Stage48ExpatRankingTest.kt` (nouveau) ;
 `AiJobFinderRoot.kt`, `AiScreen.kt`, `HomeScreen.kt`, `ScreenshotTest.kt`, `AGENTS.md`.
 
+## Étape 48 (suite) — audit de la capacité d'envoi réel et vérification bout-en-bout
+
+**Audit de capacité (`data/submissions/SubmissionCapability.kt`).** La capacité d'envoi réel
+est dérivée de la **seule source de vérité** (`SubmissionChannel.realSendSupported`) au lieu
+d'un tableau tenu à la main qui pourrait diverger de la porte que le registre applique
+réellement. `statement(channel)` rend le même refus que le registre ; `sendsNothing` et
+`supportedChannelCount` décrivent l'état courant (aucune route pilotable, donc envoi toujours
+simulé). `ProviderCapabilities` gagne `realSubmissionSupported` (faux partout) et
+`ProviderDiagnostic` le reprend, alimenté depuis `provider.capabilities` aux quatre points de
+construction (`successDiagnostic`, `failureDiagnostic`, `blankDiagnostic`). L'écran
+*Live search validation* et la section diagnostics de *Profile* affichent une pastille
+« No auto-send » plus une phrase explicite par source.
+
+**Vérification bout-en-bout (`Stage48PipelineReadinessTest`, 3 tests).** Fait tourner toute la
+chaîne sur les vrais moteurs : enregistrement source brut → `JobMapper` (match + éligibilité)
+→ `ShortlistEngine` → `ExpatRankingEngine` → brouillon préparé → approbation → soumission, et
+épingle l'invariant de sécurité final : la soumission est **simulée**, `SENT` n'est jamais
+atteint, une seconde tentative sur la même offre est refusée, et un brouillon non approuvé ne
+peut pas être soumis. Un second test vérifie qu'une offre « local only » ne rejoint jamais le
+classement ; un troisième qu'aucun canal, même avec un `realSender` câblé et `allowRealSend`,
+ne produit `SENT`.
+
+`Stage48ProviderSubmissionCapabilityTest` (4 tests) épingle l'audit : aucun provider enregistré
+ne prétend pouvoir soumettre, le helper ne peut pas contredire la porte du registre, une source
+sans `submissionEndpoint` n'est jamais marquée envoyable, et une offre sur un board ATS
+employeur reste simulée.
+
+Modifié : `SubmissionCapability.kt` (nouveau) ; `Stage48ProviderSubmissionCapabilityTest.kt`,
+`Stage48PipelineReadinessTest.kt` (nouveaux) ; `JobProvider.kt`, `ProviderDiagnostics.kt`,
+`LiveJobRepository.kt`, `LiveSearchValidationScreen.kt`, `ProfileScreen.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
