@@ -24,11 +24,18 @@ class MainActivity : ComponentActivity() {
      */
     private val pendingJobId = mutableStateOf<String?>(null)
 
+    /**
+     * The application draft a "ready for review" notification asked to open, held the same
+     * one-shot way as [pendingJobId] and cleared once the UI has navigated to it.
+     */
+    private val pendingDraftId = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         pendingJobId.value = intent?.getStringExtra(JobNotificationCenter.EXTRA_JOB_ID)
+        pendingDraftId.value = intent?.getStringExtra(JobNotificationCenter.EXTRA_DRAFT_ID)
 
         val container = (application as AiJobFinderApp).container
         val factory = AppViewModelFactory(container)
@@ -43,6 +50,8 @@ class MainActivity : ComponentActivity() {
                     appViewModel = appViewModel,
                     pendingJobId = pendingJobId.value,
                     onPendingJobConsumed = { pendingJobId.value = null },
+                    pendingDraftId = pendingDraftId.value,
+                    onPendingDraftConsumed = { pendingDraftId.value = null },
                 )
             }
         }
@@ -52,5 +61,6 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         // A notification tapped while the app is already open must still open the posting.
         intent.getStringExtra(JobNotificationCenter.EXTRA_JOB_ID)?.let { pendingJobId.value = it }
+        intent.getStringExtra(JobNotificationCenter.EXTRA_DRAFT_ID)?.let { pendingDraftId.value = it }
     }
 }

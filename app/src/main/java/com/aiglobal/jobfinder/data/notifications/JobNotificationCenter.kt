@@ -79,13 +79,65 @@ class JobNotificationCenter(private val context: Context) {
         }
     }
 
+    /**
+     * Posts the "an application is ready for your review" alerts. These are deliberately on
+     * their own channel so the user can silence preparation nudges without silencing new-match
+     * alerts. Tapping one opens the draft review screen for that application, not just the app.
+     */
+    @SuppressLint("MissingPermission")
+    fun postDraftReviews(alerts: List<DraftReviewAlert>) {
+        if (alerts.isEmpty() || !canNotify()) return
+        ensureDraftChannel()
+        val manager = NotificationManagerCompat.from(context)
+        alerts.forEach { alert ->
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_DRAFT_ID, alert.draftId)
+            }
+            val pending = PendingIntent.getActivity(
+                context,
+                alert.draftId.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val built = NotificationCompat.Builder(context, DRAFT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(alert.title)
+                .setContentText(alert.body.replace("\n", " "))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build()
+            runCatching { manager.notify(alert.draftId.hashCode(), built) }
+        }
+    }
+
+    private fun ensureDraftChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        if (manager.getNotificationChannel(DRAFT_CHANNEL_ID) != null) return
+        val channel = NotificationChannel(
+            DRAFT_CHANNEL_ID,
+            "Applications ready for review",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = "An application has been prepared and needs your approval before anything is sent"
+        }
+        manager.createNotificationChannel(channel)
+    }
+
     companion object {
         private const val CHANNEL_ID = "job_matches"
+        private const val DRAFT_CHANNEL_ID = "application_reviews"
 
         /**
          * Intent extra carrying the posting id, so tapping an alert opens that job. Public so
          * the activity that receives it reads the same constant the poster wrote.
          */
         const val EXTRA_JOB_ID = "com.aiglobal.jobfinder.extra.JOB_ID"
+
+        /** Intent extra carrying the draft id, so tapping a review alert opens that draft. */
+        const val EXTRA_DRAFT_ID = "com.aiglobal.jobfinder.extra.DRAFT_ID"
     }
 }

@@ -11,15 +11,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
+import com.aiglobal.jobfinder.data.model.ApplicationDraft
+import com.aiglobal.jobfinder.data.model.DraftStatus
 import com.aiglobal.jobfinder.data.model.BenefitEvidence
 import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.CandidateField
@@ -77,6 +81,7 @@ import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceUiState
 import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsContent
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailContent
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
+import com.aiglobal.jobfinder.ui.screens.applications.DraftApprovalCard
 import com.aiglobal.jobfinder.ui.screens.autoapply.AutoApplyContent
 import com.aiglobal.jobfinder.ui.screens.coverletter.CoverLetterContent
 import com.aiglobal.jobfinder.ui.screens.cv.CvScreen
@@ -217,6 +222,39 @@ class ScreenshotTest {
                     expatScore = 100,
                     expatEvidenceCoverage = 67,
                     expatLowEvidence = false,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun draftApprovalCard() {
+        val draft = ApplicationDraft(
+            id = "draft-shot",
+            jobId = "shot-1",
+            jobTitle = "Maintenance Technician",
+            company = "Northline Industrial",
+            country = "Canada",
+            countryFlag = "🇨🇦",
+            sourceUrl = "https://boards.greenhouse.io/northline/jobs/1",
+            channelKey = "ATS_API",
+            cvSummary = "Maintenance technician with six years in food-processing plants, specialising in preventive maintenance, hydraulics and PLC diagnostics.",
+            coverLetterId = "letter-shot",
+            coverLetterText = "Dear hiring team,\n\nI am a maintenance technician with six years of experience keeping production lines running.",
+            answers = emptyList(),
+            status = DraftStatus.READY_FOR_REVIEW,
+            contentHash = "shot-hash",
+            preparedAtEpochMillis = 1_760_000_000_000,
+            updatedAtEpochMillis = 1_760_000_000_000,
+            reason = "Review the CV summary, cover letter and answers, then approve.",
+        )
+        renderBothModes("draft-approval-card") {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+                DraftApprovalCard(
+                    draft = draft,
+                    onReview = {},
+                    onApprove = {},
+                    onSkip = {},
                 )
             }
         }

@@ -36,6 +36,7 @@ class JobRefreshWorker(
             alertMinMatchScore = container.preferencesRepository.refreshPreferences
                 .map { it.alertMinMatchScore },
             demoMode = container.demoMode,
+            pendingDrafts = container.applicationDraftCenter.awaitingApproval,
         )
 
         runCatching { runner.run() }.getOrElse { error ->

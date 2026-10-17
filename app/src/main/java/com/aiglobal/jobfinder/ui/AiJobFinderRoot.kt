@@ -139,6 +139,13 @@ fun AiJobFinderRoot(
      */
     pendingJobId: String? = null,
     onPendingJobConsumed: () -> Unit = {},
+    /**
+     * A draft id a "ready for review" notification asked to open, or null. Consumed once via
+     * [onPendingDraftConsumed]. A draft opens the Applications tab, where the approval queue
+     * lives, so the user lands on the queue rather than a detail screen they must back out of.
+     */
+    pendingDraftId: String? = null,
+    onPendingDraftConsumed: () -> Unit = {},
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
@@ -152,6 +159,14 @@ fun AiJobFinderRoot(
         if (!pendingJobId.isNullOrBlank()) {
             navController.navigate(SecondaryRoutes.coverLetter(pendingJobId))
             onPendingJobConsumed()
+        }
+    }
+    // A tapped review notification opens the Applications tab, where the prepared draft sits in
+    // the approval queue. One-shot for the same reason as above.
+    LaunchedEffect(pendingDraftId) {
+        if (!pendingDraftId.isNullOrBlank()) {
+            navController.navigateToTab(Destination.Applications)
+            onPendingDraftConsumed()
         }
     }
     // Secondary screens are pushed on top of a tab, so they hide the tab bar and offer
@@ -230,12 +245,17 @@ fun AiJobFinderRoot(
             }
             composable(Destination.Applications.route) {
                 val vm: ApplicationsViewModel = viewModel(
-                    factory = ApplicationsViewModelFactory(container.jobRepository, container.applicationCenter),
+                    factory = ApplicationsViewModelFactory(
+                        container.jobRepository,
+                        container.applicationCenter,
+                        container.applicationDraftCenter,
+                    ),
                 )
                 ApplicationsScreen(
                     viewModel = vm,
                     onBrowseJobs = { navController.navigateToTab(Destination.Jobs) },
                     onOpenApplication = { id -> navController.navigate(SecondaryRoutes.applicationDetail(id)) },
+                    onReviewDraft = { id -> navController.navigate(SecondaryRoutes.applicationDetail(id)) },
                 )
             }
             composable(Destination.Ai.route) {

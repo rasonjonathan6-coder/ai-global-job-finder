@@ -1928,6 +1928,76 @@ Modifié : `SmartAlertPolicy.kt` (nouveau), `JobNotificationsCoordinator.kt`,
 `JobRefreshRunner.kt`, `ProfileScreen.kt`, `Stage46SmartAlertTest.kt` (nouveau),
 `Stage46SmartAlertScreenTest.kt` (nouveau), `AGENTS.md`.
 
+## Stage 47 — file d'approbation des candidatures préparées
+
+Le mode « auto-apply » prépare un CV adapté et une lettre par offre, puis **s'arrête**. Cette
+étape ajoute la pièce qui rend cet arrêt sûr : une **file d'approbation**. Une candidature
+préparée n'est jamais soumise sans l'approbation explicite du contenu exact que l'utilisateur
+a relu. Le vrai envoi reste **désactivé** : une soumission est toujours une **simulation**.
+
+**Modèle (`data/model/ApplicationDraft.kt`).** `ApplicationDraft` porte tout ce que
+l'utilisateur approuve — résumé CV, texte intégral de la lettre, réponses aux questions,
+documents — et `contentHash`, dérivé **exactement** de ces champs par `DraftContentHash`
+(SHA-256 sur un encodage préfixé par longueur, donc deux arrangements différents ne peuvent
+pas entrer en collision). `approvedHash` est capturé au moment du tap ; `isApproved` exige que
+le hash vivant soit **égal** au hash approuvé, et `needsResubmission` est vrai dès qu'une
+édition change le contenu. `DraftStatus` sépare volontairement `SUBMISSION_PENDING` (écrit
+*avant* l'enregistrement, pour survivre à un crash) de `SUBMISSION_SIMULATED` / `SUBMISSION_SENT`.
+
+**Stockage (`data/applications/ApplicationDraftStore.kt`).** Même discipline que
+`ApplicationStore` : écriture atomique (fichier temporaire puis renommage), sérialisée
+derrière un mutex. Aucun envoi, aucune donnée ne quitte l'appareil.
+
+**Centre (`data/applications/ApplicationDraftCenter.kt`).** `prepare` → `approve` → `submit`,
+chaque étape sérialisée par un mutex. `prepare` recopie le contenu relu tel quel (l'app
+n'invente aucun champ) et, si le contenu n'a pas changé, **ne révoque pas** une approbation
+existante ; sinon il passe le brouillon en `NEEDS_RESUBMISSION`. `submit` refuse tant que
+`isApproved` est faux, écrit `SUBMISSION_PENDING`, puis s'appuie sur `SubmissionRegistry`
+(`allowRealSend = false`) : l'issue est toujours une **simulation**, jamais un envoi. Le
+registre empêche aussi la **double soumission** de la même offre. `resumePending()` rejoue au
+démarrage tout brouillon resté en `SUBMISSION_PENDING`.
+
+**Notification (`data/notifications/DraftReviewAlert.kt`).** `DraftReviewAlertPolicy.select`
+n'alerte que les brouillons **nouvellement en attente** et **jamais deux fois** ; le texte dit
+toujours « Nothing has been sent — open it to review and approve ». `JobNotificationsCoordinator`
+gagne `notifyDraftReviews(...)` avec son **propre historique** (`notified_draft_reviews.txt`) et
+son **propre canal** (`application_reviews`), donc une relance de préparation n'est jamais
+confondue avec une alerte nouveau match. Enregistrement **avant** publication, comme pour les
+matchs. `JobRefreshRunner` / `JobRefreshWorker` lisent `applicationDraftCenter.awaitingApproval`
+sur la même passe.
+
+**UI (`ui/screens/applications/DraftApprovalCard.kt`, `ApplicationsScreen.kt`).** La file
+d'approbation s'affiche en tête de l'écran *Applications* : carte dépliable « See what will be
+submitted » (résumé CV, lettre, réponses), pastille de statut, boutons *Approve* / *Skip*. Le
+`ApplicationsViewModel` observe `draftCenter.awaitingApproval`. Un tap sur la notification
+« ready for review » ouvre l'onglet Applications (`MainActivity` → `EXTRA_DRAFT_ID` →
+`AiJobFinderRoot`), où vit la file.
+
+**Vérification.** `Stage47DraftApprovalTest` (9 tests) épingle le contrat de sécurité : hash
+lié au contenu, refus d'une soumission non approuvée, simulation qui n'envoie jamais,
+approbation révoquée par une édition, approbation conservée si le contenu ne change pas, refus
+de double soumission, reprise après interruption, et formulation de la notification (jamais
+« envoyé »). Ajout d'une capture `draft-approval-card-light/dark` dans `ScreenshotTest`.
+`compileDebugKotlin`, `testDebugUnitTest` et `assembleDebug` réussissent.
+
+**Fondation « opportunité/classement expat » (aussi dans cette passe).** Trois briques
+explicables, exposées par le conteneur mais pas encore branchées à un écran :
+`ExpatOpportunityEngine` note le **paquet expatrié documenté** d'une offre (salaire normalisé,
+logement, vols, assurance) et plafonne toute offre disqualifiée (inéligible, scam, lien mort)
+— un paquet séduisant ne peut jamais racheter un blocage ; `ExpatRankingEngine` classe la
+shortlist en combinant *readiness* (0..60) et *opportunité* (0..40), les deux ingrédients
+restant visibles à côté du total, avec des libellés qui n'apparaissent que si la preuve existe ;
+`CurrencyConverter` expose la **source et la fraîcheur** de sa table de taux, pour qu'un salaire
+converti ne soit jamais pris pour une cotation en direct. Ces fichiers restent **sans test
+dédié** pour l'instant (le classement n'est pas encore surfacé dans l'UI).
+
+Modifié : `ApplicationDraft.kt`, `ApplicationDraftStore.kt`, `ApplicationDraftCenter.kt`,
+`DraftReviewAlert.kt`, `DraftApprovalCard.kt`, `ExpatOpportunity.kt`, `ExpatOpportunityEngine.kt`,
+`ExpatRanking.kt`, `ExpatRankingEngine.kt` (nouveaux) ; `AiJobFinderApp.kt`,
+`JobNotificationCenter.kt`, `JobNotificationsCoordinator.kt`, `JobRefreshRunner.kt`,
+`JobRefreshWorker.kt`, `ViewModels.kt`, `ApplicationsScreen.kt`, `AiJobFinderRoot.kt`,
+`MainActivity.kt`, `CurrencyConverter.kt`, `ScreenshotTest.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

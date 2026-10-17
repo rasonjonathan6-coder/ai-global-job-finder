@@ -13,6 +13,11 @@ class JobNotificationsCoordinator(
     private val center: JobNotificationCenter,
     private val history: NotificationHistoryStore,
     private val policy: JobNotificationPolicy = JobNotificationPolicy(),
+    /**
+     * Separate history for the "application ready for review" alerts. Null in tests and any
+     * caller that does not wire it; when null, [notifyDraftReviews] is a no-op.
+     */
+    private val draftReviewHistory: NotificationHistoryStore? = null,
 ) {
 
     /** Ensures the channel exists; safe to call at app start. */
@@ -51,6 +56,30 @@ class JobNotificationsCoordinator(
         // Record first: a post that races a permission denial still must not repeat later.
         history.record(selected.map { it.jobId })
         center.post(selected)
+        return selected
+    }
+
+    /**
+     * Posts "ready for your review" alerts for prepared drafts awaiting the user's approval.
+     *
+     * The rule is narrow: only drafts that are newly awaiting approval, and only once per
+     * draft. The wording never claims anything was sent — it states that the user must review
+     * and approve first. A no-op when no draft-review history was wired in.
+     *
+     * @return the alerts posted, for diagnostics and tests
+     */
+    suspend fun notifyDraftReviews(
+        drafts: List<com.aiglobal.jobfinder.data.model.ApplicationDraft>,
+        enabled: Boolean,
+    ): List<DraftReviewAlert> {
+        val reviewHistory = draftReviewHistory ?: return emptyList()
+        if (!enabled || drafts.isEmpty()) return emptyList()
+        val already = reviewHistory.notifiedIds()
+        val selected = DraftReviewAlertPolicy.select(drafts, already)
+        if (selected.isEmpty()) return emptyList()
+        // Record first: an alert that races a permission denial still must not repeat later.
+        reviewHistory.record(selected.map { it.draftId })
+        center.postDraftReviews(selected)
         return selected
     }
 }

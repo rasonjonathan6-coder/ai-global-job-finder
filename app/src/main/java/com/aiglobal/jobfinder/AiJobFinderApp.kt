@@ -5,6 +5,8 @@ import com.aiglobal.jobfinder.data.alerts.JobAlertStore
 import com.aiglobal.jobfinder.data.alerts.JobAlertsCenter
 import com.aiglobal.jobfinder.data.ai.NvidiaJobAssistant
 import com.aiglobal.jobfinder.data.applications.ApplicationCenter
+import com.aiglobal.jobfinder.data.applications.ApplicationDraftCenter
+import com.aiglobal.jobfinder.data.applications.ApplicationDraftStore
 import com.aiglobal.jobfinder.data.applications.ApplicationStore
 import com.aiglobal.jobfinder.data.autoapply.AutoApplyCenter
 import com.aiglobal.jobfinder.data.autoapply.AutoApplyStore
@@ -292,6 +294,30 @@ open class AppContainer(application: Application) {
         )
     }
 
+    /**
+     * The application approval queue: prepares a full application, waits for the user's
+     * explicit approval of the exact content, and only then submits it. Real sending stays
+     * off, so a submission is always simulated. The draft's content hash is what makes the
+     * approval meaningful — a later edit revokes it.
+     */
+    val applicationDraftCenter: ApplicationDraftCenter by lazy {
+        ApplicationDraftCenter(
+            repository = jobRepository,
+            store = ApplicationDraftStore(application),
+            submissionRegistry = submissionRegistry,
+        )
+    }
+
+    /** Explainable ranking of the shortlist for an applicant in Madagascar. */
+    val expatRankingEngine: com.aiglobal.jobfinder.data.jobs.ExpatRankingEngine by lazy {
+        com.aiglobal.jobfinder.data.jobs.ExpatRankingEngine()
+    }
+
+    /** Explainable expatriate opportunity assessment for one posting. */
+    val expatOpportunityEngine: com.aiglobal.jobfinder.data.expat.ExpatOpportunityEngine by lazy {
+        com.aiglobal.jobfinder.data.expat.ExpatOpportunityEngine()
+    }
+
     // ---------------------------------------------------------------- Stage 20
 
     /**
@@ -303,6 +329,10 @@ open class AppContainer(application: Application) {
         JobNotificationsCoordinator(
             center = JobNotificationCenter(application),
             history = NotificationHistoryStore(application),
+            draftReviewHistory = NotificationHistoryStore(
+                application,
+                file = File(application.filesDir, "notified_draft_reviews.txt"),
+            ),
         )
     }
 

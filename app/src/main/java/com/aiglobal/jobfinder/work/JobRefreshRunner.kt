@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.work
 
 import com.aiglobal.jobfinder.data.notifications.JobNotificationPolicy
 import com.aiglobal.jobfinder.data.notifications.JobNotificationsCoordinator
+import com.aiglobal.jobfinder.data.model.ApplicationDraft
 import com.aiglobal.jobfinder.data.repository.JobRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -19,6 +20,11 @@ class JobRefreshRunner(
     /** The user's alert relevance bar, read fresh each run so a changed setting takes effect. */
     private val alertMinMatchScore: Flow<Int> = flowOf(JobNotificationPolicy.DEFAULT_MIN_MATCH),
     private val demoMode: Flow<Boolean>,
+    /**
+     * Drafts awaiting the user's approval. Read on the same run so an application prepared in
+     * the background can raise its "ready for review" alert without a second schedule.
+     */
+    private val pendingDrafts: Flow<List<ApplicationDraft>> = flowOf(emptyList()),
 ) {
 
     /**
@@ -31,6 +37,7 @@ class JobRefreshRunner(
         repository.runLiveValidation()
 
         val jobs = repository.jobs.first()
+        val enabled = notificationsEnabled.first()
         // The ledger already told the repository which ids were first seen on this read, so a
         // scheduled refresh can announce only genuinely new postings rather than every strong
         // match that still sits in the feed. The smart gate additionally drops the ones that
@@ -38,10 +45,13 @@ class JobRefreshRunner(
         val newJobIds = repository.newPostings.first().jobIds.toSet()
         val posted = notifications.notifyNewMatches(
             jobs = jobs,
-            enabled = notificationsEnabled.first(),
+            enabled = enabled,
             minMatchScore = alertMinMatchScore.first(),
             newJobIds = newJobIds,
         )
+        // Prepared applications get their own alert, on their own channel and history, so a
+        // preparation nudge is never confused with a new-match alert. Never claims a send.
+        notifications.notifyDraftReviews(drafts = pendingDrafts.first(), enabled = enabled)
         return posted.map { it.jobId }
     }
 }

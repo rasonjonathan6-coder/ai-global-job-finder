@@ -70,4 +70,20 @@ object CurrencyConverter {
 
     /** Currency used for every normalised comparison. */
     val baseCurrency: String get() = EUR
+
+    /**
+     * Where the rates come from and how fresh they are. They are a coarse, hand-maintained
+     * table shipped with the app, so the figures are only good enough to sort and to flag
+     * "above/below expectation" — never to quote. Both are surfaced in the UI beside any
+     * converted salary so the estimate is never mistaken for a live quote.
+     */
+    val rateSource: String = "On-device reference table (approximate)"
+
+    /** Epoch millis the table was last reviewed. */
+    val rateAsOfEpochMillis: Long = RATE_AS_OF_EPOCH_MILLIS
+
+    /** Human date for the rate table, shown next to a converted figure. */
+    val rateAsOfLabel: String = "2024-06"
+
+    private const val RATE_AS_OF_EPOCH_MILLIS = 1717200000000L // 2024-06-01
 }

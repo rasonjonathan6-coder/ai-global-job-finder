@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Icon
@@ -58,6 +59,7 @@ fun ApplicationsScreen(
     viewModel: ApplicationsViewModel,
     onBrowseJobs: () -> Unit,
     onOpenApplication: (String) -> Unit = {},
+    onReviewDraft: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -68,7 +70,7 @@ fun ApplicationsScreen(
         )
 
         when {
-            state.isLoading && state.applications.isEmpty() -> {
+            state.isLoading && state.applications.isEmpty() && state.draftsAwaitingApproval.isEmpty() -> {
                 Column(
                     modifier = Modifier.padding(horizontal = LocalSpacing.current.gutter),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -76,7 +78,7 @@ fun ApplicationsScreen(
                     repeat(3) { JobCardSkeleton() }
                 }
             }
-            state.applications.isEmpty() -> {
+            state.applications.isEmpty() && state.draftsAwaitingApproval.isEmpty() -> {
                 ErrorState(
                     title = "Nothing to show",
                     message = "Your applications did not load. Try again in a moment.",
@@ -88,7 +90,9 @@ fun ApplicationsScreen(
                     .filter { state.selectedStatus == null || it.status == state.selectedStatus }
                     .sortedByDescending { it.updatedAtEpochMillis }
 
-                if (visible.isEmpty()) {
+                val showApprovalQueue = state.draftsAwaitingApproval.isNotEmpty()
+
+                if (visible.isEmpty() && !showApprovalQueue) {
                     EmptyState(
                         emoji = "📂",
                         title = "No applications in this stage",
@@ -105,6 +109,22 @@ fun ApplicationsScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.sm),
                     ) {
+                        if (showApprovalQueue) {
+                            item(key = "approval-queue-header") {
+                                ApprovalQueueHeader(count = state.draftsAwaitingApproval.size)
+                            }
+                            items(state.draftsAwaitingApproval, key = { "draft-${it.id}" }) { draft ->
+                                DraftApprovalCard(
+                                    draft = draft,
+                                    onReview = { onReviewDraft(draft.id) },
+                                    onApprove = { viewModel.approveDraft(draft.id) },
+                                    onSkip = { viewModel.skipDraft(draft.id) },
+                                )
+                            }
+                            item(key = "approval-queue-divider") {
+                                Spacer(Modifier.height(4.dp))
+                            }
+                        }
                         items(visible, key = { it.id }) { record ->
                             ApplicationCard(
                                 record = record,
@@ -171,6 +191,35 @@ private fun ApplicationsHeader(
                     onClick = { onSelectStatus(status) },
                 )
             }
+        }
+    }
+}
+
+/** Section label above the approval queue, so the queue reads as a distinct, actionable block. */
+@Composable
+private fun ApprovalQueueHeader(count: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.AutoAwesome,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Waiting for your approval",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = "$count prepared application${if (count == 1) "" else "s"} · nothing is sent until you approve",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

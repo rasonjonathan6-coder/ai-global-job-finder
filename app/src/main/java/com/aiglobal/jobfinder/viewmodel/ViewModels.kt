@@ -8,6 +8,7 @@ import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
 import com.aiglobal.jobfinder.data.jobs.engine.InternationalFitEngine
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.model.ApplicationDraft
 import com.aiglobal.jobfinder.data.model.ApplicationRecord
 import com.aiglobal.jobfinder.data.model.ApplicationReminder
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
@@ -870,6 +871,8 @@ data class ApplicationsUiState(
     val applications: List<ApplicationRecord> = emptyList(),
     val reminders: List<ApplicationReminder> = emptyList(),
     val selectedStatus: com.aiglobal.jobfinder.data.model.ApplicationStatus? = null,
+    /** Prepared applications waiting on the user's approval, newest first. */
+    val draftsAwaitingApproval: List<ApplicationDraft> = emptyList(),
 ) {
     /** Applications that match the active stage filter, newest activity first. */
     val visible: List<ApplicationRecord>
@@ -889,6 +892,8 @@ data class ApplicationsUiState(
 class ApplicationsViewModel(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val applicationCenter: com.aiglobal.jobfinder.data.applications.ApplicationCenter,
+    /** The approval queue. Optional so a screenshot fixture can omit it. */
+    private val draftCenter: com.aiglobal.jobfinder.data.applications.ApplicationDraftCenter? = null,
 ) : ViewModel() {
 
     private val _uiState = kotlinx.coroutines.flow.MutableStateFlow(ApplicationsUiState())
@@ -903,6 +908,13 @@ class ApplicationsViewModel(
         viewModelScope.launch {
             applicationCenter.reminders.collect { reminders ->
                 _uiState.update { it.copy(reminders = reminders) }
+            }
+        }
+        draftCenter?.let { center ->
+            viewModelScope.launch {
+                center.awaitingApproval.collect { drafts ->
+                    _uiState.update { it.copy(draftsAwaitingApproval = drafts) }
+                }
             }
         }
         refresh()
@@ -923,15 +935,22 @@ class ApplicationsViewModel(
         viewModelScope.launch { applicationCenter.setStatus(applicationId, status) }
 
     fun archive(applicationId: String) = viewModelScope.launch { applicationCenter.archive(applicationId) }
+
+    /** Approves the exact content of a prepared draft, so it can then be submitted. */
+    fun approveDraft(draftId: String) = viewModelScope.launch { draftCenter?.approve(draftId) }
+
+    /** Removes a prepared draft from the queue without applying. */
+    fun skipDraft(draftId: String) = viewModelScope.launch { draftCenter?.skip(draftId) }
 }
 
 class ApplicationsViewModelFactory(
     private val repository: com.aiglobal.jobfinder.data.repository.JobRepository,
     private val applicationCenter: com.aiglobal.jobfinder.data.applications.ApplicationCenter,
+    private val draftCenter: com.aiglobal.jobfinder.data.applications.ApplicationDraftCenter? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ApplicationsViewModel(repository, applicationCenter) as T
+        ApplicationsViewModel(repository, applicationCenter, draftCenter) as T
 }
 
 class ProfileViewModel(
