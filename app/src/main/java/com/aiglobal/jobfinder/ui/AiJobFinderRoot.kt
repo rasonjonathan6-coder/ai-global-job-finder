@@ -47,6 +47,7 @@ import com.aiglobal.jobfinder.ui.screens.home.HomeScreen
 import com.aiglobal.jobfinder.ui.screens.interview.InterviewScreen
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsScreen
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
+import com.aiglobal.jobfinder.ui.screens.ranking.ExpatRankingScreen
 import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldScreen
 import com.aiglobal.jobfinder.ui.screens.shortlist.ShortlistScreen
 import com.aiglobal.jobfinder.viewmodel.AppViewModel
@@ -70,6 +71,8 @@ import com.aiglobal.jobfinder.viewmodel.CvViewModel
 import com.aiglobal.jobfinder.viewmodel.CvViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceViewModel
 import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.ExpatRankingViewModel
+import com.aiglobal.jobfinder.viewmodel.ExpatRankingViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModel
 import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.HomeViewModel
@@ -105,6 +108,7 @@ object SecondaryRoutes {
     const val SHORTLIST = "shortlist"
     const val CV_ADAPTATION = "cvadaptation"
     const val EXPAT_INTELLIGENCE = "expatintelligence"
+    const val EXPAT_RANKING = "expatranking"
     const val APPLICATION_ASSISTANT = "assistant/{jobId}"
     const val SUBMISSIONS = "submissions"
 
@@ -208,6 +212,7 @@ fun AiJobFinderRoot(
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
                     onOpenLink = { url -> context.openExternally(url) },
                     onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
+                    onOpenRanking = { navController.navigate(SecondaryRoutes.EXPAT_RANKING) },
                     onToggleSaveJob = { jobId -> vm.toggleSave(jobId) },
                     onOpenAlerts = { navController.navigate(SecondaryRoutes.ALERTS) },
                     onOpenNewPostings = { ids ->
@@ -278,6 +283,7 @@ fun AiJobFinderRoot(
                     onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
                     onOpenAdaptation = { navController.navigate(SecondaryRoutes.CV_ADAPTATION) },
                     onOpenIntelligence = { navController.navigate(SecondaryRoutes.EXPAT_INTELLIGENCE) },
+                    onOpenRanking = { navController.navigate(SecondaryRoutes.EXPAT_RANKING) },
                     onOpenAssistant = { navController.navigate(SecondaryRoutes.applicationAssistant("")) },
                     hasCv = state.hasCv,
                     skillCount = state.skillCount,
@@ -476,6 +482,21 @@ fun AiJobFinderRoot(
                     ),
                 )
                 ExpatIntelligenceScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.applicationAssistant(jobId)) },
+                    onOpenJobs = { navController.navigateToTab(Destination.Jobs) },
+                )
+            }
+            composable(SecondaryRoutes.EXPAT_RANKING) {
+                val vm: ExpatRankingViewModel = viewModel(
+                    factory = ExpatRankingViewModelFactory(
+                        repository = container.jobRepository,
+                        cvRepository = container.cvRepository,
+                        expatPreferences = appViewModel.expatPreferences,
+                    ),
+                )
+                ExpatRankingScreen(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.applicationAssistant(jobId)) },

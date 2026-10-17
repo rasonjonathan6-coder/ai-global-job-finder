@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -108,6 +109,7 @@ fun AiScreen(
     onOpenShortlist: () -> Unit = {},
     onOpenAdaptation: () -> Unit = {},
     onOpenIntelligence: () -> Unit = {},
+    onOpenRanking: () -> Unit = {},
     onOpenAssistant: () -> Unit = {},
     /** True once the CV has been analysed, so the headline card can tell the truth. */
     hasCv: Boolean = false,
@@ -239,6 +241,14 @@ fun AiScreen(
                     accent = extendedColors.info,
                     actionLabel = "Open intelligence",
                     onClick = onOpenIntelligence,
+                )
+                CapabilityCard(
+                    icon = Icons.Filled.WorkspacePremium,
+                    title = "Expat ranking",
+                    body = "Blends how ready each posting is to apply for with how good its documented package is — and explains every place.",
+                    accent = MaterialTheme.colorScheme.secondary,
+                    actionLabel = "Open ranking",
+                    onClick = onOpenRanking,
                 )
                 CapabilityCard(
                     icon = Icons.Filled.AssignmentTurnedIn,

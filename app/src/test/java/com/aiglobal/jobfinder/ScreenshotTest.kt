@@ -76,8 +76,11 @@ import com.aiglobal.jobfinder.ui.screens.assistant.ApplicationAssistantContent
 import com.aiglobal.jobfinder.ui.screens.assistant.ExpatIntelligenceContent
 import com.aiglobal.jobfinder.data.assistant.ApplicationPlanEngine
 import com.aiglobal.jobfinder.data.assistant.ExpatIntelligenceEngine
+import com.aiglobal.jobfinder.data.jobs.ExpatRankingEngine
 import com.aiglobal.jobfinder.viewmodel.ApplicationPlanUiState
 import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceUiState
+import com.aiglobal.jobfinder.data.model.ExpatRankingState
+import com.aiglobal.jobfinder.ui.screens.ranking.ExpatRankingContent
 import com.aiglobal.jobfinder.ui.screens.alerts.JobAlertsContent
 import com.aiglobal.jobfinder.ui.screens.applicationdetail.ApplicationDetailContent
 import com.aiglobal.jobfinder.ui.screens.applications.ApplicationsScreen
@@ -813,6 +816,31 @@ class ScreenshotTest {
     @Test
     fun expatIntelligence() = renderBothModes("expat-intelligence") {
         ExpatIntelligenceContent(state = expatIntelligenceState, onBack = {}, onRefresh = {})
+    }
+
+    @Test
+    fun expatRanking() = renderBothModes("expat-ranking") {
+        ExpatRankingContent(state = expatRankingState, onBack = {}, onRefresh = {})
+    }
+
+    /** The ranked feed over the sample postings, built from the real engines. */
+    private val expatRankingState: ExpatRankingState by lazy {
+        val shortlistEngine = ShortlistEngine(clock = { stage5Now })
+        val jobs = runBlocking { repository.jobs.first() }
+        val profile = CandidateProfile(
+            fullName = "Jonathan Rakoto",
+            currentTitle = "Maintenance Technician",
+            yearsOfExperience = 6,
+            skills = listOf("Preventive maintenance", "Hydraulics", "PLC"),
+        )
+        val shortlist = shortlistEngine.build(
+            jobs = jobs,
+            profile = profile,
+            preferences = ExpatPreferences.defaults(),
+            profileCompletenessPercent = 100,
+            salaryEurPerYear = { 60_000 },
+        )
+        ExpatRankingEngine(clock = { stage5Now }).rank(shortlist, ExpatPreferences.defaults())
     }
 
     /** A per-posting plan built from the real engines over the sample feed. */

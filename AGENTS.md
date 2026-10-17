@@ -1988,8 +1988,8 @@ logement, vols, assurance) et plafonne toute offre disqualifiée (inéligible, s
 shortlist en combinant *readiness* (0..60) et *opportunité* (0..40), les deux ingrédients
 restant visibles à côté du total, avec des libellés qui n'apparaissent que si la preuve existe ;
 `CurrencyConverter` expose la **source et la fraîcheur** de sa table de taux, pour qu'un salaire
-converti ne soit jamais pris pour une cotation en direct. Ces fichiers restent **sans test
-dédié** pour l'instant (le classement n'est pas encore surfacé dans l'UI).
+converti ne soit jamais pris pour une cotation en direct. Le classement est surfacé à l'étape
+48 (voir ci-dessous), avec ses tests dédiés.
 
 Modifié : `ApplicationDraft.kt`, `ApplicationDraftStore.kt`, `ApplicationDraftCenter.kt`,
 `DraftReviewAlert.kt`, `DraftApprovalCard.kt`, `ExpatOpportunity.kt`, `ExpatOpportunityEngine.kt`,
@@ -1997,6 +1997,40 @@ Modifié : `ApplicationDraft.kt`, `ApplicationDraftStore.kt`, `ApplicationDraftC
 `JobNotificationCenter.kt`, `JobNotificationsCoordinator.kt`, `JobRefreshRunner.kt`,
 `JobRefreshWorker.kt`, `ViewModels.kt`, `ApplicationsScreen.kt`, `AiJobFinderRoot.kt`,
 `MainActivity.kt`, `CurrencyConverter.kt`, `ScreenshotTest.kt`, `AGENTS.md`.
+
+## Étape 48 — classement expatrié surfacé dans l'UI
+
+La fondation « opportunité/classement » de l'étape 47 est désormais branchée à un écran : le
+**classement expatrié**. Il ne recalcule rien. Le `ExpatRankingViewModel` observe la même
+triple entrée que la shortlist (flux d'offres, CV analysé, préférences expat), fait tourner le
+même `ShortlistEngine`, puis passe le résultat à `ExpatRankingEngine`. Le classement ne peut
+donc pas contredire la *readiness* affichée par la shortlist — un test l'épingle.
+
+**Écran (`ui/screens/ranking/ExpatRankingScreen.kt`).** En-tête (retour + rafraîchir), héro en
+dégradé avec le décompte « prêts à traiter », le meilleur score et le nombre de plafonnés, puis
+une liste de cartes classées. Chaque carte montre le **rang** (médaille), le **score combiné**
+(anneau animé teinté par la bande de readiness), les **deux ingrédients** côte à côte
+(readiness 0..60 et paquet expat 0..40) sous forme de mini-barres, les raisons citées, et les
+pastilles `ReadinessBadge` / `MatchChip` / bande d'opportunité plus les libellés de classement
+(verts pour les atouts, ambre pour les mises en garde). États : squelette, vide, liste.
+
+**Câblage.** Nouvelle route `SecondaryRoutes.EXPAT_RANKING = "expatranking"` et bloc
+`composable` avec `ExpatRankingViewModelFactory`. Point d'entrée depuis l'écran **AI** (nouvelle
+`CapabilityCard` « Expat ranking ») et depuis **Home** : `ShortlistEntryCard` a été généralisé
+en `EntryBannerCard` pour porter les deux bannières (shortlist + classement) sans dupliquer le
+style. `HomeScreen` et `HomeContent` gagnent `onOpenRanking`, transmis depuis `AiJobFinderRoot`.
+
+**Vérification.** `Stage48ExpatRankingTest` (10 tests) épingle le contrat : ordre déterministe
+et numéroté depuis 1, readiness reprise telle quelle de la shortlist, une offre interdite aux
+locaux n'entre jamais au classement (le total la compte quand même), une offre sans route
+joignable est plafonnée et placée sous toute offre applicable, une offre scam reste sous le
+plafond, les libellés n'apparaissent que si la preuve existe (le silence donne la mise en garde,
+jamais un atout), une mise en garde remonte même quand le score est bon, et un flux vide ne
+classe rien. Ajout d'une capture `expat-ranking-light/dark` dans `ScreenshotTest`.
+`compileDebugKotlin`, `testDebugUnitTest` et `assembleDebug` réussissent.
+
+Modifié : `ExpatRankingScreen.kt` (nouveau) ; `Stage48ExpatRankingTest.kt` (nouveau) ;
+`AiJobFinderRoot.kt`, `AiScreen.kt`, `HomeScreen.kt`, `ScreenshotTest.kt`, `AGENTS.md`.
 
 ## Conventions
 

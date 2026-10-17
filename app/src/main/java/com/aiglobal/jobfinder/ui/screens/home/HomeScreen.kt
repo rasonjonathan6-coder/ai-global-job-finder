@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Work
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -85,6 +86,7 @@ fun HomeScreen(
     onOpenJob: (String) -> Unit,
     onOpenLink: (String) -> Unit = {},
     onOpenShortlist: () -> Unit = {},
+    onOpenRanking: () -> Unit = {},
     onToggleSaveJob: (String) -> Unit = {},
     onOpenAlerts: () -> Unit = {},
     /** Opens the Jobs tab focused on the postings first seen since the last review. */
@@ -129,6 +131,7 @@ fun HomeScreen(
                 onOpenJob = onOpenJob,
                 onOpenLink = onOpenLink,
                 onOpenShortlist = onOpenShortlist,
+                onOpenRanking = onOpenRanking,
                 onToggleSaveJob = onToggleSaveJob,
                 onOpenAlerts = onOpenAlerts,
                 onOpenNewPostings = onOpenNewPostings,
@@ -145,6 +148,7 @@ internal fun HomeContent(
     onOpenJob: (String) -> Unit,
     onOpenLink: (String) -> Unit = {},
     onOpenShortlist: () -> Unit = {},
+    onOpenRanking: () -> Unit = {},
     onToggleSaveJob: (String) -> Unit = {},
     onOpenAlerts: () -> Unit = {},
     /** Opens the Jobs tab focused on the postings first seen since the last review. */
@@ -199,8 +203,24 @@ internal fun HomeContent(
 
         item {
             Spacer(Modifier.height(spacing.lg))
-            Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
-                ShortlistEntryCard(onOpenShortlist = onOpenShortlist)
+            Column(
+                modifier = Modifier.padding(horizontal = spacing.gutter),
+                verticalArrangement = Arrangement.spacedBy(spacing.sm),
+            ) {
+                EntryBannerCard(
+                    icon = Icons.Filled.Public,
+                    tint = extendedColors.success,
+                    title = "Expat shortlist",
+                    body = "Roles you can actually apply for from Madagascar, ranked and explained.",
+                    onClick = onOpenShortlist,
+                )
+                EntryBannerCard(
+                    icon = Icons.Filled.WorkspacePremium,
+                    tint = MaterialTheme.colorScheme.secondary,
+                    title = "Expat ranking",
+                    body = "Your strongest opportunities, with readiness and package blended into one place.",
+                    onClick = onOpenRanking,
+                )
             }
         }
 
@@ -754,15 +774,21 @@ private fun AiInsightCard(scannedCount: Int, eligibleCount: Int) {
 }
 
 /**
- * Home entry point into the Stage 11 expat shortlist. Kept as a slim banner so it invites a
- * tap without competing with the job cards below it.
+ * Home entry point into the expat surfaces (shortlist, ranking). Kept as a slim banner so it
+ * invites a tap without competing with the job cards below it.
  */
 @Composable
-private fun ShortlistEntryCard(onOpenShortlist: () -> Unit) {
+private fun EntryBannerCard(
+    icon: ImageVector,
+    tint: Color,
+    title: String,
+    body: String,
+    onClick: () -> Unit,
+) {
     val spacing = LocalSpacing.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(140), label = "shortlistPress")
+    val scale by animateFloatAsState(if (pressed) 0.985f else 1f, tween(140), label = "entryBannerPress")
 
     Row(
         modifier = Modifier
@@ -770,7 +796,7 @@ private fun ShortlistEntryCard(onOpenShortlist: () -> Unit) {
             .scale(scale)
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(interactionSource = interaction, indication = null, onClick = onOpenShortlist)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(spacing.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -778,26 +804,26 @@ private fun ShortlistEntryCard(onOpenShortlist: () -> Unit) {
             modifier = Modifier
                 .size(42.dp)
                 .clip(RoundedCornerShape(13.dp))
-                .background(extendedColors.success.copy(alpha = 0.16f)),
+                .background(tint.copy(alpha = 0.16f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Filled.Public,
+                icon,
                 contentDescription = null,
-                tint = extendedColors.success,
+                tint = tint,
                 modifier = Modifier.size(21.dp),
             )
         }
         Spacer(Modifier.width(spacing.sm))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Expat shortlist",
+                text = title,
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = "Roles you can actually apply for from Madagascar, ranked and explained.",
+                text = body,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
