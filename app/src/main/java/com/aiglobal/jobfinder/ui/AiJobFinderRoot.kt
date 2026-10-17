@@ -261,6 +261,7 @@ fun AiJobFinderRoot(
                     onBrowseJobs = { navController.navigateToTab(Destination.Jobs) },
                     onOpenApplication = { id -> navController.navigate(SecondaryRoutes.applicationDetail(id)) },
                     onReviewDraft = { id -> navController.navigate(SecondaryRoutes.applicationDetail(id)) },
+                    onOpenLink = { url -> context.openExternally(url) },
                 )
             }
             composable(Destination.Ai.route) {

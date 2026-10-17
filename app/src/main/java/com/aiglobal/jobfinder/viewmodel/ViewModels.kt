@@ -941,6 +941,10 @@ class ApplicationsViewModel(
 
     /** Removes a prepared draft from the queue without applying. */
     fun skipDraft(draftId: String) = viewModelScope.launch { draftCenter?.skip(draftId) }
+
+    /** Records the user's privacy-consent decision for a prepared draft. */
+    fun setDraftConsent(draftId: String, given: Boolean) =
+        viewModelScope.launch { draftCenter?.setConsent(draftId, given) }
 }
 
 class ApplicationsViewModelFactory(

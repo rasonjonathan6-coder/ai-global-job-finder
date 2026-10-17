@@ -2063,6 +2063,52 @@ Modifié : `SubmissionCapability.kt` (nouveau) ; `Stage48ProviderSubmissionCapab
 `Stage48PipelineReadinessTest.kt` (nouveaux) ; `JobProvider.kt`, `ProviderDiagnostics.kt`,
 `LiveJobRepository.kt`, `LiveSearchValidationScreen.kt`, `ProfileScreen.kt`, `AGENTS.md`.
 
+## Étape 49 — audit de la soumission officielle et frontières de sécurité
+
+**Audit obligatoire avant tout code (`data/submissions/OfficialSubmissionAudit.kt`).** Les
+sources d'offres ont été réexaminées : aucune n'expose d'endpoint de candidature pilotable.
+La seule API de soumission **officielle** trouvée est la **SmartRecruiters Application API**
+(`developers.smartrecruiters.com/docs/application-api`, page à jour au 2026-03-25) :
+`GET /postings/:uuid/configuration` (questions, politiques de confidentialité, consentement),
+`POST /postings/:uuid/candidates` (création, statut `New` uniquement, champs requis
+`firstName`/`lastName`/`email` + réponses obligatoires, pièces jointes Base64 ≤ 2 Mo), et
+`GET /postings/:uuid/candidates/:candidateId/status` (statuts NEW…HIRED). Tous les endpoints
+sont protégés ; en OAuth 2.0 le scope `candidate_applications_manage` est requis, et les
+identifiants se créent dans le *Credential Manager* d'un client SmartRecruiters ou via
+l'enregistrement partenaire. L'audit est **écrit comme données** (endpoints + prérequis), pas
+comme un discours : chaque prérequis porte sa raison et son remède, et
+`realSubmissionAvailable` est **dérivé** (`all { it.met }`), donc il ne peut pas contredire la
+liste.
+
+**Décision : pas de première route réelle.** Les prérequis ne sont pas satisfaits et ne peuvent
+pas l'être dans cette app : (1) il faut être client SmartRecruiters ou partenaire enregistré ;
+(2) il faut un client OAuth avec le scope de candidature ; (3) un **secret client ne peut pas
+être protégé dans un APK** — il faudrait un backend dédié, inexistant ; (4) le consentement
+RGPD, les questions de sélection et la politique de confidentialité doivent être présentés ;
+(5) le throttling adaptatif (8 appels simultanés, délais jusqu'à 128 s, 429) doit être respecté.
+Tant que ces prérequis ne sont pas remplis, **rien n'est envoyé** et l'utilisateur postule sur
+le **formulaire officiel de l'employeur**.
+
+**Frontières de sécurité.** `SubmissionLifecycle` nomme les états d'une vraie soumission et
+ajoute `SIMULATED_NOT_SENT` pour qu'une simulation ne soit **jamais** confondue avec un envoi :
+`SUBMITTED_CONFIRMED` (seul `isConfirmedSent`) est **inatteignable** tant que la route n'existe
+pas. `SubmissionPreflightCheck` est une porte pure qui bloque sur approbation manquante,
+absence de route officielle, contenu requis manquant, **consentement manquant** et doublon —
+`allowed` est dérivé des blocages. `OfficialSubmissionClassifier` classe une réponse future :
+un `2xx` **avec** id est confirmé, un `2xx` sans id, un timeout, un `5xx` ou un **409**
+(conflit → vérifier, jamais renvoyer) sont `Unknown` ; seul un `4xx` est `Failed`. Le modèle
+`ApplicationDraft` gagne `consentGiven` (dans le hash : le changer invalide l'approbation),
+`remoteApplicationId`/`confirmedAtEpochMillis` (reçus **uniquement** d'une confirmation
+réelle, jamais fabriqués). UI : bandeau de canal honnête + interrupteur de consentement +
+« Open official form » sur la carte de brouillon ; carte « Real application submission » avec
+les prérequis dans l'écran diagnostics.
+
+Modifié : `OfficialSubmissionAudit.kt`, `SubmissionLifecycle.kt`, `SubmissionPreflight.kt`,
+`OfficialSubmissionClassifier.kt` (nouveaux) ; `Stage49OfficialSubmissionAuditTest.kt` (nouveau,
+16 tests) ; `ApplicationDraft.kt`, `ApplicationDraftCenter.kt`, `ViewModels.kt`,
+`ApplicationsScreen.kt`, `DraftApprovalCard.kt`, `LiveSearchValidationScreen.kt`,
+`AiJobFinderRoot.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

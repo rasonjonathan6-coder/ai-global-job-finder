@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.model.ApplicationRecord
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
+import com.aiglobal.jobfinder.data.submissions.OfficialSubmissionAudit
 import com.aiglobal.jobfinder.ui.components.EmptyState
 import com.aiglobal.jobfinder.ui.components.ErrorState
 import com.aiglobal.jobfinder.ui.components.FilterChip
@@ -60,6 +63,7 @@ fun ApplicationsScreen(
     onBrowseJobs: () -> Unit,
     onOpenApplication: (String) -> Unit = {},
     onReviewDraft: (String) -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -67,6 +71,10 @@ fun ApplicationsScreen(
         ApplicationsHeader(
             state = state,
             onSelectStatus = viewModel::selectStatus,
+        )
+
+        SubmissionChannelBanner(
+            modifier = Modifier.padding(horizontal = LocalSpacing.current.gutter),
         )
 
         when {
@@ -119,6 +127,8 @@ fun ApplicationsScreen(
                                     onReview = { onReviewDraft(draft.id) },
                                     onApprove = { viewModel.approveDraft(draft.id) },
                                     onSkip = { viewModel.skipDraft(draft.id) },
+                                    onToggleConsent = { given -> viewModel.setDraftConsent(draft.id, given) },
+                                    onOpenOfficialForm = { onOpenLink(draft.sourceUrl) },
                                 )
                             }
                             item(key = "approval-queue-divider") {
@@ -192,6 +202,46 @@ private fun ApplicationsHeader(
                 )
             }
         }
+    }
+}
+
+/**
+ * The honest channel banner: it states, once, that no verified submission route exists, so
+ * the app prepares applications and the user submits them on the employer's own form. It is
+ * driven by the same audit the rest of the app reads, so it can never claim a capability the
+ * audit does not grant.
+ */
+@Composable
+private fun SubmissionChannelBanner(modifier: Modifier = Modifier) {
+    val spacing = LocalSpacing.current
+    val available = OfficialSubmissionAudit.realSubmissionAvailable
+    val container = if (available) extendedColors.successContainer else extendedColors.infoContainer
+    val content = if (available) extendedColors.success else extendedColors.info
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(container)
+            .padding(horizontal = spacing.sm, vertical = spacing.xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (available) Icons.Filled.Verified else Icons.Filled.Info,
+            contentDescription = null,
+            tint = content,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = if (available) {
+                "A verified submission route is available."
+            } else {
+                "No verified submission route yet — nothing is sent automatically. Open the official form to apply."
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

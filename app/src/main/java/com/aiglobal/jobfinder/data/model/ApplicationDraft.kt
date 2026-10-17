@@ -86,6 +86,20 @@ data class ApplicationDraft(
     val preparedAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
     val attempts: List<SubmissionAttempt> = emptyList(),
+    /**
+     * Whether the user gave the employer's required privacy consent for this application.
+     * Part of the reviewed content: changing it invalidates an approval, exactly like an
+     * edit to the CV, letter or answers.
+     */
+    val consentGiven: Boolean = false,
+    /**
+     * The provider's own application/candidate id, recorded **only** from a confirmed
+     * response. Null until a real submission is confirmed; never fabricated. This is the
+     * minimal remote receipt the brief asks for — no secrets, no answers.
+     */
+    val remoteApplicationId: String? = null,
+    /** When a real submission was confirmed by the provider, or null. */
+    val confirmedAtEpochMillis: Long? = null,
     /** Plain-language explanation of the current status. */
     val reason: String = "",
 ) {
@@ -121,7 +135,8 @@ data class ApplicationDraft(
             coverLetterText: String,
             answers: List<DraftAnswer>,
             documents: List<String>,
-        ): String = DraftContentHash.of(cvSummary, coverLetterText, answers, documents)
+            consentGiven: Boolean = false,
+        ): String = DraftContentHash.of(cvSummary, coverLetterText, answers, documents, consentGiven)
     }
 }
 
@@ -137,6 +152,7 @@ object DraftContentHash {
         coverLetterText: String,
         answers: List<DraftAnswer>,
         documents: List<String>,
+        consentGiven: Boolean = false,
     ): String {
         val canonical = buildString {
             appendField(cvSummary)
@@ -146,6 +162,9 @@ object DraftContentHash {
                 appendField(answer.answer)
             }
             documents.forEach { appendField(it) }
+            // The consent decision is part of what the user approved, so changing it must
+            // invalidate the approval just like an edit to the letter.
+            appendField(if (consentGiven) "consent:true" else "consent:false")
         }
         return sha256(canonical)
     }

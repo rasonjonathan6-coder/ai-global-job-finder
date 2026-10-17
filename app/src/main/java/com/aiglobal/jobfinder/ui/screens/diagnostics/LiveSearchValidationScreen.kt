@@ -20,10 +20,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.TaskAlt
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
@@ -43,6 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
 import com.aiglobal.jobfinder.data.model.ProviderStatus
+import com.aiglobal.jobfinder.data.submissions.OfficialSubmissionAudit
+import com.aiglobal.jobfinder.data.submissions.SubmissionPrerequisite
 import com.aiglobal.jobfinder.ui.components.AppCard
 import com.aiglobal.jobfinder.ui.components.EmptyState
 import com.aiglobal.jobfinder.ui.components.IconChipButton
@@ -127,6 +133,8 @@ internal fun LiveSearchValidationContent(
 
             item { RunSummaryCard(state = state, onRun = onRun, onDismissNote = onDismissNote) }
 
+            item { SubmissionPrerequisitesCard() }
+
             item {
                 SectionHeader(
                     title = "Sources",
@@ -150,6 +158,101 @@ internal fun LiveSearchValidationContent(
                         onOpenDocumentation = { onOpenDocumentation(provider.documentationUrl) },
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Stage 49 — the prerequisites for a real, API-driven submission, listed honestly. Every row
+ * comes from [OfficialSubmissionAudit], which is derived from the provider's own documentation,
+ * so this panel explains *why* the app cannot send instead of leaving the user to guess.
+ */
+@Composable
+private fun SubmissionPrerequisitesCard() {
+    val spacing = LocalSpacing.current
+    val available = OfficialSubmissionAudit.realSubmissionAvailable
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (available) Icons.Filled.Verified else Icons.Filled.Lock,
+                    contentDescription = null,
+                    tint = if (available) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(spacing.xs))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Real application submission",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (available) "Available" else "Not available yet",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (available) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Pill(
+                    text = "${OfficialSubmissionAudit.SMART_RECRUITERS_PREREQUISITES.count { it.met }}/" +
+                        "${OfficialSubmissionAudit.SMART_RECRUITERS_PREREQUISITES.size} met",
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Text(
+                text = OfficialSubmissionAudit.statusSummary(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            OfficialSubmissionAudit.SMART_RECRUITERS_PREREQUISITES.forEach { prerequisite ->
+                PrerequisiteRow(prerequisite)
+            }
+
+            Text(
+                text = "Source: SmartRecruiters Application API documentation — " +
+                    OfficialSubmissionAudit.SMART_RECRUITERS_DOCS,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PrerequisiteRow(prerequisite: SubmissionPrerequisite) {
+    val spacing = LocalSpacing.current
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            if (prerequisite.met) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (prerequisite.met) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(spacing.xs))
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = prerequisite.title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = prerequisite.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (!prerequisite.met) {
+                Text(
+                    text = "To enable: ${prerequisite.howToSatisfy}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
     }

@@ -139,6 +139,7 @@ class ApplicationDraftCenter(
             coverLetterText = base.coverLetterText,
             answers = base.answers,
             documents = base.documents,
+            consentGiven = base.consentGiven,
         )
         val contentChanged = newHash != base.contentHash
 
@@ -180,6 +181,7 @@ class ApplicationDraftCenter(
             coverLetterText = edited.coverLetterText,
             answers = edited.answers,
             documents = edited.documents,
+            consentGiven = edited.consentGiven,
         )
         val status = when {
             edited.status == DraftStatus.SUBMISSION_SENT || edited.status == DraftStatus.SUBMISSION_SIMULATED ->
@@ -212,6 +214,7 @@ class ApplicationDraftCenter(
             coverLetterText = current.coverLetterText,
             answers = current.answers,
             documents = current.documents,
+            consentGiven = current.consentGiven,
         )
         val updated = current.copy(
             approvedHash = liveHash,
@@ -231,6 +234,36 @@ class ApplicationDraftCenter(
     }
 
     suspend fun remove(id: String) = store.removeDraft(id)
+
+    /**
+     * Records the user's privacy-consent decision for the employer's own policy. Consent is
+     * part of the reviewed content, so flipping it changes the hash: an application approved
+     * without consent must be approved again once consent is given.
+     */
+    suspend fun setConsent(id: String, given: Boolean): ApplicationDraft? = gate.withLock {
+        val current = draft(id) ?: return@withLock null
+        val now = clock()
+        val edited = current.copy(consentGiven = given, updatedAtEpochMillis = now)
+        val newHash = ApplicationDraft.hashOf(
+            cvSummary = edited.cvSummary,
+            coverLetterText = edited.coverLetterText,
+            answers = edited.answers,
+            documents = edited.documents,
+            consentGiven = edited.consentGiven,
+        )
+        val needsReapproval = edited.approvedHash != null && edited.approvedHash != newHash
+        val updated = edited.copy(
+            contentHash = newHash,
+            status = if (needsReapproval) DraftStatus.NEEDS_RESUBMISSION else edited.status,
+            reason = if (needsReapproval) {
+                "The consent decision changed — approve the current version again before submitting."
+            } else {
+                if (given) "Privacy consent recorded." else "Privacy consent withdrawn."
+            },
+        )
+        store.putDraft(updated)
+        updated
+    }
 
     // ------------------------------------------------------------------ submit
 
@@ -275,6 +308,7 @@ class ApplicationDraftCenter(
             coverLetterText = draft.coverLetterText,
             answers = draft.answers,
             documents = draft.documents,
+            consentGiven = draft.consentGiven,
         )
         // The content must still be the approved content at the moment of submission.
         if (draft.approvedHash == null || draft.approvedHash != hash) {

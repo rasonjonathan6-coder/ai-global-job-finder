@@ -20,10 +20,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +67,8 @@ fun DraftApprovalCard(
     onApprove: () -> Unit,
     onSkip: () -> Unit,
     modifier: Modifier = Modifier,
+    onToggleConsent: (Boolean) -> Unit = {},
+    onOpenOfficialForm: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     val dark = isDarkTheme()
@@ -174,6 +178,32 @@ fun DraftApprovalCard(
                     )
                 }
 
+                // Consent for the employer's own privacy policy is a mandatory part of a real
+                // application, so it is collected here, next to the content it covers.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.PrivacyTip,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (draft.consentGiven) {
+                            "You consented to the employer's privacy policy."
+                        } else {
+                            "Consent to the employer's privacy policy is required before a real submission."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = draft.consentGiven,
+                        onCheckedChange = onToggleConsent,
+                    )
+                }
+
                 var expanded by remember(draft.id) { mutableStateOf(false) }
                 val chevronRotation by animateFloatAsState(
                     targetValue = if (expanded) 180f else 0f,
@@ -246,6 +276,17 @@ fun DraftApprovalCard(
                     SecondaryButton(
                         text = "Skip",
                         onClick = onSkip,
+                    )
+                }
+
+                // The app cannot submit to this employer's system, so the honest next step is
+                // the employer's own official form. This opens that page; it never claims a send.
+                if (draft.sourceUrl.isNotBlank()) {
+                    SecondaryButton(
+                        text = "Open official form",
+                        onClick = onOpenOfficialForm,
+                        modifier = Modifier.fillMaxWidth(),
+                        leadingIcon = Icons.AutoMirrored.Filled.OpenInNew,
                     )
                 }
             }
