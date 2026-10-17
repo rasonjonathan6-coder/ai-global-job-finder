@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aiglobal.jobfinder.data.jobs.provider.ProviderAudit
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
 import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.submissions.OfficialSubmissionAudit
@@ -154,6 +155,7 @@ internal fun LiveSearchValidationContent(
                 items(diagnostics.providers, key = { it.providerId }) { provider ->
                     SourceDiagnosticCard(
                         provider = provider,
+                        audit = state.auditFor(provider.providerId),
                         onToggle = { enabled -> onToggleSource(provider.providerId, enabled) },
                         onOpenDocumentation = { onOpenDocumentation(provider.documentationUrl) },
                     )
@@ -361,6 +363,7 @@ private fun SummaryStat(label: String, value: Int, color: Color, modifier: Modif
 @Composable
 private fun SourceDiagnosticCard(
     provider: ProviderDiagnostic,
+    audit: ProviderAudit?,
     onToggle: (Boolean) -> Unit,
     onOpenDocumentation: () -> Unit,
 ) {
@@ -397,6 +400,54 @@ private fun SourceDiagnosticCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (audit != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(spacing.xs),
+                ) {
+                    // The kind of source this is, stated from the source's own definition —
+                    // so a fixture or a mock is never read as a live feed.
+                    Pill(
+                        text = "${audit.dataSource.label} · ${audit.kind.name.lowercase().replace('_', ' ')}",
+                        containerColor = if (audit.isLive) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        contentColor = if (audit.isLive) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    Pill(
+                        text = audit.reachabilityLabel,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (audit.capabilities.serverSideKeyword) {
+                        Pill(
+                            text = "Keyword search",
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (!audit.isLive) {
+                    Text(
+                        text = "This source serves bundled sample data, not a live feed.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (audit.botGated) {
+                    Text(
+                        text = "This host is known to challenge automated requests; a failure here is the gate, not an empty feed.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,

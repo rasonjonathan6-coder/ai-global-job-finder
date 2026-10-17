@@ -30,7 +30,10 @@ import com.aiglobal.jobfinder.data.jobs.provider.HimalayasProvider
 import com.aiglobal.jobfinder.data.jobs.provider.HttpJsonFeed
 import com.aiglobal.jobfinder.data.jobs.provider.JoobleProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JobicyProvider
+import com.aiglobal.jobfinder.data.jobs.provider.JobProvider
 import com.aiglobal.jobfinder.data.jobs.provider.LeverProvider
+import com.aiglobal.jobfinder.data.jobs.provider.ProviderAudit
+import com.aiglobal.jobfinder.data.jobs.provider.ProviderAuditRegistry
 import com.aiglobal.jobfinder.data.jobs.provider.RemotiveProvider
 import com.aiglobal.jobfinder.data.jobs.provider.SmartRecruitersProvider
 import com.aiglobal.jobfinder.data.jobs.provider.WorkdayProvider
@@ -138,34 +141,7 @@ open class AppContainer(application: Application) {
      * its key.
      */
     protected open fun createJobRepository(): JobRepository = LiveJobRepository(
-        providers = buildList {
-            add(ArbeitnowProvider())
-            add(RemotiveProvider())
-            add(JobicyProvider())
-            add(HimalayasProvider())
-            // Official European Employment Services feed: government vacancies across the
-            // EEA and Switzerland, with full descriptions inline.
-            add(EuresProvider(feed = HttpJsonFeed))
-            // Employer applicant-tracking-system boards. These are the employer's own
-            // careers sites, which is where expat industrial, mining and energy roles
-            // actually live and where an application goes directly to the employer.
-            add(WorkdayProvider(feed = HttpJsonFeed))
-            add(GreenhouseProvider(feed = HttpJsonFeed))
-            add(AshbyProvider(feed = HttpJsonFeed))
-            add(LeverProvider(feed = HttpJsonFeed))
-            // SmartRecruiters is keyless and supports server-side keyword search, so the
-            // inspection, testing and industrial-service employers it hosts (SGS, Wabtec,
-            // Konecranes, Bosch) can be narrowed to the candidate's own trades across the
-            // Gulf and Africa rather than returning a broad sample.
-            add(SmartRecruitersProvider(feed = HttpJsonFeed))
-            add(adzunaProvider)
-            add(
-                JoobleProvider(
-                    apiKey = { joobleApiKeyValue },
-                    feed = HttpJsonFeed,
-                ),
-            )
-        },
+        providers = buildJobProviders(),
         mapper = JobMapper(
             matchingEngine = MatchingEngine(),
             eligibilityEngine = EligibilityEngine(),
@@ -183,6 +159,47 @@ open class AppContainer(application: Application) {
         savedIdsSetter = { ids -> preferencesRepository.setSavedJobIds(ids) },
         seenLedger = jobSeenLedger,
     )
+
+    /**
+     * The registered job sources, built once and shared with the feed. Kept as its own
+     * function so the audit can describe exactly the same providers the feed runs, and the
+     * two cannot drift.
+     */
+    open fun buildJobProviders(): List<JobProvider> = buildList {
+        add(ArbeitnowProvider())
+        add(RemotiveProvider())
+        add(JobicyProvider())
+        add(HimalayasProvider())
+        // Official European Employment Services feed: government vacancies across the
+        // EEA and Switzerland, with full descriptions inline.
+        add(EuresProvider(feed = HttpJsonFeed))
+        // Employer applicant-tracking-system boards. These are the employer's own
+        // careers sites, which is where expat industrial, mining and energy roles
+        // actually live and where an application goes directly to the employer.
+        add(WorkdayProvider(feed = HttpJsonFeed))
+        add(GreenhouseProvider(feed = HttpJsonFeed))
+        add(AshbyProvider(feed = HttpJsonFeed))
+        add(LeverProvider(feed = HttpJsonFeed))
+        // SmartRecruiters is keyless and supports server-side keyword search, so the
+        // inspection, testing and industrial-service employers it hosts (SGS, Wabtec,
+        // Konecranes, Bosch) can be narrowed to the candidate's own trades across the
+        // Gulf and Africa rather than returning a broad sample.
+        add(SmartRecruitersProvider(feed = HttpJsonFeed))
+        add(adzunaProvider)
+        add(
+            JoobleProvider(
+                apiKey = { joobleApiKeyValue },
+                feed = HttpJsonFeed,
+            ),
+        )
+    }
+
+    /**
+     * A factual description of every registered source — where its postings come from, what
+     * its API supports, and how it is reached — derived from the same providers the feed
+     * runs. It states what is true of each source, never that a source answered just now.
+     */
+    val providerAudit: List<ProviderAudit> by lazy { ProviderAuditRegistry.audit(buildJobProviders()) }
 
     /**
      * Which sources are switched off, and which credential-gated sources have keys saved.

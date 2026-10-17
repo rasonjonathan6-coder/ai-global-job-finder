@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.model
 
 import androidx.compose.runtime.Immutable
+import com.aiglobal.jobfinder.data.jobs.provider.DataSourceKind
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorCategory
 
 /**
@@ -74,6 +75,12 @@ data class ProviderDiagnostic(
     val name: String,
     val homepage: String,
     val documentationUrl: String,
+    /**
+     * Where this source's postings come from. Defaults to live so a record built before the
+     * field existed is still read as live, but every real construction site sets it from the
+     * provider so a fixture or mock is never presented as live.
+     */
+    val dataSource: DataSourceKind = DataSourceKind.LIVE,
     val status: ProviderStatus = ProviderStatus.IDLE,
     /** Whether the user has this source switched on. */
     val enabled: Boolean = true,
@@ -113,6 +120,9 @@ data class ProviderDiagnostic(
 ) {
     /** True when credentials are missing, so the source is dormant rather than broken. */
     val needsSetup: Boolean get() = requiresCredentials && !credentialsConfigured
+
+    /** True when this source's postings are fetched from the real API rather than a fixture. */
+    val isLive: Boolean get() = dataSource == DataSourceKind.LIVE
 }
 
 /**

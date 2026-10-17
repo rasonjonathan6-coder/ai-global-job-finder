@@ -4,6 +4,8 @@ import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
 import com.aiglobal.jobfinder.data.jobs.engine.OfferVerificationEngine
 import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
 import com.aiglobal.jobfinder.data.jobs.search.SearchCoverageSource
+import com.aiglobal.jobfinder.data.jobs.provider.DataSourceKind
+import com.aiglobal.jobfinder.data.jobs.provider.JobProvider
 import com.aiglobal.jobfinder.data.model.DashboardStats
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobSource
@@ -76,6 +78,7 @@ class SampleJobRepository(
                     name = "Arbeitnow",
                     homepage = "https://www.arbeitnow.com",
                     documentationUrl = "https://www.arbeitnow.com/blog/arbeitnow-api",
+                    dataSource = DataSourceKind.FIXTURES,
                     status = ProviderStatus.SUCCESS_WITH_RESULTS,
                     validJobCount = 3,
                     lastAttemptAtEpochMillis = now,
@@ -88,6 +91,7 @@ class SampleJobRepository(
                     name = "Remotive",
                     homepage = "https://remotive.com",
                     documentationUrl = "https://remotive.com/remote-jobs/api",
+                    dataSource = DataSourceKind.FIXTURES,
                     status = ProviderStatus.SUCCESS_WITH_RESULTS,
                     validJobCount = 3,
                     lastAttemptAtEpochMillis = now,
@@ -100,6 +104,7 @@ class SampleJobRepository(
                     name = "Jobicy",
                     homepage = "https://jobicy.com",
                     documentationUrl = "https://jobicy.com/jobs-rss-feed",
+                    dataSource = DataSourceKind.FIXTURES,
                     status = ProviderStatus.SUCCESS_EMPTY,
                     validJobCount = 0,
                     lastAttemptAtEpochMillis = now,

@@ -34,6 +34,16 @@ interface JobRepository {
     val diagnostics: Flow<ProviderDiagnostics>
 
     /**
+     * A factual description of every registered source: where its postings come from (live,
+     * fixtures or mock), what its API supports, and how it is reached. Derived from the same
+     * providers the feed runs, so it cannot drift from reality. Empty when the repository has
+     * no provider list of its own (the fixture repository), so the UI shows nothing rather
+     * than guessing. This states what is true of a source; it never claims a source answered.
+     */
+    val providerAudit: List<com.aiglobal.jobfinder.data.jobs.provider.ProviderAudit>
+        get() = emptyList()
+
+    /**
      * How the last search was run: which sources could narrow by keyword, which returned a
      * broad sample, and how many postings matched a target role. Empty until the first
      * attempt completes.

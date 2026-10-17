@@ -121,6 +121,14 @@ class LiveJobRepository(
     override val diagnostics: StateFlow<ProviderDiagnostics> = _diagnostics.asStateFlow()
 
     /**
+     * The audit of the sources this repository actually runs, built once from the same
+     * provider list the feed uses. It records what each source is — live or fixture, what its
+     * API supports, how it is reached — and never claims a source answered.
+     */
+    override val providerAudit: List<com.aiglobal.jobfinder.data.jobs.provider.ProviderAudit> =
+        com.aiglobal.jobfinder.data.jobs.provider.ProviderAuditRegistry.audit(providers)
+
+    /**
      * How the last search was actually run: which sources can narrow by keyword and which
      * only returned a broad sample, plus how many postings matched a target role. The UI
      * reads this so it never calls a broad remote feed a targeted search.
@@ -475,6 +483,7 @@ class LiveJobRepository(
             name = provider.name,
             homepage = provider.homepage,
             documentationUrl = provider.documentationUrl,
+            dataSource = provider.dataSource,
             status = status,
             enabled = true,
             serverSideSearch = serverSideSearch,
@@ -502,6 +511,7 @@ class LiveJobRepository(
         name = provider.name,
         homepage = provider.homepage,
         documentationUrl = provider.documentationUrl,
+        dataSource = provider.dataSource,
         status = ProviderStatus.forErrorCategory(category),
         enabled = true,
         serverSideSearch = serverSideSearch,
@@ -620,6 +630,7 @@ class LiveJobRepository(
         name = provider.name,
         homepage = provider.homepage,
         documentationUrl = provider.documentationUrl,
+        dataSource = provider.dataSource,
         status = if (provider.requiresCredentials && !hasCredentials(provider)) {
             ProviderStatus.NOT_CONFIGURED
         } else {

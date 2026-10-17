@@ -3,6 +3,7 @@ package com.aiglobal.jobfinder.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.aiglobal.jobfinder.data.jobs.provider.ProviderAudit
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.repository.JobRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,7 +19,15 @@ data class SourceDiagnosticsUiState(
     val isRunning: Boolean = false,
     /** A user-facing note, e.g. after a manual run completes. */
     val note: String? = null,
-)
+    /**
+     * What each registered source is — live, fixture or mock, what its API supports, and how
+     * it is reached. A documentation fact, not a live measurement, so it is available before
+     * any run and never claims a source answered. Keyed for quick lookup by provider id.
+     */
+    val audit: List<ProviderAudit> = emptyList(),
+) {
+    fun auditFor(providerId: String): ProviderAudit? = audit.firstOrNull { it.id == providerId }
+}
 
 /**
  * Drives the live-search validation screen. It only ever shows what the repository
@@ -29,7 +38,7 @@ class SourceDiagnosticsViewModel(
     private val repository: JobRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(SourceDiagnosticsUiState())
+    private val _uiState = MutableStateFlow(SourceDiagnosticsUiState(audit = repository.providerAudit))
     val uiState: StateFlow<SourceDiagnosticsUiState> = _uiState.asStateFlow()
 
     /** Latest snapshot, kept so a run can describe its own outcome without re-collecting. */

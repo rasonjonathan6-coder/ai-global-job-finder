@@ -60,6 +60,26 @@ data class RawJob(
 enum class ProviderKind { REMOTE_BOARD, GOVERNMENT, AGGREGATOR, EMPLOYER_BOARD }
 
 /**
+ * Where a provider's postings actually come from, so the app never presents a fixture or a
+ * mock as if it were a live feed.
+ *
+ *  - [LIVE] — postings are read from the source's real API over the network at fetch time.
+ *  - [FIXTURES] — a deterministic, hand-curated set shipped with the app (demo mode). Real
+ *    employers and real wording, but not fetched now.
+ *  - [MOCK] — synthetic records a test or a stub returned; never real openings.
+ *  - [DEMO] — curated sample data served so the UI can be explored without a CV or a network.
+ *
+ * This is a fact about the provider, declared by the provider itself, so the diagnostics
+ * screen can say plainly whether what the user sees is live.
+ */
+enum class DataSourceKind(val label: String) {
+    LIVE("Live"),
+    FIXTURES("Fixtures"),
+    MOCK("Mock"),
+    DEMO("Demo"),
+}
+
+/**
  * What a source's API actually supports. These are facts about the provider, established
  * from its documentation and from what the feed does with a parameter, and they drive the
  * search strategy: a provider that cannot filter server-side is fetched once and filtered
@@ -111,6 +131,13 @@ interface JobProvider {
     val homepage: String
 
     val kind: ProviderKind
+
+    /**
+     * Where this provider's postings come from. Defaults to [DataSourceKind.LIVE] because
+     * every registered production provider reads its source's real API; a fixture, mock or
+     * demo source must override it so the UI never calls it live.
+     */
+    val dataSource: DataSourceKind get() = DataSourceKind.LIVE
 
     /**
      * Official API or developer-documentation page for this source. Shown in the
