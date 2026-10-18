@@ -19,8 +19,8 @@ data class Spacing(
     val xxxl: Dp = 40.dp,
     /** Standard horizontal gutter for screen content. */
     val gutter: Dp = 20.dp,
-    /** Extra bottom padding so content clears the floating navigation bar. */
-    val navBarClearance: Dp = 112.dp,
+    /** Extra bottom padding so content clears the in-flow navigation bar comfortably. */
+    val navBarClearance: Dp = 24.dp,
 )
 
 val LocalSpacing = staticCompositionLocalOf { Spacing() }

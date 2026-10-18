@@ -123,7 +123,10 @@ fun JobCard(
                                 text = job.title,
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
+                                // Full job titles are a decision signal, so allow a third line
+                                // before ellipsising rather than cutting "Maintenance Technician"
+                                // down to "Maintenance…" on a narrow screen.
+                                maxLines = 3,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false),
                             )

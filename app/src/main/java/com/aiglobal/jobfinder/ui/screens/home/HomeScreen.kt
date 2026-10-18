@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.filled.WorkspacePremium
@@ -182,6 +183,13 @@ internal fun HomeContent(
                     totalJobs = state.totalJobs,
                     onAnalyseCv = onOpenJobs,
                 )
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(spacing.md))
+            Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
+                HomeSearchEntry(onClick = onOpenJobs)
             }
         }
 
@@ -382,6 +390,52 @@ private fun HomeTopBar(hasNotifications: Boolean, onOpenAlerts: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+/**
+ * Home search entry. It is a tappable field rather than an editable one: tapping it opens the
+ * Jobs tab, where the real search field and its keyboard live. This keeps Home compact while
+ * still giving search a clear, obvious entry point near the top of the screen.
+ */
+@Composable
+private fun HomeSearchEntry(onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.99f else 1f, tween(140), label = "searchEntryPress")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(19.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = "Search role, company or country",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 

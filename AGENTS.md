@@ -55,8 +55,9 @@ Notes that cost time to rediscover:
   every call times out. Interleave `shadowOf(Looper.getMainLooper()).idle()` so frames flush.
 - One `setContent` per test only. To capture both themes, flip a `mutableStateOf(ThemeMode)`
   and re-capture from the same tree.
-- Bottom-nav items expose `contentDescription` (the icon), and the label `Text` only exists
-  on the selected item. Match nav targets with `onNodeWithContentDescription`.
+- Bottom-nav items expose `contentDescription` on the `NavigationBarItem` (the stable English
+  name from `Destination.contentDescription`), and all five labels are always shown. Match nav
+  targets with `onNodeWithContentDescription`; assert the visible label with `onNodeWithText`.
 - `ScreenshotTest` and `NavigationTest` take `autoRun`/repositories with zero delay so
   animation and loading states settle deterministically.
 
@@ -2285,14 +2286,58 @@ Modifié : `QueryExpansion.kt` (nouveau), `ViewModels.kt`, `TextParsing.kt`, `Jo
 `RecordValidationEngine.kt`, `HomeScreen.kt`, `JobsScreen.kt`,
 `Stage52ReliabilityTest.kt` (nouveau), `AGENTS.md`.
 
+## Étape 53 — refonte visuelle premium de la navigation et de l'écran d'accueil
+
+**But.** Rendre l'application crédible sur un vrai téléphone : une barre de navigation lisible,
+un écran d'accueil qui répond d'un coup d'œil, sans casser l'architecture existante.
+
+**Barre de navigation pleine largeur, cinq libellés permanents.** L'ancienne barre flottait
+au-dessus du contenu et n'affichait le libellé que de l'onglet sélectionné : « Emplois » et
+« Candidatures » étaient donc invisibles pour un nouvel utilisateur. La barre est maintenant
+posée **dans le flux** par `AiJobFinderRoot` (le contenu est mesuré dans l'espace restant), avec
+un filet de séparation, une ombre douce en clair, et `navigationBarsPadding()` pour les gestes
+système. Les cinq libellés français (« Accueil », « Emplois », « Candidatures », « IA »,
+« Profil ») restent visibles en permanence, sélectionnés ou non. La pilule d'indicateur
+Material 3 marque la sélection.
+
+**Identité vs libellé.** `Destination` porte deux champs distincts : `label` (libellé français
+affiché) et `contentDescription` (nom anglais stable : `Home`, `Jobs`, `Applications`, `AI`,
+`Profile`). La `contentDescription` est posée sur la `NavigationBarItem` elle-même, pas sur
+l'icône : les descendants sont fusionnés dans le nœud de l'onglet, donc une description posée
+sur l'icône n'est pas atteignable par `onNodeWithContentDescription`. Les tests et les lecteurs
+d'écran visent ainsi une identité qui ne dépend pas de la langue de l'affichage.
+
+**Contenu non masqué.** `navBarClearance` passe de 112 dp (dégagement pour une barre flottante)
+à 24 dp : la barre n'étant plus superposée, un grand dégagement ne ferait qu'ajouter un vide en
+bas de chaque écran. Le helper `NavBarSpacer` (jamais utilisé) a été supprimé.
+
+**Accueil plus lisible.** Ajout d'un point d'entrée de recherche (« Search role, company or
+country ») qui ouvre l'onglet Emplois, là où vivent le vrai champ et son clavier. Les titres de
+poste passent de 2 à 3 lignes avant ellipse : un intitulé de métier est un signal de décision et
+ne doit pas être tronqué en « Maintenance… » sur un écran étroit.
+
+**Vérification sans appareil.** Deux tests : `Stage53NavigationTest.kt` (7 cas) couvre les cinq
+libellés visibles, la description stable de chaque onglet, l'état sélectionné, le clic, et le
+rendu à 320 dp avec `fontScale = 1.5`. La géométrie des libellés a aussi été lue dans les PNG de
+`ScreenshotTest` (`bottom-nav-*.png`) : chaque libellé tient dans son cinquième sans atteindre le
+bord de sa zone. Suite complète : **679 tests, 0 échec**. `assembleDebug`, `assembleRelease` et
+`lintDebug` (0 erreur) réussissent.
+
+Modifié : `ui/navigation/Destination.kt`, `ui/navigation/BottomNavBar.kt`, `ui/AiJobFinderRoot.kt`,
+`ui/theme/Spacing.kt`, `ui/screens/home/HomeScreen.kt`, `ui/components/JobCard.kt`,
+`Stage53NavigationTest.kt` (nouveau), `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
-  `navBarClearance` as bottom content padding so the floating nav bar never covers content.
+  `navBarClearance` as bottom content padding. The navigation bar is **in flow** (laid out by
+  `AiJobFinderRoot` below the content), so `navBarClearance` is a small breathing gap, not a
+  reserve for an overlay — do not raise it back to the old floating-bar value.
 - Dark mode is a hand-tuned palette in `Theme.kt`, not an inversion. Check both modes.
-- The bottom-nav active pill hugs its content (`AnimatedVisibility` + `expandHorizontally`),
-  not a fixed width, so a long label such as "Applications" expands the gradient instead of
-  being clipped by it. The label still only exists on the selected item.
+- The bottom nav always shows all five labels (`alwaysShowLabel = true`); `Destination.label`
+  is the visible French name and `Destination.contentDescription` is the stable English
+  identity. Put `contentDescription` on the `NavigationBarItem` (descendants merge), never on
+  the icon.
 - Premium design guidance comes from the workspace `frontend-design` skill
   (`.agents/skills/frontend-design`), installed from `OpenHands/extensions`. Keep Kotlin +
   Compose + Material 3; apply its principles to typography, cards, motion and loading states.

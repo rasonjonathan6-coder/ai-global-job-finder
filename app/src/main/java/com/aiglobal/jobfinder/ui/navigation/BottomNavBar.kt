@@ -1,47 +1,43 @@
 package com.aiglobal.jobfinder.ui.navigation
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.aiglobal.jobfinder.ui.components.isDarkTheme
 
 /**
- * Floating pill navigation bar. The active item expands into a labelled gradient
- * chip so the current section is unmistakable at a glance.
+ * Responsive Material 3 navigation bar with five persistent labels.
+ *
+ * Every destination keeps its icon *and* its label visible, selected or not, so the bar never
+ * degrades into an icon-only strip. The labels are the French tab names ("Accueil", "Emplois",
+ * "Candidatures", "IA", "Profil"); the icon carries the stable English [Destination.contentDescription]
+ * so screen readers and tests can name a destination without depending on the label language.
+ *
+ * The bar is laid out in normal flow by [com.aiglobal.jobfinder.ui.AiJobFinderRoot] rather than
+ * floating over the content, so it can never obscure the last card of a list. A hairline divider
+ * and a light shadow keep it visually separated from the content above it.
  */
 @Composable
 fun BottomNavBar(
@@ -50,102 +46,71 @@ fun BottomNavBar(
     modifier: Modifier = Modifier,
 ) {
     val dark = isDarkTheme()
-    val shape = RoundedCornerShape(26.dp)
+    val topDivider = MaterialTheme.colorScheme.outlineVariant
 
-    Box(
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (dark) Modifier
-                    else Modifier.shadow(
-                        elevation = 18.dp,
-                        shape = shape,
-                        clip = false,
-                        ambientColor = Color(0x240B1B33),
-                        spotColor = Color(0x240B1B33),
-                    )
+            .then(
+                if (dark) Modifier
+                else Modifier.shadow(
+                    elevation = 14.dp,
+                    shape = RoundedCornerShape(0.dp),
+                    clip = false,
+                    ambientColor = Color(0x1F0B1B33),
+                    spotColor = Color(0x1F0B1B33),
                 )
-                .clip(shape)
-                .background(MaterialTheme.colorScheme.surfaceContainer)
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            )
+            .background(MaterialTheme.colorScheme.surface)
+            .navigationBarsPadding(),
+    ) {
+        HorizontalDivider(thickness = 1.dp, color = topDivider)
+        NavigationBar(
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
         ) {
             Destination.entries.forEach { destination ->
-                NavItem(
-                    destination = destination,
+                NavigationBarItem(
                     selected = destination == current,
                     onClick = { onSelect(destination) },
-                    modifier = Modifier.weight(1f),
+                    // The stable English name is attached to the whole tab (not just the icon)
+                    // so it survives semantics merging. This keeps accessibility and the
+                    // navigation tests keyed to a destination identity that never changes,
+                    // while the visible label stays French.
+                    modifier = Modifier.semantics { contentDescription = destination.contentDescription },
+                    icon = {
+                        Icon(
+                            imageVector = if (destination == current) destination.selectedIcon else destination.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(23.dp),
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = destination.label,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontSize = 10.5.sp,
+                                letterSpacing = 0.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            ),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 1.dp),
+                        )
+                    },
+                    alwaysShowLabel = true,
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun NavItem(
-    destination: Destination,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val contentAlpha by animateFloatAsState(if (selected) 1f else 0.72f, tween(200), label = "navAlpha")
-    // The pill hugs its content instead of a fixed width, so a longer label such as
-    // "Applications" expands the gradient rather than being clipped by it.
-    val horizontalPadding by animateDpAsState(if (selected) 14.dp else 10.dp, tween(240), label = "navPad")
-    val contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-    val gradient = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .background(
-                    if (selected) Brush.linearGradient(gradient) else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)),
-                )
-                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-                .padding(horizontal = horizontalPadding, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Icon(
-                imageVector = destination.icon,
-                contentDescription = destination.label,
-                tint = contentColor.copy(alpha = contentAlpha),
-                modifier = Modifier.size(if (selected) 20.dp else 22.dp),
-            )
-            AnimatedVisibility(
-                visible = selected,
-                enter = fadeIn(tween(220, delayMillis = 60)) + expandHorizontally(tween(260), expandFrom = Alignment.Start),
-                exit = fadeOut(tween(110)) + shrinkHorizontally(tween(200), shrinkTowards = Alignment.Start),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        text = destination.label,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Vertical spacer that keeps scrollable content clear of the floating bar. */
-@Composable
-fun NavBarSpacer(modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Spacer(Modifier.height(96.dp))
     }
 }

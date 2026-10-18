@@ -9,8 +9,9 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -177,12 +178,14 @@ fun AiJobFinderRoot(
     // their own back affordance instead.
     val showBottomBar = Destination.entries.any { it.route == currentRoute }
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
 
         NavHost(
             navController = navController,
             startDestination = Destination.Home.route,
-            modifier = Modifier.fillMaxSize(),
+            // The nav bar sits below the host in normal flow, so the host takes the remaining
+            // height and scrollable content always ends above the bar rather than behind it.
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             // Forward navigation slides in from the right; going back reverses it.
             enterTransition = {
                 slideInHorizontally(tween(TRANSITION_MS)) { it / 8 } + fadeIn(tween(TRANSITION_MS))
@@ -537,7 +540,6 @@ fun AiJobFinderRoot(
             BottomNavBar(
                 current = current,
                 onSelect = { navController.navigateToTab(it) },
-                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
             )
         }
     }
