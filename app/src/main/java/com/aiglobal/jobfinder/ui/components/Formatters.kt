@@ -27,14 +27,29 @@ private fun periodSuffix(period: SalaryPeriod): String = when (period) {
 /** Placeholder used when the source did not publish a salary. */
 const val SALARY_NOT_STATED = "Salary not stated"
 
+/** Placeholder used when the source gave a unit that cannot be right for the amount. */
+const val SALARY_TO_VERIFY = "Salary to verify"
+
 /** Salary label that never invents a number. */
 fun formatSalaryOrUnknown(min: Int, max: Int, currency: String, period: SalaryPeriod): String =
     if (min <= 0 || currency.isBlank()) SALARY_NOT_STATED else formatSalary(min, max, currency, period)
 
 /**
+ * The salary line for a posting, honouring the parser's honesty flags. A figure whose source
+ * unit is impossible ("USD 106k–112k/hr") reads "Salary to verify" rather than a number that
+ * would be off by orders of magnitude; a missing figure reads "Salary not stated".
+ */
+fun salaryLabel(job: com.aiglobal.jobfinder.data.model.Job): String = when {
+    job.salaryUnitUncertain -> SALARY_TO_VERIFY
+    job.salaryMin <= 0 || job.currencyCode.isBlank() -> SALARY_NOT_STATED
+    else -> formatSalary(job.salaryMin, job.salaryMax, job.currencyCode, job.salaryPeriod)
+}
+
+/**
  * The same salary in the candidate's reference currency (EUR), with the yearly basis
- * made explicit. Returns null when the source currency is unknown, so the caller can
- * omit the line instead of showing a guess.
+ * made explicit. Returns null when the source currency is unknown, when the period was
+ * only inferred, or when the source's unit is untrustworthy — in those cases a conversion
+ * would present a guess as a fact, so the caller omits the line instead.
  */
 fun formatSalaryInEur(min: Int, max: Int, currency: String, period: SalaryPeriod): String? {
     val eurMin = CurrencyConverter.toEurPerYear(min, currency, period) ?: return null
@@ -71,6 +86,14 @@ fun relativeTime(epochMillis: Long, now: Long = System.currentTimeMillis()): Str
  */
 fun postedAgeLabel(postedAtEpochMillis: Long?, now: Long = System.currentTimeMillis()): String =
     postedAtEpochMillis?.let { relativeTime(it, now) } ?: "Date not stated"
+
+/**
+ * The publication date, prefixed so it reads as the employer's own date and cannot be
+ * mistaken for when this app fetched or discovered the posting. Those are two different
+ * facts, and the card shows both when it has them.
+ */
+fun publishedLabel(postedAtEpochMillis: Long?, now: Long = System.currentTimeMillis()): String =
+    postedAtEpochMillis?.let { "Published ${relativeTime(it, now)}" } ?: "Date not stated"
 
 /**
  * Retrieval label: when this app last pulled the posting from its source. Kept distinct from

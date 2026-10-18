@@ -334,8 +334,15 @@ private fun JobsHeader(state: JobsUiState, onQueryChange: (String) -> Unit) {
             color = MaterialTheme.colorScheme.onBackground,
         )
         Spacer(Modifier.height(2.dp))
+        // Three distinct counts, never blended: how many postings are loaded, how many pass the
+        // current filters, and how many are open to a Madagascar-based applicant. The old single
+        // line called every loaded posting "open to international applicants", which overstated it.
         Text(
-            text = "${state.visibleJobs.size} opportunities open to international applicants",
+            text = buildString {
+                append("${state.visibleJobs.size} of ${state.jobs.size} postings shown")
+                if (state.hasActiveFilters) append(" (filters active)")
+                append(" · ${state.eligibleCount} open to Madagascar")
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,

@@ -2219,6 +2219,72 @@ validée sans appareil (Robolectric) et par revue des états vide / erreur / cha
 Modifié : `ExpatBenefitExtractor.kt`, `EligibilityEngine.kt`, `Stage50OfferQualityTest.kt`,
 `AGENTS.md`.
 
+## Étape 52 — fiabilité des offres internationales
+
+**But.** Une revue sur téléphone a montré quatre mensonges possibles à l'écran. Chacun est
+corrigé au niveau qui le produit, avec un test qui échoue sans le correctif. Aucune nouvelle
+fonctionnalité : c'est un durcissement de la fiabilité.
+
+**1. Une recherche de métier ne trouvait rien.** Taper « Mechanical Seal Technician » ne
+renvoyait aucune offre alors que le flux contenait « Rotating Equipment Maintenance
+Technician ». La barre de recherche ne faisait qu'un test de sous-chaîne littéral. Nouveau
+`QueryExpansion.kt` (`data/jobs/search/`) : un groupe de synonymes par métier, plus des
+**clusters** de métiers adjacents sur le marché (un monteur de joints tournants est embauché
+pour de l'équipement tournant, des pompes et de la maintenance d'usine). L'expansion s'applique
+**aux offres déjà chargées** ; elle ne demande jamais de nouveaux résultats à un fournisseur et
+n'invente aucune annonce. La correspondance est **mot entier** pour un métier complet (« pump »
+ne matche pas « pumpkin ») et par **préfixe de mot** pour une saisie partielle (« rotat » trouve
+« Rotating »).
+
+**2. La recherche portait sur un signal dérivé.** Le filtre cherchait aussi dans
+`matchedSkills`, une liste produite par l'app. Une offre intitulée « Frontend Developer »
+ressortait donc parce que le CV matcher lui avait attribué « Preventive maintenance ». Le
+haystack est désormais le texte de l'offre (titre, employeur, lieu, résumé) ; on cherche des
+postes, pas des étiquettes.
+
+**3. Un salaire annuel étiqueté « /hr ».** Le cas réel « USD 106k–112k per hour » était affiché
+tel quel, soit un facteur ~2000 d'erreur. `SalaryParser` produit maintenant deux drapeaux
+d'honnêteté : `unitUncertain` (l'unité annoncée est impossible pour le montant) et
+`periodInferred` (aucune unité annoncée, la période a été déduite). La carte affiche alors
+« Salary to verify » au lieu d'un nombre, et **aucune conversion EUR n'est tentée** depuis une
+unité non fiable. Le plancher de montant a aussi été corrigé : 1 (et non 100) pour HOUR/DAY,
+sinon « $45 per hour » était jeté comme du bruit.
+
+**4. Deux compteurs qui semblaient identiques.** L'en-tête Jobs disait « N opportunities open to
+international applicants » en comptant *toutes* les offres chargées, alors que le compteur
+« Matching » comptait les scores CV. Trois nombres distincts sont désormais nommés :
+`visibleJobs` / `jobs` (chargées vs filtrées), `eligibleCount` (éligibles Madagascar) et
+`stats.matchingJobs` (score CV). Nouveau `HomeUiState.openToMadagascarCount`, affiché dans le
+héros (« X of Y postings are open to applicants in Madagascar ») et dans la rangée de stats
+(« Open to MG », à côté de « CV match »).
+
+**5. Fraîcheur et provenance, trois faits séparés.** « Published » (date de l'employeur, jamais
+inventée : « Date not stated »), « Fetched » (dernier pull de l'app, montré seulement s'il
+apporte une information) et « Discovered » (première vue par l'app). Le libellé de publication
+est préfixé pour ne pas être confondu avec la récupération.
+
+**6. Gardes salaire en aval.** `ScamDetector` saute le test « paie irréaliste » quand l'unité
+de la source n'est pas fiable (juger la plausibilité depuis un chiffre déjà faux serait une
+seconde erreur) ; `ExpatOpportunityEngine` ne convertit pas une unité incertaine ou déduite ;
+`RecordValidationEngine` ne valide les montants annuels que si l'unité est fiable.
+
+**Tests.** Nouveau `Stage52ReliabilityTest` (20 cas) couvrant les six points : synonymes de
+métier, non-correspondance mot entier, préfixe de saisie, unité incertaine, période déduite,
+libellés de salaire, compteurs, fraîcheur. Suite complète : **673 tests, 0 échec, 0 erreur**.
+`assembleDebug` réussit.
+
+**Décision de portée.** Un changement local non commité réécrivait entièrement
+`BottomNavBar.kt` (pilule flottante → barre pleine largeur toujours étiquetée). C'est une
+refonte de la navigation, interdite par les règles du projet et hors sujet pour cette étape
+(les notes de session le présentaient à tort comme un simple ajout de Modifier). Il a été
+annulé : la navigation existante est conservée telle quelle.
+
+Modifié : `QueryExpansion.kt` (nouveau), `ViewModels.kt`, `TextParsing.kt`, `JobProvider.kt`,
+`Job.kt`, `JobMapper.kt`, `AdzunaProvider.kt`, `RemotiveProvider.kt`, `JoobleProvider.kt`,
+`Formatters.kt`, `JobCard.kt`, `ScamDetector.kt`, `ExpatOpportunityEngine.kt`,
+`RecordValidationEngine.kt`, `HomeScreen.kt`, `JobsScreen.kt`,
+`Stage52ReliabilityTest.kt` (nouveau), `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

@@ -135,6 +135,8 @@ class JobMapper(
             aiInsight = insightFor(match.score, match.reasons, eligibility.eligibility),
             providerId = raw.providerId,
             salaryIsEstimated = raw.salaryMin == null,
+            salaryPeriodInferred = raw.salaryPeriodInferred,
+            salaryUnitUncertain = raw.salaryUnitUncertain,
             matchReasons = match.reasons,
             eligibilityReasons = eligibility.reasons,
             benefitEvidence = benefitEvidence,
@@ -154,7 +156,7 @@ class JobMapper(
 
     /** Adds the normalised salary signal without changing the raw display values. */
     fun eurPerYear(job: Job): Int? =
-        if (job.salaryMin <= 0) null
+        if (job.salaryMin <= 0 || job.salaryUnitUncertain || job.salaryPeriodInferred) null
         else CurrencyConverter.toEurPerYear(job.salaryMin, job.currencyCode, job.salaryPeriod)
 
     private fun insightFor(score: Int, reasons: List<MatchReason>, eligibility: com.aiglobal.jobfinder.data.model.MadagascarEligibility): String {

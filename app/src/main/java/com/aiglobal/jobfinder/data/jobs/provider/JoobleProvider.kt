@@ -95,7 +95,9 @@ class JoobleProvider(
             salaryMin = parsed.min,
             salaryMax = parsed.max,
             salaryCurrency = parsed.currency,
-            salaryPeriod = if (parsed.min != null) parsed.period ?: SalaryPeriod.YEAR else null,
+            salaryPeriod = if (parsed.min != null && !parsed.unitUncertain) parsed.period ?: SalaryPeriod.YEAR else null,
+            salaryPeriodInferred = parsed.periodInferred,
+            salaryUnitUncertain = parsed.unitUncertain,
         )
     }
 

@@ -156,12 +156,17 @@ class ExpatOpportunityEngine(
 
     private fun compensationDimension(job: Job, salary: NormalisedSalary?): OpportunityDimensionScore {
         val max = OpportunityDimension.COMPENSATION.weightPercent
-        val disclosed = job.salaryMin > 0 && !job.salaryIsEstimated
+        val disclosed = job.salaryMin > 0 && !job.salaryIsEstimated && !job.salaryUnitUncertain
         val conflicting = job.salaryMin > 0 && job.salaryMax > 0 && job.salaryMin > job.salaryMax
         val points: Int
         val summary: String
         val strength: EvidenceStrength
         when {
+            job.salaryUnitUncertain -> {
+                points = (max * 0.3).toInt()
+                summary = "A salary is shown, but the source's pay unit cannot be trusted — verify it with the employer."
+                strength = EvidenceStrength.NEEDS_VERIFICATION
+            }
             conflicting -> {
                 points = (max * 0.3).toInt()
                 summary = "The advertised salary range is internally inconsistent — verify it with the employer."
@@ -358,6 +363,10 @@ class ExpatOpportunityEngine(
 
     private fun salaryFor(job: Job): NormalisedSalary? {
         if (job.salaryMin <= 0) return null
+        // A figure whose unit is untrustworthy, or whose unit we had to infer, is not
+        // converted: presenting a guessed yearly figure as the candidate's reference pay
+        // would read as a confirmed number. The raw figure still shows on the card.
+        if (job.salaryUnitUncertain || job.salaryPeriodInferred) return null
         val eur = CurrencyConverter.toEurPerYear(job.salaryMin, job.currencyCode, job.salaryPeriod)
         val converted = eur != null
         return NormalisedSalary(

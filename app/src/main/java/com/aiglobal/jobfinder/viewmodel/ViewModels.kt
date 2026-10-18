@@ -450,12 +450,27 @@ data class JobsUiState(
 
             val q = query.trim().lowercase()
             if (q.isNotBlank()) {
-                result = result.filter {
-                    it.title.lowercase().contains(q) ||
-                        it.company.lowercase().contains(q) ||
-                        it.country.lowercase().contains(q) ||
-                        it.summary.lowercase().contains(q) ||
-                        it.matchedSkills.any { skill -> skill.lowercase().contains(q) }
+                // Trade-aware search: a query matches when a posting carries the query itself or a
+                // local synonym of the trade it names (e.g. "Mechanical Seal Technician" finds a
+                // "Rotating Equipment Maintenance Technician"). The expansion runs only over the
+                // postings already loaded; it never asks a provider for new results.
+                //
+                // The haystack is the posting's own text — title, employer, place and the source
+                // summary. The derived `matchedSkills` list is deliberately excluded: it is this
+                // app's own signal, and searching it let a posting whose title is unrelated
+                // ("Frontend Developer") surface just because the CV matcher tagged a generic
+                // skill. A trade search should match roles, not tags.
+                result = result.filter { job ->
+                    com.aiglobal.jobfinder.data.jobs.search.QueryExpansion.matches(
+                        query = q,
+                        haystack = buildString {
+                            append(job.title).append(' ')
+                            append(job.company).append(' ')
+                            append(job.country).append(' ')
+                            append(job.city).append(' ')
+                            append(job.summary)
+                        },
+                    )
                 }
             }
 
@@ -726,6 +741,12 @@ data class HomeUiState(
     val newOpportunities: List<Job> = emptyList(),
     /** How many of [totalJobs] were first seen since the last review. */
     val newPostingCount: Int = 0,
+    /**
+     * How many loaded postings a Madagascar-based candidate can realistically apply to
+     * (eligibility ELIGIBLE or VISA_SPONSORED). Kept distinct from [DashboardStats.matchingJobs],
+     * which counts CV-match score, so the two counters can never be read as the same thing.
+     */
+    val openToMadagascarCount: Int = 0,
     /** Whether the first read has recorded a baseline, so "no new postings" is meaningful. */
     val discoveryBaselineEstablished: Boolean = false,
     /**
@@ -800,6 +821,7 @@ class HomeViewModel(
                             // Newest discovery first, so the freshest find leads the rail.
                             newOpportunities = newPostings.jobIds.mapNotNull { id -> jobs.firstOrNull { it.id == id } },
                             newPostingCount = jobs.count { job -> newIds.contains(job.id) },
+                            openToMadagascarCount = jobs.count { job -> job.applyableFromMadagascar },
                             discoveryBaselineEstablished = newPostings.baselineEstablished,
                             totalJobs = jobs.size,
                             expatAssessments = jobs.associate { job ->

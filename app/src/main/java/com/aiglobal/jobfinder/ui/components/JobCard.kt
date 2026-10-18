@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -183,9 +184,9 @@ fun JobCard(
                     }
                     IconLabelRow(
                         icon = Icons.Filled.Payments,
-                        text = formatSalaryOrUnknown(job.salaryMin, job.salaryMax, job.currencyCode, job.salaryPeriod),
+                        text = salaryLabel(job),
                     )
-                    if (job.salaryMin > 0) {
+                    if (job.salaryMin > 0 && !job.salaryUnitUncertain && !job.salaryPeriodInferred) {
                         formatSalaryInEur(job.salaryMin, job.salaryMax, job.currencyCode, job.salaryPeriod)?.let { eur ->
                             IconLabelRow(icon = Icons.Filled.CurrencyExchange, text = eur)
                         }
@@ -221,7 +222,10 @@ fun JobCard(
                     }
                 }
 
-                // Row 4 — attribution: which source supplied this posting, and how fresh it is.
+                // Row 4 — attribution: which source supplied this posting, and when the
+                // employer published it. Three separate facts are kept apart on this card:
+                // "Published" (the source's own date), "Fetched" (this app's last pull) and
+                // "Discovered" (the first time this app saw the posting).
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Pill(
                         text = job.source.ifBlank { "Unknown source" },
@@ -230,8 +234,21 @@ fun JobCard(
                     )
                     Spacer(Modifier.width(8.dp))
                     FreshnessLabel(
-                        text = postedAgeLabel(job.postedAtEpochMillis),
+                        text = publishedLabel(job.postedAtEpochMillis),
                         modifier = Modifier.weight(1f),
+                    )
+                }
+
+                // The app's own last fetch, shown only when it adds information the publication
+                // date does not: an undated posting, or one the source has kept returning.
+                val retrieved = job.retrievedAtEpochMillis
+                if (retrieved != null &&
+                    (job.postedAtEpochMillis == null || retrieved - job.postedAtEpochMillis > DAY_MS)
+                ) {
+                    IconLabelRow(
+                        icon = Icons.Filled.Verified,
+                        text = retrievedLabel(retrieved),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -356,3 +373,6 @@ fun MatchDot(tier: MatchTier, modifier: Modifier = Modifier) {
             .background(matchTierColor(tier)),
     )
 }
+
+/** One day in milliseconds; the threshold above which a fetch date adds real information. */
+private const val DAY_MS = 86_400_000L

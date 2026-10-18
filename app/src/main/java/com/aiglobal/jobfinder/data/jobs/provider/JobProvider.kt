@@ -38,6 +38,17 @@ data class RawJob(
     val salaryCurrency: String? = null,
     val salaryPeriod: SalaryPeriod? = null,
     /**
+     * True when the source gave no pay unit and it was inferred from the amount. The figure is
+     * still shown, but it is not treated as a confirmed period for conversion purposes.
+     */
+    val salaryPeriodInferred: Boolean = false,
+    /**
+     * True when the source's stated unit is impossible for the amount — an annual salary
+     * labelled "per hour". The figure is kept so the UI can say "salary to verify", but it is
+     * never shown as a plain number or converted, because the unit is not trustworthy.
+     */
+    val salaryUnitUncertain: Boolean = false,
+    /**
      * True only when the source *itself* says the posting is closed to new applicants
      * (Workday's `canApply = false`). This is a fact the employer declared, not an
      * inference from age, so a closed posting is dropped rather than shown as if it were

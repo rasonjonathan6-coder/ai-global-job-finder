@@ -47,7 +47,10 @@ class ScamDetector(
         }
 
         // ---- Unrealistic pay -------------------------------------------------
-        val salaryPerMonth = job.salaryMin.takeIf { it > 0 }?.let { min ->
+        // Skipped when the source's own unit is untrustworthy: judging plausibility from a
+        // figure whose period we could not believe would be a second wrong reading.
+        val salaryPerMonth = if (job.salaryUnitUncertain) null
+        else job.salaryMin.takeIf { it > 0 }?.let { min ->
             when (job.salaryPeriod) {
                 com.aiglobal.jobfinder.data.model.SalaryPeriod.YEAR -> min / 12
                 com.aiglobal.jobfinder.data.model.SalaryPeriod.MONTH -> min

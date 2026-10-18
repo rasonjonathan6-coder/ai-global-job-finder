@@ -225,7 +225,12 @@ class AdzunaProvider(
                         salaryMin = min,
                         salaryMax = max,
                         salaryCurrency = if (min != null) currency ?: parsed.currency else null,
-                        salaryPeriod = if (min != null) parsed.period ?: SalaryPeriod.YEAR else null,
+                        // Adzuna's structured fields carry no unit; only the free-text period is
+                        // trusted, and an impossible unit (an annual figure labelled hourly) is
+                        // flagged rather than shown.
+                        salaryPeriod = if (min != null && !parsed.unitUncertain) parsed.period ?: SalaryPeriod.YEAR else null,
+                        salaryPeriodInferred = parsed.periodInferred,
+                        salaryUnitUncertain = parsed.unitUncertain,
                     ),
                 )
             }

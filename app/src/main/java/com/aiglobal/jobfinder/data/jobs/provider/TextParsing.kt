@@ -76,6 +76,14 @@ object HtmlText {
  * Best-effort salary parsing. Boards publish salaries as free text ("$35,3k- $52k",
  * "€55,000 - €70,000 a year", "From $60,000 per year"). Every field is optional: when
  * the shape is not recognised, null is returned and the card simply omits salary.
+ *
+ * Two honesty flags travel with the numbers:
+ *  - [Parsed.periodInferred] is true when the source stated no unit and the parser guessed
+ *    one from the amount. The figure is still shown, but it is never quoted as a converted
+ *    annual figure.
+ *  - [Parsed.unitUncertain] is true when the stated unit cannot be right for the amount —
+ *    the Chemtrade "USD 106k–112k/hr" case, where an annual salary was labelled hourly. The
+ *    app then shows "Salary to verify" rather than a figure that is off by a factor of ~2000.
  */
 object SalaryParser {
 
@@ -97,6 +105,10 @@ object SalaryParser {
         val max: Int?,
         val currency: String?,
         val period: SalaryPeriod?,
+        /** The source stated no unit; [period] was inferred from the amount. */
+        val periodInferred: Boolean = false,
+        /** The stated unit is impossible for the amount, so the figure is not trustworthy. */
+        val unitUncertain: Boolean = false,
     )
 
     fun parse(raw: String?): Parsed {
@@ -106,7 +118,7 @@ object SalaryParser {
         val currency = codePattern.find(text)?.value?.uppercase()
             ?: currencySymbols.entries.firstOrNull { text.contains(it.key) }?.value
 
-        val period = when {
+        val statedPeriod = when {
             Regex("(?i)per\\s*year|/\\s*year|annually|annual|a\\s*year|yearly|/yr").containsMatchIn(text) -> SalaryPeriod.YEAR
             Regex("(?i)per\\s*month|/\\s*month|monthly|a\\s*month|/mo").containsMatchIn(text) -> SalaryPeriod.MONTH
             Regex("(?i)per\\s*day|/\\s*day|daily|/day").containsMatchIn(text) -> SalaryPeriod.DAY
@@ -114,21 +126,45 @@ object SalaryParser {
             else -> null
         }
 
+        // Amounts below the floor are non-amounts (a stray "1" in a title) for the periods
+        // where such a figure is meaningless. Hourly and daily pay legitimately starts low, so
+        // they keep a 1-unit floor; a "$45 per hour" rate must not be discarded as noise.
+        val floor = if (statedPeriod == SalaryPeriod.HOUR || statedPeriod == SalaryPeriod.DAY) 1 else 100
         val amounts = amountPattern.findAll(text)
             .mapNotNull { toAmount(it.value) }
-            .filter { it in 100..10_000_000 }
+            .filter { it in floor..10_000_000 }
             .toList()
 
-        if (amounts.isEmpty()) return Parsed(null, null, currency, period)
+        if (amounts.isEmpty()) return Parsed(null, null, currency, statedPeriod)
 
         val min = amounts.min()
         val max = amounts.max()
+        val period = statedPeriod ?: inferPeriod(min, currency)
+
+        // A unit that cannot be right for the amount (an annual salary mislabelled hourly) is
+        // reported as uncertain rather than silently shown. The amount is kept so the caller can
+        // still say "salary to verify", but no conversion is attempted from a bad unit.
+        val uncertain = statedPeriod != null && !isPlausible(statedPeriod, max)
+
         return Parsed(
             min = min,
             max = max.takeIf { amounts.size > 1 && it != min } ?: min,
             currency = currency,
-            period = period ?: inferPeriod(min, currency),
+            period = if (uncertain) null else period,
+            periodInferred = statedPeriod == null && period != null,
+            unitUncertain = uncertain,
         )
+    }
+
+    /**
+     * Whether an amount is believable for the unit the source gave. These bounds are wide on
+     * purpose — they exist to catch a mislabelled unit (106k/hr), not to police unusual pay.
+     */
+    private fun isPlausible(period: SalaryPeriod, max: Int): Boolean = when (period) {
+        SalaryPeriod.HOUR -> max in 1..5_000
+        SalaryPeriod.DAY -> max in 1..50_000
+        SalaryPeriod.MONTH -> max in 1..5_000_000
+        SalaryPeriod.YEAR -> max >= 1_000
     }
 
     /** "35,3k" and "1.2M"-style tokens are normalised to a whole number. */

@@ -79,7 +79,9 @@ class RemotiveProvider(
             salaryMin = parsed.min,
             salaryMax = parsed.max,
             salaryCurrency = parsed.currency,
-            salaryPeriod = parsed.period ?: if (parsed.min != null) SalaryPeriod.YEAR else null,
+            salaryPeriod = parsed.period ?: if (parsed.min != null && !parsed.unitUncertain) SalaryPeriod.YEAR else null,
+            salaryPeriodInferred = parsed.periodInferred,
+            salaryUnitUncertain = parsed.unitUncertain,
         )
     }
 

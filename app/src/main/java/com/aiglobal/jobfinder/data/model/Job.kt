@@ -95,6 +95,17 @@ data class Job(
     val providerId: String = "",
     /** True when the salary fields came from the posting; false means "not stated". */
     val salaryIsEstimated: Boolean = false,
+    /**
+     * True when the source gave no pay unit and it was inferred from the amount. Such a figure
+     * is shown, but it is never quoted as a converted annual salary — the unit is our guess.
+     */
+    val salaryPeriodInferred: Boolean = false,
+    /**
+     * True when the source's stated pay unit is impossible for the amount (an annual salary
+     * labelled "per hour"). The card then shows "Salary to verify" instead of a number that
+     * would be off by orders of magnitude, and no conversion is attempted.
+     */
+    val salaryUnitUncertain: Boolean = false,
     /** Every point of [matchScore], in display order. */
     val matchReasons: List<MatchReason> = emptyList(),
     /** Why the eligibility verdict was reached, official facts first. */

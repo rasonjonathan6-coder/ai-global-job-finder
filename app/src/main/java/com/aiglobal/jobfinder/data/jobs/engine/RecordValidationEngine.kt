@@ -221,8 +221,10 @@ class RecordValidationEngine(
         val high = max ?: min
         if (low != null && low < 0) issues += RecordRejectionReason.IMPLAUSIBLE_SALARY
 
-        // Only annual figures have a stable enough meaning to sanity-check.
-        if (raw.salaryPeriod == SalaryPeriod.YEAR || raw.salaryPeriod == null) {
+        // Only annual figures have a stable enough meaning to sanity-check, and only when the
+        // source's unit is trustworthy — a figure whose period we could not believe is left for
+        // the UI to flag rather than rejected here.
+        if (!raw.salaryUnitUncertain && (raw.salaryPeriod == SalaryPeriod.YEAR || raw.salaryPeriod == null)) {
             if (high != null && high > maxPlausibleAnnual) issues += RecordRejectionReason.IMPLAUSIBLE_SALARY
             if (low != null && low in 1 until minPlausibleAnnual) issues += RecordRejectionReason.IMPLAUSIBLE_SALARY
         }

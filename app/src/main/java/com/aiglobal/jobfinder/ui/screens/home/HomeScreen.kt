@@ -178,6 +178,8 @@ internal fun HomeContent(
                     profileCompletion = profile?.profileCompletion ?: 0,
                     headline = profile?.headline.orEmpty(),
                     strongMatches = state.stats.matchingJobs,
+                    openToMadagascar = state.openToMadagascarCount,
+                    totalJobs = state.totalJobs,
                     onAnalyseCv = onOpenJobs,
                 )
             }
@@ -393,6 +395,8 @@ private fun GreetingHero(
     profileCompletion: Int,
     headline: String,
     strongMatches: Int,
+    openToMadagascar: Int,
+    totalJobs: Int,
     onAnalyseCv: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -463,10 +467,14 @@ private fun GreetingHero(
 
             Spacer(Modifier.height(spacing.md))
             Text(
-                text = if (strongMatches > 0) {
-                    "$strongMatches opportunities match your profile and accept international applicants."
-                } else {
-                    "Import your CV so the AI can rank opportunities for you."
+                text = when {
+                    openToMadagascar > 0 ->
+                        "$openToMadagascar of $totalJobs postings are open to applicants in Madagascar. " +
+                            "Scores below are your CV match, ranked highest first."
+                    strongMatches > 0 ->
+                        "$strongMatches postings match your profile. Open the Jobs tab to check each one's eligibility."
+                    else ->
+                        "Import your CV so the AI can rank opportunities for you."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.86f),
@@ -548,7 +556,7 @@ private fun StatsRow(state: HomeUiState) {
             StatTile(
                 icon = Icons.Filled.Work,
                 value = "${stats.matchingJobs}",
-                label = "Matching",
+                label = "CV match",
                 accent = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f),
             )
