@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -74,6 +73,7 @@ import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.ProgressBar
 import com.aiglobal.jobfinder.ui.components.SectionHeader
+import com.aiglobal.jobfinder.ui.components.ScreenHeader
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.isDarkTheme
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
@@ -148,19 +148,11 @@ fun AiScreen(
         verticalArrangement = Arrangement.spacedBy(spacing.md),
     ) {
         item {
-            Column(modifier = Modifier.statusBarsPadding().padding(top = spacing.sm)) {
-                Text(
-                    text = "AI Assistant",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Your CV, matched against real international openings",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            ScreenHeader(
+                title = "AI Assistant",
+                horizontalPadding = 0.dp,
+                subtitle = "Your CV, matched against real international openings",
+            )
         }
 
         item {
@@ -213,92 +205,114 @@ fun AiScreen(
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                CapabilityCard(
-                    icon = Icons.Filled.Description,
-                    title = "CV analysis",
-                    body = if (hasCv) {
-                        "Your CV is analysed. Re-open it any time to correct a skill or add experience."
-                    } else {
-                        "Reads your CV, extracts skills and experience, then scores every posting against it."
-                    },
-                    accent = MaterialTheme.colorScheme.primary,
-                    actionLabel = if (hasCv) "Open my CV" else "Import my CV",
-                    onClick = onOpenCv,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.Public,
-                    title = "Expat shortlist",
-                    body = "Ranks the postings you can actually apply for from Madagascar, and says what is in the way.",
-                    accent = extendedColors.success,
-                    actionLabel = "Open shortlist",
-                    onClick = onOpenShortlist,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.Insights,
-                    title = "Expat intelligence",
-                    body = "Maps which countries are open to you, what keeps blocking you, and the roles to act on first.",
-                    accent = extendedColors.info,
-                    actionLabel = "Open intelligence",
-                    onClick = onOpenIntelligence,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.WorkspacePremium,
-                    title = "Expat ranking",
-                    body = "Blends how ready each posting is to apply for with how good its documented package is — and explains every place.",
-                    accent = MaterialTheme.colorScheme.secondary,
-                    actionLabel = "Open ranking",
-                    onClick = onOpenRanking,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.AssignmentTurnedIn,
-                    title = "Application assistant",
-                    body = "Builds a step-by-step plan for one posting: route in, CV tailoring, documents and next action.",
-                    accent = MaterialTheme.colorScheme.primary,
-                    actionLabel = "Open assistant",
-                    onClick = onOpenAssistant,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.Translate,
-                    title = "CV adaptation",
-                    body = "Rewrites your CV for each country's format — Canadian, German and Gulf conventions.",
-                    accent = MaterialTheme.colorScheme.secondary,
-                    actionLabel = "Adapt my CV",
-                    onClick = onOpenAdaptation,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.Gavel,
-                    title = "Scam shield",
-                    body = "Flags upfront fees, unregistered employers and unrealistic salary claims.",
-                    accent = extendedColors.danger,
-                    actionLabel = "Check a posting",
-                    onClick = onOpenScamShield,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.Mic,
-                    title = "Interview coach",
-                    body = "Rehearses visa interviews and technical rounds with instant feedback.",
-                    accent = extendedColors.warning,
-                    actionLabel = "Start rehearsing",
-                    onClick = onOpenInterview,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.NotificationsActive,
-                    title = "Job alerts",
-                    body = "Saved searches that tell you the moment a matching posting appears.",
-                    accent = extendedColors.info,
-                    actionLabel = "Manage alerts",
-                    onClick = onOpenAlerts,
-                )
-                CapabilityCard(
-                    icon = Icons.Filled.RocketLaunch,
-                    title = "Safe auto-apply",
-                    body = "Prepares a tailored draft for every strong match, and never sends it for you.",
-                    accent = MaterialTheme.colorScheme.secondary,
-                    actionLabel = "Open auto-apply",
-                    onClick = onOpenAutoApply,
-                )
-            }
+            CapabilityGroup(
+                title = "Find the right role",
+                subtitle = "Match, rank and explain the postings that fit you",
+                cards = listOf(
+                    CapabilitySpec(
+                        icon = Icons.Filled.Description,
+                        title = "CV analysis",
+                        body = if (hasCv) {
+                            "Your CV is analysed. Re-open it any time to correct a skill or add experience."
+                        } else {
+                            "Reads your CV, extracts skills and experience, then scores every posting against it."
+                        },
+                        accent = MaterialTheme.colorScheme.primary,
+                        actionLabel = if (hasCv) "Open my CV" else "Import my CV",
+                        onClick = onOpenCv,
+                    ),
+                    CapabilitySpec(
+                        icon = Icons.Filled.Public,
+                        title = "Expat shortlist",
+                        body = "Ranks the postings you can actually apply for from Madagascar, and says what is in the way.",
+                        accent = extendedColors.success,
+                        actionLabel = "Open shortlist",
+                        onClick = onOpenShortlist,
+                    ),
+                    CapabilitySpec(
+                        icon = Icons.Filled.Insights,
+                        title = "Expat intelligence",
+                        body = "Maps which countries are open to you, what keeps blocking you, and the roles to act on first.",
+                        accent = extendedColors.info,
+                        actionLabel = "Open intelligence",
+                        onClick = onOpenIntelligence,
+                    ),
+                    CapabilitySpec(
+                        icon = Icons.Filled.WorkspacePremium,
+                        title = "Expat ranking",
+                        body = "Blends how ready each posting is to apply for with how good its documented package is — and explains every place.",
+                        accent = MaterialTheme.colorScheme.secondary,
+                        actionLabel = "Open ranking",
+                        onClick = onOpenRanking,
+                    ),
+                ),
+            )
+        }
+
+        item {
+            CapabilityGroup(
+                title = "Apply with confidence",
+                subtitle = "Prepare a grounded application and check it is safe",
+                cards = listOf(
+                    CapabilitySpec(
+                        icon = Icons.Filled.AssignmentTurnedIn,
+                        title = "Application assistant",
+                        body = "Builds a step-by-step plan for one posting: route in, CV tailoring, documents and next action.",
+                        accent = MaterialTheme.colorScheme.primary,
+                        actionLabel = "Open assistant",
+                        onClick = onOpenAssistant,
+                    ),
+                    CapabilitySpec(
+                        icon = Icons.Filled.Translate,
+                        title = "CV adaptation",
+                        body = "Rewrites your CV for each country's format — Canadian, German and Gulf conventions.",
+                        accent = MaterialTheme.colorScheme.secondary,
+                        actionLabel = "Adapt my CV",
+                        onClick = onOpenAdaptation,
+                    ),
+                    CapabilitySpec(
+                        icon = Icons.Filled.Gavel,
+                        title = "Scam shield",
+                        body = "Flags upfront fees, unregistered employers and unrealistic salary claims.",
+                        accent = extendedColors.danger,
+                        actionLabel = "Check a posting",
+                        onClick = onOpenScamShield,
+                    ),
+                    CapabilitySpec(
+                        icon = Icons.Filled.Mic,
+                        title = "Interview coach",
+                        body = "Rehearses visa interviews and technical rounds with instant feedback.",
+                        accent = extendedColors.warning,
+                        actionLabel = "Start rehearsing",
+                        onClick = onOpenInterview,
+                    ),
+                ),
+            )
+        }
+
+        item {
+            CapabilityGroup(
+                title = "Stay ahead",
+                subtitle = "Get told the moment a role matches, and never miss a follow-up",
+                cards = listOf(
+                    CapabilitySpec(
+                        icon = Icons.Filled.NotificationsActive,
+                        title = "Job alerts",
+                        body = "Saved searches that tell you the moment a matching posting appears.",
+                        accent = extendedColors.info,
+                        actionLabel = "Manage alerts",
+                        onClick = onOpenAlerts,
+                    ),
+                    CapabilitySpec(
+                        icon = Icons.Filled.RocketLaunch,
+                        title = "Safe auto-apply",
+                        body = "Prepares a tailored draft for every strong match, and never sends it for you.",
+                        accent = MaterialTheme.colorScheme.secondary,
+                        actionLabel = "Open auto-apply",
+                        onClick = onOpenAutoApply,
+                    ),
+                ),
+            )
         }
 
         item {
@@ -855,6 +869,51 @@ private fun CapabilityCard(
                     )
                 }
             }
+        }
+    }
+}
+
+/** One capability row, described as data so a whole group can be declared in a single list. */
+private data class CapabilitySpec(
+    val icon: ImageVector,
+    val title: String,
+    val body: String,
+    val accent: Color,
+    val actionLabel: String,
+    val onClick: () -> Unit,
+)
+
+/** A titled block of capability rows, so the AI workspace reads as grouped tasks, not a wall of cards. */
+@Composable
+private fun CapabilityGroup(
+    title: String,
+    subtitle: String,
+    cards: List<CapabilitySpec>,
+) {
+    val spacing = LocalSpacing.current
+    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        cards.forEach { spec ->
+            CapabilityCard(
+                icon = spec.icon,
+                title = spec.title,
+                body = spec.body,
+                accent = spec.accent,
+                actionLabel = spec.actionLabel,
+                onClick = spec.onClick,
+            )
         }
     }
 }

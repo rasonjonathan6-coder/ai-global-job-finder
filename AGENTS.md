@@ -2327,6 +2327,39 @@ Modifié : `ui/navigation/Destination.kt`, `ui/navigation/BottomNavBar.kt`, `ui/
 `ui/theme/Spacing.kt`, `ui/screens/home/HomeScreen.kt`, `ui/components/JobCard.kt`,
 `Stage53NavigationTest.kt` (nouveau), `AGENTS.md`.
 
+## Étape 54 — primitives d'interface partagées sur les quatre onglets
+
+**But.** Les quatre onglets avaient chacun réécrit le même mobilier (titre d'écran, rangée de
+chiffres, bandeau de statut, barre d'onglets), ce qui les faisait diverger : une correction sur
+Emplois n'atteignait jamais Candidatures. Cette étape introduit un fichier unique,
+`ui/components/Premium.kt`, et branche les écrans dessus sans toucher à l'architecture, à la
+navigation ni aux thèmes.
+
+**Ce que porte le fichier partagé.** `ScreenHeader` (titre + sous-titre, une seule application du
+`statusBarsPadding`, sous-titre borné à deux lignes), `HeroSurface` (surface navy avec un halo
+d'accent, palette propre au mode sombre), `InfoBanner` + `BannerTone` (quatre tons sémantiques),
+`StatStrip` + `StatItem` (une carte de chiffres séparés par des filets), `TabStrip` (barre
+d'onglets défilante) et `TabChip`. `TabStrip` utilise `selectable(role = Role.Tab)` plutôt que
+`clickable`, donc l'onglet choisi est annoncé aux lecteurs d'écran et repérable par
+`assertIsSelected`.
+
+**Écrans branchés.** Emplois, Candidatures, IA et Profil lisent tous `ScreenHeader`. Candidatures
+remplace ses `FilterChip` par `TabStrip` et ajoute un `StatStrip` (Total / Preparing / Active /
+Offers) ; son état vide parle vrai (« No applications yet ») au lieu d'un message d'erreur alors
+que rien n'a échoué. Profil remplace son en-tête écrit à la main par `HeroSurface` et ajoute un
+`StatStrip` (Skills / Years / Education / Countries). L'espace IA regroupe ses dix capacités en
+trois blocs titrés (« Find the right role », « Apply with confidence », « Stay ahead ») au lieu
+d'un mur de cartes.
+
+**Vérification sans appareil.** `Stage54PremiumUiTest.kt` (9 cas) rend chaque primitive et chaque
+écran, vérifie l'onglet sélectionné, le clic, et un rendu à 320 dp où un libellé risquerait d'être
+tronqué. Suite complète : **688 tests, 0 échec** (3 ignorés). `assembleDebug` et
+`assembleRelease` réussissent.
+
+Modifié : `ui/components/Premium.kt` (nouveau), `ui/screens/jobs/JobsScreen.kt`,
+`ui/screens/applications/ApplicationsScreen.kt`, `ui/screens/ai/AiScreen.kt`,
+`ui/screens/profile/ProfileScreen.kt`, `Stage54PremiumUiTest.kt` (nouveau), `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

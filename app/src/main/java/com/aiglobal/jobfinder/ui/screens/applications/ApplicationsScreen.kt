@@ -14,17 +14,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,14 +43,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.model.ApplicationRecord
 import com.aiglobal.jobfinder.data.model.ApplicationStatus
 import com.aiglobal.jobfinder.data.submissions.OfficialSubmissionAudit
+import com.aiglobal.jobfinder.ui.components.BannerTone
 import com.aiglobal.jobfinder.ui.components.EmptyState
-import com.aiglobal.jobfinder.ui.components.ErrorState
-import com.aiglobal.jobfinder.ui.components.FilterChip
 import com.aiglobal.jobfinder.ui.components.IconLabelRow
+import com.aiglobal.jobfinder.ui.components.InfoBanner
 import com.aiglobal.jobfinder.ui.components.JobCardSkeleton
 import com.aiglobal.jobfinder.ui.components.MatchChip
 import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
+import com.aiglobal.jobfinder.ui.components.ScreenHeader
+import com.aiglobal.jobfinder.ui.components.StatItem
+import com.aiglobal.jobfinder.ui.components.StatStrip
+import com.aiglobal.jobfinder.ui.components.TabStrip
 import com.aiglobal.jobfinder.ui.components.formatShortDate
 import com.aiglobal.jobfinder.ui.components.relativeTime
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
@@ -87,10 +92,17 @@ fun ApplicationsScreen(
                 }
             }
             state.applications.isEmpty() && state.draftsAwaitingApproval.isEmpty() -> {
-                ErrorState(
-                    title = "Nothing to show",
-                    message = "Your applications did not load. Try again in a moment.",
-                    onRetry = viewModel::refresh,
+                EmptyState(
+                    emoji = "🗂️",
+                    title = "No applications yet",
+                    message = "Save a role or prepare a draft and it will appear here, with the next step for each one.",
+                    action = {
+                        PrimaryButton(
+                            text = "Find opportunities",
+                            onClick = onBrowseJobs,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    },
                 )
             }
             else -> {
@@ -166,42 +178,53 @@ private fun ApplicationsHeader(
         it.status == ApplicationStatus.APPLIED || it.status == ApplicationStatus.INTERVIEW
     }
     val interviews = state.applications.count { it.status == ApplicationStatus.INTERVIEW }
+    val offers = state.applications.count { it.status == ApplicationStatus.OFFER }
+    val preparing = state.applications.count { it.status == ApplicationStatus.PREPARING }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .padding(horizontal = spacing.gutter, vertical = spacing.sm),
-    ) {
-        Text(
-            text = "Applications",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
+    Column(modifier = Modifier.fillMaxWidth()) {
+        ScreenHeader(
+            title = "Applications",
+            subtitle = "$active in progress · $interviews interview${if (interviews == 1) "" else "s"} scheduled",
         )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "$active in progress · $interviews interview${if (interviews == 1) "" else "s"} scheduled",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(spacing.md))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(spacing.xs)) {
-            item {
-                FilterChip(
-                    label = "All",
-                    selected = state.selectedStatus == null,
-                    onClick = { onSelectStatus(null) },
-                )
-            }
-            items(ApplicationStatus.entries.toList()) { status ->
-                FilterChip(
-                    label = status.displayLabel(),
-                    selected = state.selectedStatus == status,
-                    onClick = { onSelectStatus(status) },
-                )
-            }
+
+        Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
+            StatStrip(
+                items = listOf(
+                    StatItem(
+                        icon = Icons.Filled.Description,
+                        value = state.applications.size.toString(),
+                        label = "Total",
+                        accent = MaterialTheme.colorScheme.primary,
+                    ),
+                    StatItem(
+                        icon = Icons.Filled.Schedule,
+                        value = preparing.toString(),
+                        label = "Preparing",
+                        accent = extendedColors.info,
+                    ),
+                    StatItem(
+                        icon = Icons.Filled.CheckCircle,
+                        value = active.toString(),
+                        label = "Active",
+                        accent = extendedColors.success,
+                    ),
+                    StatItem(
+                        icon = Icons.Filled.EmojiEvents,
+                        value = offers.toString(),
+                        label = "Offers",
+                        accent = MaterialTheme.colorScheme.secondary,
+                    ),
+                ),
+            )
         }
+
+        Spacer(Modifier.height(spacing.sm))
+        TabStrip(
+            tabs = listOf("All") + ApplicationStatus.entries.map { it.displayLabel() },
+            selectedIndex = state.selectedStatus?.let { ApplicationStatus.entries.indexOf(it) + 1 } ?: 0,
+            onSelect = { index -> onSelectStatus(if (index == 0) null else ApplicationStatus.entries[index - 1]) },
+        )
+        Spacer(Modifier.height(spacing.xxs))
     }
 }
 
@@ -213,36 +236,17 @@ private fun ApplicationsHeader(
  */
 @Composable
 private fun SubmissionChannelBanner(modifier: Modifier = Modifier) {
-    val spacing = LocalSpacing.current
     val available = OfficialSubmissionAudit.realSubmissionAvailable
-    val container = if (available) extendedColors.successContainer else extendedColors.infoContainer
-    val content = if (available) extendedColors.success else extendedColors.info
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 4.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(container)
-            .padding(horizontal = spacing.sm, vertical = spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            if (available) Icons.Filled.Verified else Icons.Filled.Info,
-            contentDescription = null,
-            tint = content,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = if (available) {
-                "A verified submission route is available."
-            } else {
-                "No verified submission route yet — nothing is sent automatically. Open the official form to apply."
-            },
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
+    InfoBanner(
+        icon = if (available) Icons.Filled.Verified else Icons.Filled.Info,
+        text = if (available) {
+            "A verified submission route is available."
+        } else {
+            "No verified submission route yet — nothing is sent automatically. Open the official form to apply."
+        },
+        tone = if (available) BannerTone.Success else BannerTone.Info,
+        modifier = modifier,
+    )
 }
 
 /** Section label above the approval queue, so the queue reads as a distinct, actionable block. */

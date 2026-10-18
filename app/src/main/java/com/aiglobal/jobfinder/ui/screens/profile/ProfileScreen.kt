@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material3.Icon
@@ -79,7 +80,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -111,15 +111,18 @@ import com.aiglobal.jobfinder.data.refresh.RefreshInterval
 import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import com.aiglobal.jobfinder.ui.components.AppCard
 import com.aiglobal.jobfinder.ui.components.FilterChip
+import com.aiglobal.jobfinder.ui.components.HeroSurface
 import com.aiglobal.jobfinder.ui.components.IconLabelRow
 import com.aiglobal.jobfinder.ui.components.InitialsAvatar
 import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
 import com.aiglobal.jobfinder.ui.components.ProgressBar
+import com.aiglobal.jobfinder.ui.components.ScreenHeader
 import com.aiglobal.jobfinder.ui.components.SectionHeader
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SkeletonBox
-import com.aiglobal.jobfinder.ui.components.isDarkTheme
+import com.aiglobal.jobfinder.ui.components.StatItem
+import com.aiglobal.jobfinder.ui.components.StatStrip
 import com.aiglobal.jobfinder.ui.components.relativeTime
 import com.aiglobal.jobfinder.ui.screens.diagnostics.SourceStatusBadge
 import com.aiglobal.jobfinder.ui.screens.diagnostics.providerDetail
@@ -173,16 +176,50 @@ fun ProfileScreen(
         verticalArrangement = Arrangement.spacedBy(LocalSpacing.current.md),
     ) {
         item {
-            Column(modifier = Modifier.statusBarsPadding().padding(top = LocalSpacing.current.sm)) {
-                Text(
-                    text = "Profile",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-            }
+            ScreenHeader(
+                title = "Profile",
+                horizontalPadding = 0.dp,
+                subtitle = if (current.profileCompletion >= 100) {
+                    "Your profile is complete — the AI can match you fully"
+                } else {
+                    "Complete your profile so the AI can match you better"
+                },
+            )
         }
 
         item { ProfileHeaderCard(current) }
+
+        item {
+            StatStrip(
+                items = listOf(
+                    StatItem(
+                        icon = Icons.Filled.Star,
+                        value = current.skills.size.toString(),
+                        label = "Skills",
+                        accent = MaterialTheme.colorScheme.primary,
+                    ),
+                    StatItem(
+                        icon = Icons.Filled.WorkOutline,
+                        value = current.yearsOfExperience.toString(),
+                        label = "Years",
+                        accent = extendedColors.info,
+                    ),
+                    StatItem(
+                        icon = Icons.Filled.School,
+                        value = current.education.size.toString(),
+                        label = "Education",
+                        accent = MaterialTheme.colorScheme.secondary,
+                    ),
+                    StatItem(
+                        icon = Icons.Filled.Public,
+                        value = current.targetCountries.size.toString(),
+                        label = "Countries",
+                        accent = extendedColors.success,
+                    ),
+                ),
+                modifier = Modifier.padding(horizontal = 0.dp),
+            )
+        }
 
         item {
             AppCard(modifier = Modifier.fillMaxWidth()) {
@@ -403,70 +440,62 @@ private fun profileStrengthHint(profile: UserProfile): String {
 @Composable
 private fun ProfileHeaderCard(profile: UserProfile) {
     val spacing = LocalSpacing.current
-    val dark = isDarkTheme()
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(
-                Brush.linearGradient(
-                    if (dark) listOf(Color(0xFF152C5C), Color(0xFF0A1730))
-                    else listOf(Color(0xFF15356F), Color(0xFF0A1D40)),
+    HeroSurface(shape = RoundedCornerShape(24.dp), contentPadding = spacing.lg) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            InitialsAvatar(
+                initials = profile.initials,
+                size = 62.dp,
+                gradient = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary),
+            )
+            Spacer(Modifier.width(spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = profile.fullName.ifBlank { "Your profile" },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-            )
-            .padding(spacing.lg),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        InitialsAvatar(
-            initials = profile.initials,
-            size = 62.dp,
-            gradient = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary),
-        )
-        Spacer(Modifier.width(spacing.md))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = profile.fullName.ifBlank { "Your profile" },
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                text = profile.headline.ifBlank { "Import a CV to build your profile" },
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.78f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
-            if (profile.location.isNotBlank()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Pill(
-                        text = profile.location,
-                        containerColor = Color.White.copy(alpha = 0.14f),
-                        contentColor = Color.White,
-                        leadingIcon = Icons.Filled.Place,
-                    )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = profile.headline.ifBlank { "Import a CV to build your profile" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (profile.location.isNotBlank()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Pill(
+                            text = profile.location,
+                            containerColor = Color.White.copy(alpha = 0.14f),
+                            contentColor = Color.White,
+                            leadingIcon = Icons.Filled.Place,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
                 }
-                Spacer(Modifier.height(6.dp))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (profile.yearsOfExperience > 0) {
-                    Pill(
-                        text = "${profile.yearsOfExperience} yrs experience",
-                        containerColor = Color.White.copy(alpha = 0.14f),
-                        contentColor = Color.White,
-                        leadingIcon = Icons.Filled.WorkOutline,
-                    )
-                } else if (!profile.cvImported) {
-                    Pill(
-                        text = "No CV imported",
-                        containerColor = Color.White.copy(alpha = 0.14f),
-                        contentColor = Color.White,
-                        leadingIcon = Icons.Filled.Description,
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (profile.yearsOfExperience > 0) {
+                        Pill(
+                            text = "${profile.yearsOfExperience} yrs experience",
+                            containerColor = Color.White.copy(alpha = 0.14f),
+                            contentColor = Color.White,
+                            leadingIcon = Icons.Filled.WorkOutline,
+                        )
+                    } else if (!profile.cvImported) {
+                        Pill(
+                            text = "No CV imported",
+                            containerColor = Color.White.copy(alpha = 0.14f),
+                            contentColor = Color.White,
+                            leadingIcon = Icons.Filled.Description,
+                        )
+                    }
                 }
             }
         }

@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -98,6 +97,7 @@ import com.aiglobal.jobfinder.ui.components.relativeTime
 import com.aiglobal.jobfinder.ui.components.retrievedLabel
 import com.aiglobal.jobfinder.ui.components.SecondaryButton
 import com.aiglobal.jobfinder.ui.components.SectionHeader
+import com.aiglobal.jobfinder.ui.components.ScreenHeader
 import com.aiglobal.jobfinder.ui.components.VerificationAxisChip
 import com.aiglobal.jobfinder.ui.components.verificationStateColor
 import com.aiglobal.jobfinder.ui.theme.LocalSpacing
@@ -321,38 +321,25 @@ internal fun JobsContent(
 @Composable
 private fun JobsHeader(state: JobsUiState, onQueryChange: (String) -> Unit) {
     val spacing = LocalSpacing.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .padding(horizontal = spacing.gutter, vertical = spacing.sm),
-    ) {
-        Text(
-            text = "Find jobs",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(2.dp))
+    Column(modifier = Modifier.fillMaxWidth()) {
         // Three distinct counts, never blended: how many postings are loaded, how many pass the
         // current filters, and how many are open to a Madagascar-based applicant. The old single
         // line called every loaded posting "open to international applicants", which overstated it.
-        Text(
-            text = buildString {
+        ScreenHeader(
+            title = "Find jobs",
+            subtitle = buildString {
                 append("${state.visibleJobs.size} of ${state.jobs.size} postings shown")
                 if (state.hasActiveFilters) append(" (filters active)")
                 append(" · ${state.eligibleCount} open to Madagascar")
             },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
         )
-        Spacer(Modifier.height(spacing.md))
-        SearchField(
-            value = state.query,
-            onValueChange = onQueryChange,
-            placeholder = "Search role, company or country",
-        )
+        Box(modifier = Modifier.padding(horizontal = spacing.gutter)) {
+            SearchField(
+                value = state.query,
+                onValueChange = onQueryChange,
+                placeholder = "Search role, company or country",
+            )
+        }
     }
 }
 
