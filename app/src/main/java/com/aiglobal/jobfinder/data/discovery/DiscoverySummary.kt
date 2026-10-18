@@ -38,6 +38,14 @@ data class DiscoverySummary(
     val isRefreshing: Boolean = false,
     /** True when every source failed, so the feed on screen is cached data only. */
     val showingCachedOnly: Boolean = false,
+    /**
+     * True when the last *background* run gave up after exhausting its retries. This is not a
+     * repository failure but a schedule-level one, so it is reported separately: the feed may
+     * still show cached data while the automatic search is quietly unable to reach the sources.
+     */
+    val retryExhausted: Boolean = false,
+    /** A short, plain-language reason the last background run gave up, or null. */
+    val backgroundFailureReason: String? = null,
 ) {
     val discoveredCount: Int get() = newCount + updatedCount
     val hasFailures: Boolean get() = failures.isNotEmpty()
@@ -45,8 +53,16 @@ data class DiscoverySummary(
     val authFailureCount: Int get() = failures.count { it.category == ProviderErrorCategory.AUTHENTICATION }
 
     companion object {
-        /** Assembles the summary from the repository's diagnostics and the last delta. */
-        fun from(diagnostics: ProviderDiagnostics, delta: DiscoveryDelta): DiscoverySummary =
+        /**
+         * Assembles the summary from the repository's diagnostics, the last delta, and the
+         * last background-run outcome. [runState] is optional so a caller with only feed data
+         * (a test, or the foreground) still gets a valid summary.
+         */
+        fun from(
+            diagnostics: ProviderDiagnostics,
+            delta: DiscoveryDelta,
+            runState: RefreshRunState = RefreshRunState(),
+        ): DiscoverySummary =
             DiscoverySummary(
                 lastSearchAtEpochMillis = diagnostics.lastAttemptAtEpochMillis,
                 lastSuccessAtEpochMillis = diagnostics.lastSuccessAtEpochMillis,
@@ -58,6 +74,8 @@ data class DiscoverySummary(
                     .map { it.toFailure() },
                 isRefreshing = diagnostics.isRefreshing,
                 showingCachedOnly = diagnostics.showingCachedOnly,
+                retryExhausted = runState.retryExhausted,
+                backgroundFailureReason = runState.reason,
             )
 
         private fun ProviderDiagnostic.toFailure(): ProviderFailure = ProviderFailure(

@@ -1136,6 +1136,8 @@ private fun DiscoveryStatus(
         val statusText = when {
             busy -> "Searching the job sources…"
             summary.showingCachedOnly -> "Every source failed — showing your last saved results."
+            summary.lastSuccessAtEpochMillis == null && summary.retryExhausted ->
+                "The automatic search hasn't reached the job sources yet."
             summary.lastSuccessAtEpochMillis == null -> "No search has finished yet."
             summary.discoveredCount > 0 -> buildString {
                 append("Last search found ")
@@ -1156,11 +1158,13 @@ private fun DiscoveryStatus(
                     imageVector = when {
                         summary.showingCachedOnly -> Icons.Filled.CloudOff
                         summary.hasFailures -> Icons.Filled.CloudOff
+                        summary.retryExhausted -> Icons.Filled.CloudOff
                         else -> Icons.Filled.CloudDone
                     },
                     contentDescription = null,
                     tint = when {
                         summary.showingCachedOnly || summary.hasFailures -> extendedColors.warning
+                        summary.retryExhausted -> extendedColors.warning
                         else -> extendedColors.success
                     },
                     modifier = Modifier.size(16.dp),
@@ -1178,6 +1182,18 @@ private fun DiscoveryStatus(
         if (summary.hasFailures) {
             Text(
                 text = failureSummary(summary),
+                style = MaterialTheme.typography.bodySmall,
+                color = extendedColors.warning,
+            )
+        }
+
+        // The background search is a separate concern from the feed: it can give up on an
+        // unreachable host while the screen still shows a perfectly good cached feed. Saying so
+        // is the whole point of the audit that added this line.
+        if (summary.retryExhausted && !busy) {
+            Text(
+                text = summary.backgroundFailureReason
+                    ?: "The automatic search could not reach the job sources.",
                 style = MaterialTheme.typography.bodySmall,
                 color = extendedColors.warning,
             )

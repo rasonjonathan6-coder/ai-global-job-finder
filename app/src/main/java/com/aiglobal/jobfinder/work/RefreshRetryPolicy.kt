@@ -16,8 +16,19 @@ import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
  *    unparseable body will not fix themselves, so retrying those just burns battery.
  *  - A rate-limited source is never retried: hammering it is exactly what the source is
  *    asking the app not to do.
+ *  - Retrying stops after [MAX_ATTEMPTS] runs. WorkManager reschedules a retry *without*
+ *    resetting its attempt counter, so an unbounded retry loop would keep re-querying every
+ *    source forever while a host stayed unreachable. The cap is what turns that into a
+ *    finite, honest attempt: the next scheduled period (which *does* reset the counter) is
+ *    the natural place to try again.
  */
 object RefreshRetryPolicy {
+
+    /**
+     * The most times one scheduled run may execute (the first try plus its retries). A
+     * periodic run that reaches this count gives up and lets the next period try afresh.
+     */
+    const val MAX_ATTEMPTS = 3
 
     /** Failures that a later attempt could plausibly clear on their own. */
     private val TRANSIENT = setOf(

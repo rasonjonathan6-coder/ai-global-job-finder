@@ -2360,6 +2360,58 @@ Modifié : `ui/components/Premium.kt` (nouveau), `ui/screens/jobs/JobsScreen.kt`
 `ui/screens/applications/ApplicationsScreen.kt`, `ui/screens/ai/AiScreen.kt`,
 `ui/screens/profile/ProfileScreen.kt`, `Stage54PremiumUiTest.kt` (nouveau), `AGENTS.md`.
 
+## Étape 55 — la veille en arrière-plan doit s'arrêter, et le dire
+
+**Objectif.** L'audit du rafraîchissement planifié a trouvé deux mensonges par omission. D'abord,
+WorkManager replanifie un `Result.retry()` **sans remettre à zéro** son compteur de tentatives :
+un hôte injoignable pouvait donc être réinterrogé indéfiniment, toutes les 30 minutes. Ensuite,
+quand la veille finissait par renoncer, rien ne l'enregistrait : la carte de découverte
+continuait d'afficher le dernier flux en cache comme si la recherche automatique fonctionnait.
+Cette étape rend le retry **fini** et le silence **explicable**.
+
+**Plafond de tentatives.** `work/RefreshRetryPolicy.kt` gagne `MAX_ATTEMPTS = 3` (l'essai initial
+plus deux reprises). Le compteur WorkManager étant celui de l'exécution *précédente*, la tentative
+courante vaut `runAttemptCount + 1` ; en dessous du plafond on redemande un retry, au plafond on
+**renonce**. Rien d'autre de la politique ne change : un flux exploitable, un échec permanent ou
+une source *rate-limitée* restent sans reprise.
+
+**Verdict pur.** Nouveau fichier `work/RefreshRunState.kt` : `RefreshRunClassifier.classify(
+diagnostics, runAttemptCount)` renvoie un `RefreshVerdict` (`SUCCEED` / `RETRY` / `GIVE_UP` plus
+l'`outcome` à enregistrer — `null` pour un simple retry, car une exécution replanifiée n'est pas
+terminée). `forThrownError(...)` applique le même plafond à une exception ; seule une exception
+transitoire (I/O, timeout) est reprise. `reasonFor(...)` nomme la raison en clair (« No internet
+connection when the search ran. », « The job sources could not be reached. », « … took too long to
+answer. », « Several job sources could not be reached. ») plutôt qu'un « échec » générique.
+
+**État observable et honnête.** `data/discovery/RefreshRunState.kt` porte le modèle
+`RefreshRunState` (`lastRunAt`, `lastSuccessAt`, `lastGiveUpAt`, `retryExhausted`, `reason`) et son
+pliage `after(...)` : un succès **efface** l'alerte précédente, un abandon la pose sans perdre la
+date du dernier succès. `work/RefreshRunStateStore` le persiste dans un petit JSON écrit
+atomiquement, exposé en `Flow` (`observe()`) : la première émission est la valeur du disque, donc
+un redémarrage dit la vérité immédiatement. Un fichier corrompu est écarté, jamais fatal.
+
+**Câblage.** `JobRefreshWorker` classe chaque exécution, **enregistre** l'outcome quand il y en a
+un, et mappe la décision : `RETRY` → `Result.retry()`, `SUCCEED` → `Result.success()`, `GIVE_UP` →
+`Result.failure()`. Pour du travail périodique, `failure()` ne stoppe pas la recherche : WorkManager
+réenfile la période suivante avec un compteur **neuf** (vérifié dans le bytecode : `failure()` →
+`resetPeriodicAndResolve()` qui remet `runAttemptCount` à zéro). La carte lit
+`RefreshRunStateStore.observe()` dans `discoverySummary` (`combine` à trois flux).
+
+**UI (Profil).** `DiscoverySummary` porte `retryExhausted` et `backgroundFailureReason` ;
+`DiscoveryStatus` affiche, quand la veille a renoncé, une phrase d'avertissement avec la raison
+réelle — et un état initial honnête (« The automatic search hasn't reached the job sources yet. »)
+au lieu de « No search has finished yet. » quand l'abandon a eu lieu avant le premier succès.
+
+**Vérification.** Suite **705 tests, 0 échec, 0 erreur, 3 ignorés** (+17 : `Stage55BackgroundTest`
+— 6 sur le plafond et le verdict, 2 sur les exceptions, 1 sur les raisons, 2 sur le pliage, 3 sur
+la persistance/l'observation, 2 sur le résumé ; `Stage20ProfileScreenTest` : ligne d'abandon
+affichée, ligne absente quand la recherche est saine). `compileDebugKotlin`, `testDebugUnitTest`,
+`assembleDebug` et `assembleRelease` réussissent. Nouveaux fichiers :
+`data/discovery/RefreshRunState.kt`, `work/RefreshRunState.kt`, `Stage55BackgroundTest.kt`.
+Modifié : `work/RefreshRetryPolicy.kt`, `work/JobRefreshWorker.kt`,
+`data/discovery/DiscoverySummary.kt`, `AiJobFinderApp.kt`,
+`ui/screens/profile/ProfileScreen.kt`, `Stage20ProfileScreenTest.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

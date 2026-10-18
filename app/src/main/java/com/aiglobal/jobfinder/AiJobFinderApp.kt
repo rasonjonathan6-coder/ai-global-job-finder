@@ -366,13 +366,27 @@ open class AppContainer(application: Application) {
     }
 
     /**
+     * The last background-run outcome (did the scheduled search succeed, or give up?), kept on
+     * disk so the discovery card can report it after a restart, not only in the session that
+     * produced it. The worker records into it; the summary reads from it.
+     */
+    val refreshRunStateStore: com.aiglobal.jobfinder.work.RefreshRunStateStore by lazy {
+        com.aiglobal.jobfinder.work.RefreshRunStateStore(application)
+    }
+
+    /**
      * The plain-language state of automatic discovery, assembled from the repository's
-     * diagnostics and the last incremental delta, so the settings section can show when a
-     * search last ran and succeeded, how much is new, and which sources are failing.
+     * diagnostics, the last incremental delta, and the last background-run outcome, so the
+     * settings section can show when a search last ran and succeeded, how much is new, which
+     * sources are failing, and — honestly — when the background search gave up.
      */
     val discoverySummary: Flow<com.aiglobal.jobfinder.data.discovery.DiscoverySummary> by lazy {
-        combine(jobRepository.diagnostics, jobRepository.discovery) { diagnostics, delta ->
-            com.aiglobal.jobfinder.data.discovery.DiscoverySummary.from(diagnostics, delta)
+        combine(
+            jobRepository.diagnostics,
+            jobRepository.discovery,
+            refreshRunStateStore.observe(),
+        ) { diagnostics, delta, runState ->
+            com.aiglobal.jobfinder.data.discovery.DiscoverySummary.from(diagnostics, delta, runState)
         }
     }
 

@@ -120,4 +120,29 @@ class Stage20ProfileScreenTest {
         render()
         composeRule.onNodeWithText("No search has finished yet.").assertIsDisplayed()
     }
+
+    @Test
+    fun aBackgroundGiveUpIsSaidOutLoud() {
+        // Stage 55: when the scheduled search exhausts its retries, the card must not stay
+        // silent and pretend discovery is healthy — it names the reason it gave up.
+        render(
+            summary = DiscoverySummary(
+                retryExhausted = true,
+                backgroundFailureReason = "The job sources could not be reached.",
+            ),
+        )
+        composeRule.onNodeWithText("The job sources could not be reached.").assertIsDisplayed()
+    }
+
+    @Test
+    fun aHealthySearchShowsNoGiveUpLine() {
+        render(
+            summary = DiscoverySummary(
+                lastSearchAtEpochMillis = 1_000,
+                lastSuccessAtEpochMillis = 1_000,
+                newCount = 1,
+            ),
+        )
+        composeRule.onNodeWithText("could not be reached", substring = true).assertDoesNotExist()
+    }
 }
