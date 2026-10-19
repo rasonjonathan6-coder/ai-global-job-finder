@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import type { Job } from "../../core/models";
+import { shortlistBreakdown, type Job } from "../../core/models";
 import { JobCard } from "../components/JobCard";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { StatTile } from "../components/StatTile";
@@ -104,6 +104,8 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
           Matching counts postings scoring 60% or more. New counts postings added in the last 3 days.
         </p>
 
+        <ShortlistBanner onNavigate={onNavigate} />
+
         <section aria-label="Your best opportunities">
           <div className="mb-3 flex items-end justify-between gap-3">
             <div>
@@ -172,6 +174,42 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * A compact entry point to the expat shortlist: the one number that matters on the home
+ * dashboard, and the route into the full screen. It stays hidden until the engine has run.
+ */
+function ShortlistBanner({ onNavigate }: { onNavigate: (route: string) => void }) {
+  const { shortlist } = useAppStore();
+  const breakdown = useMemo(() => shortlistBreakdown(shortlist), [shortlist]);
+  if (shortlist.entries.length === 0) return null;
+
+  const actionable = breakdown.actionableCount;
+  const headline =
+    actionable > 0
+      ? `${actionable} posting${actionable === 1 ? "" : "s"} you can act on now`
+      : `${breakdown.verifyCount + breakdown.blockedCount} screened, none ready yet`;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onNavigate("shortlist")}
+      className="card-surface animate-fade-up flex w-full items-center gap-3.5 p-4 text-left transition-transform active:scale-[0.99]"
+    >
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-success-container text-success">
+        <GlobeIcon width={21} height={21} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[14.5px] font-bold text-ink-primary">Expat shortlist</p>
+        <p className="mt-0.5 text-[12.5px] text-ink-secondary">{headline}</p>
+        <p className="mt-1 text-[11.5px] text-ink-tertiary">
+          {breakdown.officialRouteCount} with a stated route in · {shortlist.totalJobs} screened
+        </p>
+      </div>
+      <ChevronRightIcon width={18} height={18} className="shrink-0 text-ink-tertiary" />
+    </button>
   );
 }
 

@@ -2665,9 +2665,19 @@ cd web && npm run typecheck && npm test
 **Reste à faire (Stage 62, suite).** Parité **d'écran** : l'Android expose 23 écrans
 (`screens/**`) contre 5 onglets web. Les parcours secondaires (CV, adaptation CV, détail de
 candidature, lettre de motivation, guide expat, entretien, scam shield, alertes, auto-apply,
-diagnostics de sources, classement expat, shortlist, historique d'actualisation, historique de
-soumission) ont leurs moteurs portés mais pas encore leurs écrans web — c'est le prochain axe,
-onglet par onglet, sans régression sur l'existant.
+diagnostics de sources, classement expat, historique d'actualisation, historique de soumission)
+ont leurs moteurs portés mais pas encore leurs écrans web — c'est le prochain axe, onglet par
+onglet, sans régression sur l'existant.
+
+**Stage 63 — écran shortlist web (fait).** `ui/screens/ShortlistScreen.tsx` +
+`ui/components/ReadinessRing.tsx` portent l'écran Android : en-tête, résumé héros, tableau de
+qualité, cartes d'entrée (badges « Stated route in » via `shortlistHasOfficialRoute`),
+dashboard qualité, lacunes de profil récurrentes, feuilles d'explication/`ApplyLinkSheet`, et
+le `SourceFootnote`. Le champ `ShortlistState.isLive`/`sourceNote` est dérivé dans
+`app-store.tsx` (via `shortlistSourceNote` dans `models.ts`) à partir des `reports` du dernier
+refresh, exactement comme `ShortlistViewModel.sourceNote` — le texte du milieu reprend le
+littéral `"source(s)"` de Kotlin. Tests : `ShortlistScreen.test.tsx` (rendu + note) et un test
+de parité de formulation.
 
 ## Conventions
 

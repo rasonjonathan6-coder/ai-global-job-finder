@@ -11,11 +11,15 @@ import {
 
 import {
   defaultExpatPreferences,
+  shortlistSourceNote,
   type CandidateProfile,
   type ExpatPreferences,
   type Job,
+  type ShortlistState,
 } from "../core/models";
 import { JobPipeline, type PipelineResult, type ProviderReport } from "../core/repository/job-pipeline";
+import { ShortlistEngine } from "../core/shortlist/engine/shortlist-engine";
+import { profileCompleteness } from "../core/cv/completeness";
 import { demoCandidateProfile } from "./demo-profile";
 import { SAMPLE_JOBS } from "../ui/lib/sample-jobs";
 
@@ -149,6 +153,11 @@ interface AppStoreValue {
   demoMode: boolean;
   setDemoMode: (enabled: boolean) => void;
 
+  /** The expat shortlist built from the current ranked feed and the user's profile. */
+  shortlist: ShortlistState;
+  /** Rebuilds the shortlist from the current jobs, profile and expat preferences. */
+  buildShortlist: () => void;
+
   applications: ApplicationRecord[];
   savedJobs: Job[];
   isSaved: (jobId: string) => boolean;
@@ -199,8 +208,17 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     () => persisted.current.autoApplyEnabled,
   );
   const [demoMode, setDemoModeState] = useState<boolean>(() => persisted.current.demoMode);
+  const [shortlist, setShortlist] = useState<ShortlistState>(() => ({
+    isLoading: true,
+    entries: [],
+    totalJobs: 0,
+    isLive: false,
+    sourceNote: "",
+    generatedAtEpochMillis: 0,
+  }));
 
   const pipelineRef = useRef<JobPipeline | null>(null);
+  const shortlistEngineRef = useRef<ShortlistEngine | null>(null);
   const inFlight = useRef(false);
 
   // Persist on every meaningful change. A single effect keeps the write path in one place.
@@ -225,6 +243,45 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     pipelineRef.current ??= new JobPipeline();
     return pipelineRef.current;
   }, []);
+
+  const shortlistEngine = useMemo(() => {
+    shortlistEngineRef.current ??= new ShortlistEngine();
+    return shortlistEngineRef.current;
+  }, []);
+
+  /**
+   * Rebuilds the shortlist from the current feed. The readiness score weighs the employer's
+   * stated route, the CV match, the documented benefits and how complete the profile is — so
+   * the same guards the mapper applied to salary are re-applied here through the pipeline.
+   */
+  const buildShortlist = useCallback(() => {
+    const state = shortlistEngine.build(
+      jobs,
+      profile,
+      expatPreferences,
+      profileCompleteness(profile).percent,
+      (job) => pipeline.eurPerYear(job),
+    );
+    // Mirror the Android `ShortlistViewModel`: the live/cached note is derived from the last
+    // refresh's per-source outcomes, not stored in the engine. Demo mode reports a single
+    // "Demo fixtures" source, so it reads as live — exactly as the fixture repository does.
+    const reports = refresh.reports;
+    const successCount = reports.filter((r) => r.ok).length;
+    const errorCount = reports.length - successCount;
+    setShortlist({
+      ...state,
+      isLoading: false,
+      isLive: successCount > 0,
+      sourceNote: shortlistSourceNote(successCount, errorCount, jobs.length),
+    });
+  }, [shortlistEngine, pipeline, jobs, profile, expatPreferences, refresh.reports]);
+
+  // Keep the shortlist in step with the feed, profile and priorities. The engine is pure and
+  // cheap, so recomputing on change is simpler and less error-prone than a manual sync step.
+  useEffect(() => {
+    if (jobs.length === 0) return;
+    buildShortlist();
+  }, [jobs, buildShortlist]);
 
   const pushNotifications = useCallback((incoming: AppNotification[]) => {
     if (incoming.length === 0) return;
@@ -369,6 +426,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       refreshJobs,
       demoMode,
       setDemoMode,
+      shortlist,
+      buildShortlist,
       applications,
       savedJobs,
       isSaved,
@@ -394,6 +453,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       refreshJobs,
       demoMode,
       setDemoMode,
+      shortlist,
+      buildShortlist,
       applications,
       savedJobs,
       isSaved,

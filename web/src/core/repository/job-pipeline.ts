@@ -53,6 +53,15 @@ export class JobPipeline {
     this.limit = options?.limitPerProvider ?? 60;
   }
 
+  /**
+   * Normalised EUR/year salary for a mapped job, or null when the source did not publish a
+   * trustworthy figure. Exposed so the shortlist engine can weigh documented pay with the
+   * exact same guards (uncertain unit, inferred period) the mapper applied at map time.
+   */
+  eurPerYear(job: Job): number | null {
+    return this.mapper.eurPerYear(job);
+  }
+
   async refresh(profile: CandidateProfile): Promise<PipelineResult> {
     const now = this.clock();
     const keywords = keywordPlan(profile.currentTitle ? [profile.currentTitle, ...profile.previousTitles] : []);

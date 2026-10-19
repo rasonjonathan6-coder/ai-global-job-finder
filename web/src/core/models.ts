@@ -1135,7 +1135,34 @@ export interface ShortlistState {
   isLoading: boolean;
   entries: ShortlistEntry[];
   totalJobs: number;
+  /**
+   * Whether the feed behind this shortlist came from a live run (at least one source
+   * answered). Mirrors the Android `ShortlistState.isLive`; used only for the source note.
+   */
+  isLive: boolean;
+  /** Plain-language note about where the postings came from, or "" when there is nothing to say. */
+  sourceNote: string;
   generatedAtEpochMillis: number;
+}
+
+/**
+ * Plain-language note about where the shortlist's postings came from, mirroring the Android
+ * `ShortlistViewModel.sourceNote`. Blank when there is nothing to say (an empty feed), so the
+ * footnote disappears rather than asserting anything about a list that does not exist.
+ */
+export function shortlistSourceNote(
+  successCount: number,
+  errorCount: number,
+  total: number,
+): string {
+  if (total === 0) return "";
+  if (successCount > 0 && errorCount === 0) {
+    return `Live from ${successCount} source${successCount === 1 ? "" : "s"}.`;
+  }
+  if (successCount > 0) {
+    return `${successCount} source(s) answered, ${errorCount} did not. Showing what came back.`;
+  }
+  return "Showing cached postings — no source answered this run.";
 }
 
 /** Profile gaps that recur across postings, so the user sees what to fix once. */
@@ -1215,6 +1242,44 @@ export function shortlistQuality(state: ShortlistState): ShortlistQuality {
     strongestReadiness: strongest,
     countriesRepresented: countries.length,
     topCountry,
+  };
+}
+
+/**
+ * Derived read on a shortlist snapshot, mirroring the Android `ShortlistState` computed
+ * properties. Kept here (not in the screen) so the dashboard tiles, the summary header and
+ * the list can never disagree about how many postings are ready, verify-only or blocked.
+ */
+export interface ShortlistBreakdown {
+  priorityCount: number;
+  readyCount: number;
+  verifyCount: number;
+  blockedCount: number;
+  officialRouteCount: number;
+  actionableCount: number;
+  isEmpty: boolean;
+  /** Postings worth acting on now, strongest first (the engine already ranked them). */
+  rankedActionable: ShortlistEntry[];
+  /** Postings to act on once a gap is closed — never a local-only posting. */
+  needsPreparation: ShortlistEntry[];
+  recurringProfileGaps: ReadinessBlocker[];
+}
+
+export function shortlistBreakdown(state: ShortlistState): ShortlistBreakdown {
+  const entries = state.entries;
+  return {
+    priorityCount: entries.filter((e) => e.readiness === ApplicationReadiness.PRIORITY).length,
+    readyCount: entries.filter((e) => e.readiness === ApplicationReadiness.READY).length,
+    verifyCount: entries.filter((e) => e.readiness === ApplicationReadiness.NEEDS_REVIEW).length,
+    blockedCount: entries.filter((e) => e.readiness === ApplicationReadiness.BLOCKED).length,
+    officialRouteCount: entries.filter((e) => shortlistHasOfficialRoute(e)).length,
+    actionableCount: entries.filter((e) => applicationReadinessIsActionable(e.readiness)).length,
+    isEmpty: entries.length === 0,
+    rankedActionable: entries.filter((e) => applicationReadinessIsActionable(e.readiness)),
+    needsPreparation: entries.filter(
+      (e) => !applicationReadinessIsActionable(e.readiness) && e.job.eligibility !== MadagascarEligibility.RESTRICTED,
+    ),
+    recurringProfileGaps: recurringProfileGaps(entries),
   };
 }
 

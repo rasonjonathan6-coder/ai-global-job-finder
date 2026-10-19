@@ -6,6 +6,7 @@ import {
   AiIcon,
   ApplicationsIcon,
   CheckIcon,
+  ChevronRightIcon,
   FileTextIcon,
   GlobeIcon,
   ShieldIcon,
@@ -18,6 +19,9 @@ interface Capability {
   detail: string;
   icon: React.ReactNode;
   tone: "accent" | "success" | "warning" | "info";
+  /** When set, the card opens this destination instead of being a static explainer. */
+  route?: string;
+  actionLabel?: string;
 }
 
 const CAPABILITIES: Capability[] = [
@@ -28,9 +32,17 @@ const CAPABILITIES: Capability[] = [
     tone: "accent",
   },
   {
+    title: "Expat shortlist",
+    detail: "Ranks the postings you can actually apply for from Madagascar, and says what is in the way.",
+    icon: <GlobeIcon width={20} height={20} />,
+    tone: "success",
+    route: "shortlist",
+    actionLabel: "Open shortlist",
+  },
+  {
     title: "Eligibility check",
     detail: "Checks whether a role accepts applicants from Madagascar, and whether a visa route is stated.",
-    icon: <GlobeIcon width={20} height={20} />,
+    icon: <ShieldIcon width={20} height={20} />,
     tone: "info",
   },
   {
@@ -58,7 +70,7 @@ const TONE_CLASS: Record<Capability["tone"], string> = {
  * The AI workspace. Stage 1 presents the assistant's capabilities and an honest, animated
  * "analysis" progress example; the live pipeline connects in a later stage.
  */
-export function AiScreen() {
+export function AiScreen({ onNavigate }: { onNavigate: (route: string) => void }) {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -108,19 +120,28 @@ export function AiScreen() {
 
         <section aria-label="What the assistant does" className="space-y-3">
           {CAPABILITIES.map((cap, i) => (
-            <div
+            <button
               key={cap.title}
-              className="card-surface animate-fade-up flex items-start gap-3.5 p-4"
+              type="button"
+              disabled={!cap.route}
+              onClick={() => cap.route && onNavigate(cap.route)}
+              className="card-surface animate-fade-up flex w-full items-start gap-3.5 p-4 text-left transition-transform active:scale-[0.99] disabled:active:scale-100"
               style={{ animationDelay: `${i * 55}ms` }}
             >
               <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${TONE_CLASS[cap.tone]}`}>
                 {cap.icon}
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-bold text-ink-primary">{cap.title}</p>
                 <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-secondary">{cap.detail}</p>
+                {cap.route && (
+                  <span className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent-ink">
+                    {cap.actionLabel}
+                    <ChevronRightIcon width={13} height={13} />
+                  </span>
+                )}
               </div>
-            </div>
+            </button>
           ))}
         </section>
 

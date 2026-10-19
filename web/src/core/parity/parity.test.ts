@@ -18,6 +18,7 @@ import {
   readinessBlockerIsProfileGap,
   shortlistHasOfficialRoute,
   shortlistNextStep,
+  shortlistSourceNote,
   type CandidateProfile,
   type CountryOpportunity,
   type EligibilityReason,
@@ -580,7 +581,14 @@ describe("Kotlin parity — golden fixtures", () => {
   }
 
   function shortlistState(entries: ShortlistEntry[], totalJobs = entries.length): ShortlistState {
-    return { isLoading: false, entries, totalJobs, generatedAtEpochMillis: CLOCK };
+    return {
+      isLoading: false,
+      entries,
+      totalJobs,
+      isLive: true,
+      sourceNote: "",
+      generatedAtEpochMillis: CLOCK,
+    };
   }
 
   function planFrom(entry: ShortlistEntry, hasCoverLetter: boolean): ApplicationPlan {
@@ -621,6 +629,16 @@ describe("Kotlin parity — golden fixtures", () => {
       });
       expect(blockerSummary(entry)).toEqual(pipeline.entry.blockerSummary);
       expect(shortlistHasOfficialRoute(entry)).toEqual(pipeline.entry.hasOfficialRoute);
+    });
+
+    it("source note mirrors the Kotlin ShortlistViewModel wording", () => {
+      // Empty feed says nothing, live-only counts its sources, partial names both sides, and
+      // an all-error run admits it is showing cached postings.
+      expect(shortlistSourceNote(0, 0, 0)).toBe("");
+      expect(shortlistSourceNote(1, 0, 5)).toBe("Live from 1 source.");
+      expect(shortlistSourceNote(3, 0, 9)).toBe("Live from 3 sources.");
+      expect(shortlistSourceNote(2, 1, 9)).toBe("2 source(s) answered, 1 did not. Showing what came back.");
+      expect(shortlistSourceNote(0, 3, 9)).toBe("Showing cached postings — no source answered this run.");
     });
   });
 

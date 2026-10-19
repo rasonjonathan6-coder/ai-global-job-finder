@@ -78,6 +78,8 @@ export class ShortlistEngine {
       isLoading: false,
       entries,
       totalJobs: jobs.length,
+      isLive: false,
+      sourceNote: "",
       generatedAtEpochMillis: this.clock(),
     };
   }
