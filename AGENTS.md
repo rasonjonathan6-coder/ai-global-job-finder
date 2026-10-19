@@ -2688,6 +2688,17 @@ l'est). Le build web ne touche pas l'Android : l'APK est une charge statique. Un
 `/workspace/download/serve-apk.sh --watchdog` sert aussi les APK sur le port public « work-2 »
 (12001) pour la durée du sandbox. Détails : `web/DEPLOYMENT.md` §6.
 
+**Stage 63c — préparation de la publication GitHub.** Ajout d'un `README.md` racine, d'un
+workflow `.github/workflows/deploy-pages.yml` (build du PWA `web/` et publication sur GitHub
+Pages — l'APK embarqué est donc servi à `/download.html`) et de cette note. **Blocage constaté :**
+le jeton `GITHUB_TOKEN` est un jeton d'installation de la GitHub App `openhands-ai` avec les
+permissions `contents/issues/pull_requests/actions/workflows/statuses: write` mais **sans droit
+de création de dépôt** (`createRepository` → « Resource not accessible by integration »), et il
+est limité aux dépôts *sélectionnés* de l'installation. Conséquence : le dépôt doit être créé par
+l'utilisateur (public), puis ajouté à l'installation de l'App ; ensuite push + release + Pages
+sont réalisables avec le jeton. Aucun secret ni donnée personnelle réelle dans le dépôt (scan :
+clés `nvapi-*` de test, e-mails `example.mg`, téléphones factices uniquement).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
