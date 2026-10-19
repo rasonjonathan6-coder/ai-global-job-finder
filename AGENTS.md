@@ -2699,6 +2699,17 @@ l'utilisateur (public), puis ajouté à l'installation de l'App ; ensuite push +
 sont réalisables avec le jeton. Aucun secret ni donnée personnelle réelle dans le dépôt (scan :
 clés `nvapi-*` de test, e-mails `example.mg`, téléphones factices uniquement).
 
+**Stage 63d — publication GitHub faite.** L'utilisateur a créé le dépôt public et l'a ajouté à
+l'installation de l'App. Historique complet poussé sur `main` (branche renommée de `master`).
+**Release `v1.0.0`** créée avec l'APK release signé en pièce jointe (8 562 160 o, sha256
+`8440b7c3…deb6df`). Lien APK **permanent** :
+`https://github.com/rasonjonathan6-coder/ai-global-job-finder/releases/latest/download/AI-Global-Job-Finder-release.apk`.
+Le workflow Pages est rendu résilient : il construit le PWA, puis **saute** le déploiement avec un
+`::notice` tant que Pages n'est pas activé — le jeton de l'App ne peut pas créer le site Pages
+(`POST /repos/.../pages` → 403). **Action manuelle restante** : Settings → Pages → Source =
+« GitHub Actions », puis relancer le workflow. URL alors : `https://rasonjonathan6-coder.github.io/
+ai-global-job-finder/download.html`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
