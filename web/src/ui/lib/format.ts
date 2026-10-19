@@ -1,3 +1,4 @@
+import { isRecognized, resolveCountry } from "../../core/geo/country-catalog";
 import { SalaryPeriod } from "../../core/models";
 
 /** "€1,200" / "CAD 3,400" style currency formatting that never throws on bad input. */
@@ -61,7 +62,16 @@ export function relativeTimeFrom(epochMillis: number | null, now: number = Date.
 
 /** "CAD" → "🇨🇦" is out of scope; we rely on the posting's own flag instead. */
 export function countryLine(country: string, city: string): string {
-  const parts = [city, country].map((p) => p.trim()).filter(Boolean);
+  const c = country.trim();
+  const town = city.trim();
+  // Some feeds repeat the country as the city ("Germany, Germany") or name it in both the
+  // city and country parts ("USA" + "United States"). Showing both reads as a data error,
+  // so a city that resolves to the same country as the country part is dropped.
+  const sameCountry =
+    town.length > 0 &&
+    (town.toLowerCase() === c.toLowerCase() ||
+      (isRecognized(resolveCountry(town)) && resolveCountry(town).name === resolveCountry(c).name));
+  const parts = (sameCountry ? [c] : [town, c]).filter(Boolean);
   return parts.length ? parts.join(", ") : "Location not stated";
 }
 

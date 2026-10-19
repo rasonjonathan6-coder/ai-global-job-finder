@@ -1,0 +1,47 @@
+# Netlify configuration for the AI Global Job Finder web/PWA edition.
+#
+# This file lives at the repository root so Netlify applies it regardless of whether the site
+# is connected with an empty base directory or with base = "web". Every path below is written
+# repository-relative, and the redirect targets the built shell explicitly, so the settings
+# are correct in either case.
+#
+# The web edition is a static Vite SPA: no server component, no secret shipped to the browser.
+# See web/DEPLOYMENT.md.
+
+[build]
+  command = "npm --prefix web ci && npm --prefix web run build"
+  publish = "web/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback: every unknown path returns the app shell so a deep link or hard refresh works.
+# The app's own routes are hash-based (#/jobs), so this is a safety net, not a requirement.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# The service worker must never be cached by the CDN, or clients keep an old worker serving a
+# stale precache. Make the revalidation explicit.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/registerSW.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+    Cache-Control = "public, max-age=3600"
+
+# Immutable, content-hashed assets can be cached forever.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

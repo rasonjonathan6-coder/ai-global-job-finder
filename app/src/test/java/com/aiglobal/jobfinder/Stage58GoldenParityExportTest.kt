@@ -1,8 +1,12 @@
 package com.aiglobal.jobfinder
 
 import com.aiglobal.jobfinder.data.apply.ApplicationUrlInspector
+import com.aiglobal.jobfinder.data.assistant.ApplicationPlanEngine
+import com.aiglobal.jobfinder.data.assistant.ExpatIntelligenceEngine
+import com.aiglobal.jobfinder.data.cv.CvCompleteness
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
+import com.aiglobal.jobfinder.data.expat.ShortlistEngine
 import com.aiglobal.jobfinder.data.geo.CurrencyConverter
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityEngine
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityInput
@@ -22,16 +26,21 @@ import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.CertificationEntry
 import com.aiglobal.jobfinder.data.model.EmploymentType
 import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
+import com.aiglobal.jobfinder.data.model.ExpatIntelligence
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
+import com.aiglobal.jobfinder.data.model.ApplicationPlan
 import com.aiglobal.jobfinder.data.model.InternationalFitAssessment
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobRequirements
 import com.aiglobal.jobfinder.data.model.OfferVerification
 import com.aiglobal.jobfinder.data.model.LanguageLevel
 import com.aiglobal.jobfinder.data.model.LanguageSkill
+import com.aiglobal.jobfinder.data.model.ProfileCompleteness
 import com.aiglobal.jobfinder.data.model.RelocationPreference
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
 import com.aiglobal.jobfinder.data.model.ScamRisk
+import com.aiglobal.jobfinder.data.model.ShortlistEntry
+import com.aiglobal.jobfinder.data.model.ShortlistState
 import com.aiglobal.jobfinder.data.model.VisaSupport
 import com.aiglobal.jobfinder.data.model.WorkMode
 import com.aiglobal.jobfinder.data.scam.ScamDetector
@@ -237,19 +246,22 @@ class Stage58GoldenParityExportTest {
     fun exportGoldenParityFixtures() {
         val profile = buildProfile()
         val preferences = ExpatPreferences.defaults()
+        val scenarios = cases.map { scenarioJson(it, profile, preferences) }
         val root = linkedMapOf<String, Any?>(
             "meta" to linkedMapOf(
-                "stage" to 58,
+                "stage" to 62,
                 "generatedFrom" to "Kotlin production engines",
                 "clockMillis" to fixedNow,
                 "note" to "Inputs and expected outputs are both produced by the Kotlin engines.",
             ),
             "profile" to profileJson(profile),
             "expatPreferences" to preferencesJson(preferences),
-            "scenarios" to cases.map { scenarioJson(it, profile, preferences) },
+            "scenarios" to scenarios,
             "recordValidation" to recordValidationJson(),
             "deduplication" to deduplicationJson(),
             "urlInspections" to urlInspectionsJson(),
+            "shortlistPipeline" to scenarios.map { shortlistJson(it, profile, preferences) },
+            "intelligence" to scenarios.map { intelligenceJson(it, profile, preferences) },
         )
 
         val json = JsonWriter.write(root)
@@ -452,6 +464,322 @@ class Stage58GoldenParityExportTest {
                     OfferVerificationEngine().assess(job, fixedNow),
                 ),
             ),
+        )
+    }
+
+    // ------------------------------------------------------------------ stage 62: pipeline golden parity
+
+    /**
+     * Stage 62 — golden fixtures for the shortlist → intelligence → plan pipeline.
+     *
+     * These three engines sit on top of the ones exported above and are the ones the web
+     * dashboard, jobs screen and AI assistant read from. They are driven here over the same
+     * scenarios, plus the real profile-completeness scorer, and every output is serialised so
+     * the vitest suite can replay the identical inputs through the TypeScript ports.
+     */
+    private fun shortlistJson(
+        scenario: Map<String, Any?>,
+        profile: CandidateProfile,
+        preferences: ExpatPreferences,
+    ): Map<String, Any?> {
+        val input = scenario["input"] as Map<*, *>
+        val job = jobFromJson(scenario["output"] as Map<*, *>, input)
+
+        val completeness = CvCompleteness.of(profile)
+        val salaryEur = (scenario["output"] as Map<*, *>)["salaryEurPerYear"] as Int?
+        val entry = ShortlistEngine { fixedNow }.assess(
+            job = job,
+            profile = profile,
+            preferences = preferences,
+            profileCompletenessPercent = completeness.percent,
+            salaryEurPerYear = salaryEur,
+        )
+
+        // Two variants exercise the plan's branching: a bare entry with no cover letter and no
+        // interview rehearsal, and a fully prepared one with a caution verdict.
+        val barePlan = ApplicationPlanEngine { fixedNow }.build(
+            job = job,
+            entry = entry,
+            profileCompletenessPercent = completeness.percent,
+            hasCoverLetter = false,
+        )
+        val preparedPlan = ApplicationPlanEngine { fixedNow }.build(
+            job = job,
+            entry = entry,
+            profileCompletenessPercent = completeness.percent,
+            hasCoverLetter = true,
+            interviewAttempted = 3,
+            interviewTotal = 3,
+            scamVerdict = com.aiglobal.jobfinder.data.model.ScamVerdict.NEEDS_CAUTION,
+            hasApplied = true,
+        )
+
+        return linkedMapOf(
+            "id" to scenario["id"],
+            "profileCompleteness" to completenessJson(completeness),
+            "entry" to entryJson(entry),
+            "plan" to planJson(barePlan),
+            "preparedPlan" to planJson(preparedPlan),
+        )
+    }
+
+    private fun intelligenceJson(
+        scenario: Map<String, Any?>,
+        profile: CandidateProfile,
+        preferences: ExpatPreferences,
+    ): Map<String, Any?> {
+        val input = scenario["input"] as Map<*, *>
+        val job = jobFromJson(scenario["output"] as Map<*, *>, input)
+        val completeness = CvCompleteness.of(profile)
+        val salaryEur = (scenario["output"] as Map<*, *>)["salaryEurPerYear"] as Int?
+
+        val entry = ShortlistEngine { fixedNow }.assess(
+            job = job,
+            profile = profile,
+            preferences = preferences,
+            profileCompletenessPercent = completeness.percent,
+            salaryEurPerYear = salaryEur,
+        )
+        // A single-entry state and a two-entry state (the same posting twice under different
+        // countries) so the country roll-up, sorting and summary text are all exercised.
+        val single = ShortlistState(
+            isLoading = false,
+            entries = listOf(entry),
+            totalJobs = 1,
+            generatedAtEpochMillis = fixedNow,
+        )
+        val duplicated = ShortlistState(
+            isLoading = false,
+            entries = listOf(entry, entry.copy(job = job.copy(country = "Germany", countryFlag = "🇩🇪"))),
+            totalJobs = 2,
+            generatedAtEpochMillis = fixedNow,
+        )
+        val empty = ShortlistState(isLoading = false, entries = emptyList(), totalJobs = 0, generatedAtEpochMillis = fixedNow)
+
+        return linkedMapOf(
+            "id" to scenario["id"],
+            "single" to intelligenceOf(single),
+            "duplicated" to intelligenceOf(duplicated),
+            "empty" to intelligenceOf(empty),
+        )
+    }
+
+    private fun intelligenceOf(state: ShortlistState): Map<String, Any?> {
+        val intel = ExpatIntelligenceEngine { fixedNow }.build(state)
+        return intelligenceJsonValue(intel)
+    }
+
+    private fun completenessJson(completeness: ProfileCompleteness): Map<String, Any?> = linkedMapOf(
+        "percent" to completeness.percent,
+        "missing" to completeness.missing.map {
+            linkedMapOf("label" to it.label, "field" to it.field.name)
+        },
+    )
+
+    private fun entryJson(entry: ShortlistEntry): Map<String, Any?> = linkedMapOf(
+        "readinessScore" to entry.readinessScore,
+        "readiness" to entry.readiness.name,
+        "matchScore" to entry.matchScore,
+        "expatScore" to entry.expatScore,
+        "expatEvidenceCoverage" to entry.expatEvidenceCoverage,
+        "benefitsMatched" to entry.benefitsMatched,
+        "benefitsConsidered" to entry.benefitsConsidered,
+        "hasOfficialRoute" to entry.hasOfficialRoute,
+        "blockers" to entry.blockers.map { blockerJson(it) },
+        "orderedBlockers" to entry.orderedBlockers.map { blockerJson(it) },
+        "highlights" to entry.highlights,
+        "rankComponents" to entry.rankComponents.map {
+            linkedMapOf("label" to it.label, "detail" to it.detail, "points" to it.points, "maxPoints" to it.maxPoints)
+        },
+        "nextStep" to linkedMapOf(
+            "label" to entry.nextStep.label,
+            "detail" to entry.nextStep.detail,
+            "action" to entry.nextStep.action.name,
+        ),
+        "blockerSummary" to entry.blockerSummary,
+    )
+
+    private fun blockerJson(blocker: com.aiglobal.jobfinder.data.model.ReadinessBlocker): Map<String, Any?> =
+        linkedMapOf(
+            "label" to blocker.label,
+            "detail" to blocker.detail,
+            "kind" to blocker.kind.name,
+            "points" to blocker.points,
+            "isProfileGap" to blocker.isProfileGap,
+        )
+
+    private fun planJson(plan: ApplicationPlan): Map<String, Any?> = linkedMapOf(
+        "jobId" to plan.jobId,
+        "jobTitle" to plan.jobTitle,
+        "company" to plan.company,
+        "country" to plan.country,
+        "matchScore" to plan.matchScore,
+        "readinessScore" to plan.readinessScore,
+        "readiness" to plan.readiness.name,
+        "steps" to plan.steps.map {
+            linkedMapOf(
+                "kind" to it.kind.name,
+                "status" to it.status.name,
+                "title" to it.title,
+                "detail" to it.detail,
+                "action" to it.action,
+                "weight" to it.weight,
+                "official" to it.official,
+            )
+        },
+        "tailoring" to linkedMapOf(
+            "jobTitle" to plan.tailoring.jobTitle,
+            "leadSkills" to plan.tailoring.leadSkills.map {
+                linkedMapOf("skill" to it.skill, "detail" to it.detail)
+            },
+            "addressSkills" to plan.tailoring.addressSkills,
+            "keywords" to plan.tailoring.keywords,
+            "note" to plan.tailoring.note,
+        ),
+        "documents" to plan.documents.map {
+            linkedMapOf("label" to it.label, "detail" to it.detail, "required" to it.required)
+        },
+        "routeSummary" to plan.routeSummary,
+        "nextAction" to plan.nextAction,
+        "hasCoverLetter" to plan.hasCoverLetter,
+        "scamVerdict" to plan.scamVerdict?.name,
+        "doneCount" to plan.doneCount,
+        "totalCount" to plan.totalCount,
+        "progressPercent" to plan.progressPercent,
+        "isReadyToApply" to plan.isReadyToApply,
+        "openSteps" to plan.openSteps.map { it.kind.name },
+        "nextStep" to plan.nextStep?.kind?.name,
+    )
+
+    private fun intelligenceJsonValue(intel: ExpatIntelligence): Map<String, Any?> = linkedMapOf(
+        "totalJobs" to intel.totalJobs,
+        "actionableCount" to intel.actionableCount,
+        "priorityCount" to intel.priorityCount,
+        "officialRouteCount" to intel.officialRouteCount,
+        "countries" to intel.countries.map {
+            linkedMapOf(
+                "country" to it.country,
+                "countryFlag" to it.countryFlag,
+                "actionableCount" to it.actionableCount,
+                "totalCount" to it.totalCount,
+                "bestReadiness" to it.bestReadiness,
+                "hasOfficialRoute" to it.hasOfficialRoute,
+            )
+        },
+        "recurringProfileGaps" to intel.recurringProfileGaps.map {
+            linkedMapOf("label" to it.label, "kind" to it.kind.name, "points" to it.points)
+        },
+        "topOpportunities" to intel.topOpportunities.map { it.job.id },
+        "summary" to intel.summary,
+    )
+
+    /**
+     * Rebuilds the `Job` the Kotlin exporter scored from the serialised fixture map, so the
+     * shortlist / intelligence / plan engines see exactly the same input the scenario did.
+     * `extraInput` supplies the fields (`salaryPeriod`, `languages`, …) that live on the
+     * scenario input rather than the serialised job.
+     */
+    @Suppress("UNCHECKED_CAST")
+    private fun jobFromJson(output: Map<*, *>, input: Map<*, *>): Job {
+        @Suppress("UNCHECKED_CAST")
+        val job = output["job"] as Map<*, *>
+        fun str(key: String) = job[key] as String
+        fun int(key: String) = job[key] as Int
+        fun intOrNull(key: String) = job[key] as Int?
+        fun longOrNull(key: String) = (job[key] as Number?)?.toLong()
+        val languages = (input["languages"] as List<*>).map { it as String }
+        return Job(
+            id = str("id"),
+            title = str("title"),
+            company = str("company"),
+            companyAccent = (job["companyAccent"] as Number).toLong(),
+            country = str("country"),
+            countryFlag = str("countryFlag"),
+            city = str("city"),
+            salaryMin = int("salaryMin"),
+            salaryMax = int("salaryMax"),
+            currencyCode = str("currencyCode"),
+            salaryPeriod = SalaryPeriod.valueOf(str("salaryPeriod")),
+            matchScore = int("matchScore"),
+            eligibility = com.aiglobal.jobfinder.data.model.MadagascarEligibility.valueOf(str("eligibility")),
+            visaSupport = VisaSupport.valueOf(str("visaSupport")),
+            scamRisk = ScamRisk.valueOf(str("scamRisk")),
+            postedAtEpochMillis = longOrNull("postedAtEpochMillis"),
+            expiresAtEpochMillis = longOrNull("expiresAtEpochMillis"),
+            retrievedAtEpochMillis = (job["retrievedAtEpochMillis"] as Number).toLong(),
+            source = str("source"),
+            sourceUrl = str("sourceUrl"),
+            workMode = WorkMode.valueOf(str("workMode")),
+            employmentType = EmploymentType.valueOf(str("employmentType")),
+            experienceYears = int("experienceYears"),
+            matchedSkills = (job["matchedSkills"] as List<*>).map { it as String },
+            missingSkills = (job["missingSkills"] as List<*>).map { it as String },
+            languages = languages,
+            summary = str("summary"),
+            responsibilities = emptyList(),
+            benefits = emptyList(),
+            aiInsight = str("aiInsight"),
+            providerId = str("providerId"),
+            salaryIsEstimated = job["salaryIsEstimated"] as Boolean,
+            salaryPeriodInferred = job["salaryPeriodInferred"] as Boolean,
+            salaryUnitUncertain = job["salaryUnitUncertain"] as Boolean,
+            matchReasons = (job["matchReasons"] as List<*>).map { raw ->
+                val m = raw as Map<*, *>
+                com.aiglobal.jobfinder.data.model.MatchReason(
+                    label = m["label"] as String,
+                    detail = m["detail"] as String,
+                    signal = com.aiglobal.jobfinder.data.model.MatchSignal.valueOf(m["signal"] as String),
+                    weight = m["weight"] as Int,
+                )
+            },
+            eligibilityReasons = (job["eligibilityReasons"] as List<*>).map { raw ->
+                val m = raw as Map<*, *>
+                com.aiglobal.jobfinder.data.model.EligibilityReason(
+                    label = m["label"] as String,
+                    detail = m["detail"] as String,
+                    official = m["official"] as Boolean,
+                )
+            },
+            benefitEvidence = (job["benefitEvidence"] as List<*>).map { raw ->
+                val m = raw as Map<*, *>
+                BenefitEvidence(
+                    type = com.aiglobal.jobfinder.data.model.JobBenefitTypes.byKey(m["typeKey"] as String)
+                        ?: error("unknown benefit type ${m["typeKey"]}"),
+                    status = com.aiglobal.jobfinder.data.model.BenefitStatus.valueOf(m["status"] as String),
+                    evidence = m["evidence"] as String,
+                    source = m["source"] as String,
+                    verifiedAtEpochMillis = (m["verifiedAtEpochMillis"] as Number).toLong(),
+                )
+            },
+            roleFamily = com.aiglobal.jobfinder.data.jobs.search.RoleFamily.valueOf(str("roleFamily")),
+            matchedTargetRole = job["matchedTargetRole"] as String?,
+            requirements = requirementsFromJson(job["requirements"] as Map<*, *>),
+            qualificationGaps = (job["qualificationGaps"] as List<*>).map { raw ->
+                val m = raw as Map<*, *>
+                com.aiglobal.jobfinder.data.model.QualificationGap(
+                    label = m["label"] as String,
+                    evidence = m["evidence"] as String,
+                    met = m["met"] as Boolean?,
+                )
+            },
+            evidence = emptyList(),
+            openToApplicants = job["openToApplicants"] as Boolean?,
+        )
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun requirementsFromJson(map: Map<*, *>): JobRequirements {
+        fun labels(key: String) = (map[key] as List<*>).map { raw ->
+            val m = raw as Map<*, *>
+            com.aiglobal.jobfinder.data.model.JobRequirement(
+                label = m["label"] as String,
+                evidence = m["evidence"] as String,
+            )
+        }
+        return JobRequirements(
+            minYears = map["minYears"] as Int?,
+            certifications = labels("certifications"),
+            licences = labels("licences"),
         )
     }
 

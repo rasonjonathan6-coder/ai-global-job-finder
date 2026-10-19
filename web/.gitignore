@@ -11,3 +11,6 @@ dev-dist/
 .idea/
 .vscode/
 *.tsbuildinfo
+
+# Stage 61 release package (build artifact; regenerate with the release script)
+release/

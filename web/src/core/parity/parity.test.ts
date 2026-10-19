@@ -2,22 +2,47 @@ import { describe, expect, it } from "vitest";
 
 import fixture from "./kotlin-parity.json";
 import {
+  ALL_BENEFIT_TYPES,
   EmploymentType,
+  JobBenefitTypes,
   LanguageLevel,
   RelocationPreference,
   SalaryPeriod,
   ScamRisk,
   ScamSignalTone,
+  ScamVerdict,
   UNKNOWN_VERIFICATION,
   WorkMode,
+  blockerSummary,
+  orderedBlockers,
+  readinessBlockerIsProfileGap,
+  shortlistHasOfficialRoute,
+  shortlistNextStep,
   type CandidateProfile,
+  type CountryOpportunity,
   type EligibilityReason,
   type ExpatPreferences,
   type Job,
   type LanguageSkill,
   type MatchReason,
+  type ReadinessBlocker,
   type ScamReport,
+  type ShortlistEntry,
+  type ShortlistState,
 } from "../models";
+import {
+  planDoneCount,
+  planIsReadyToApply,
+  planNextStep,
+  planOpenSteps,
+  planProgressPercent,
+  planTotalCount,
+  type ApplicationPlan,
+} from "../assistant/application-plan";
+import { ApplicationPlanEngine } from "../assistant/application-plan-engine";
+import { profileCompleteness } from "../cv/completeness";
+import { ShortlistEngine } from "../shortlist/engine/shortlist-engine";
+import { ExpatIntelligenceEngine } from "../expat/expat-intelligence-engine";
 import { assessEligibility } from "../jobs/engine/eligibility-engine";
 import { MatchingEngine } from "../jobs/engine/matching-engine";
 import { InternationalFitEngine } from "../jobs/engine/international-fit-engine";
@@ -462,4 +487,285 @@ describe("Kotlin parity — golden fixtures", () => {
       ).toEqual(expected.summaries);
     });
   });
+
+  // ----------------------------------------------------------------- stage 62: pipeline parity
+
+  /**
+   * The fixture now carries a rebuilt `Job` per scenario, so the shortlist, intelligence and
+   * application-plan engines can be driven by the exact input the Kotlin exporter scored.
+   * `verification` is the one field the pipeline engines never read; it is left unknown.
+   */
+  function jobFromScenario(scenario: Scenario): Job {
+    const j = scenario.output.job;
+    return {
+      id: j.id,
+      title: j.title,
+      company: j.company,
+      companyAccent: j.companyAccent,
+      country: j.country,
+      countryFlag: j.countryFlag,
+      city: j.city,
+      salaryMin: j.salaryMin,
+      salaryMax: j.salaryMax,
+      currencyCode: j.currencyCode,
+      salaryPeriod: j.salaryPeriod as SalaryPeriod,
+      matchScore: j.matchScore,
+      eligibility: j.eligibility as Job["eligibility"],
+      visaSupport: j.visaSupport as Job["visaSupport"],
+      scamRisk: j.scamRisk as ScamRisk,
+      postedAtEpochMillis: j.postedAtEpochMillis,
+      expiresAtEpochMillis: j.expiresAtEpochMillis,
+      retrievedAtEpochMillis: j.retrievedAtEpochMillis,
+      source: j.source,
+      sourceUrl: j.sourceUrl,
+      workMode: j.workMode as WorkMode,
+      employmentType: j.employmentType as EmploymentType,
+      experienceYears: j.experienceYears,
+      matchedSkills: [...j.matchedSkills],
+      missingSkills: [...j.missingSkills],
+      languages: [...j.languages],
+      summary: j.summary,
+      responsibilities: [],
+      benefits: [],
+      aiInsight: j.aiInsight,
+      providerId: j.providerId,
+      salaryIsEstimated: j.salaryIsEstimated,
+      salaryPeriodInferred: j.salaryPeriodInferred,
+      salaryUnitUncertain: j.salaryUnitUncertain,
+      matchReasons: j.matchReasons.map((r) => ({
+        label: r.label,
+        detail: r.detail,
+        signal: r.signal as MatchReason["signal"],
+        weight: r.weight,
+      })),
+      eligibilityReasons: j.eligibilityReasons.map((r) => ({
+        label: r.label,
+        detail: r.detail,
+        official: r.official,
+      })),
+      benefitEvidence: j.benefitEvidence.map((b) => ({
+        type: JobBenefitTypesByKey(b.typeKey),
+        status: b.status as BenefitEvidenceStatus,
+        evidence: b.evidence,
+        source: b.source,
+        verifiedAtEpochMillis: b.verifiedAtEpochMillis,
+      })),
+      roleFamily: j.roleFamily as Job["roleFamily"],
+      matchedTargetRole: j.matchedTargetRole,
+      requirements: {
+        minYears: j.requirements.minYears,
+        certifications: j.requirements.certifications.map((c) => ({ label: c.label, evidence: c.evidence })),
+        licences: j.requirements.licences.map((c) => ({ label: c.label, evidence: c.evidence })),
+      },
+      qualificationGaps: j.qualificationGaps.map((g) => ({ label: g.label, evidence: g.evidence, met: g.met })),
+      evidence: [],
+      openToApplicants: j.openToApplicants,
+      verification: UNKNOWN_VERIFICATION,
+      isSaved: j.isSaved,
+      isNew: j.isNew,
+    };
+  }
+
+  function shortlistEntry(scenario: Scenario, index = 0): ShortlistEntry {
+    const job = jobFromScenario(scenario);
+    const completeness = profileCompleteness(profile);
+    const entry = new ShortlistEngine({ clock: () => CLOCK }).assess(
+      job,
+      profile,
+      preferences,
+      completeness.percent,
+      scenario.output.salaryEurPerYear,
+    );
+    return index === 0 ? entry : { ...entry, job };
+  }
+
+  function shortlistState(entries: ShortlistEntry[], totalJobs = entries.length): ShortlistState {
+    return { isLoading: false, entries, totalJobs, generatedAtEpochMillis: CLOCK };
+  }
+
+  function planFrom(entry: ShortlistEntry, hasCoverLetter: boolean): ApplicationPlan {
+    const completeness = profileCompleteness(profile);
+    return new ApplicationPlanEngine({ clock: () => CLOCK }).build(
+      entry.job,
+      entry,
+      completeness.percent,
+      hasCoverLetter,
+      hasCoverLetter ? 3 : 0,
+      hasCoverLetter ? 3 : 0,
+      hasCoverLetter ? ScamVerdict.NEEDS_CAUTION : null,
+      hasCoverLetter,
+    );
+  }
+
+  describe("stage 62 profile completeness", () => {
+    it.each(fixture.shortlistPipeline.map((p) => [p.id, p] as const))("%s matches", (_id, pipeline) => {
+      const completeness = profileCompleteness(profile);
+      expect({ percent: completeness.percent, missing: completeness.missing }).toEqual(pipeline.profileCompleteness);
+    });
+  });
+
+  describe("stage 62 shortlist engine", () => {
+    it.each(fixture.shortlistPipeline.map((p) => [p.id, p] as const))("%s matches", (_id, pipeline) => {
+      const entry = shortlistEntry(fixture.scenarios.find((s) => s.id === pipeline.id)!);
+      expect(entryJson(entry)).toEqual(pipeline.entry);
+    });
+
+    it("ordered blockers and next step agree with the entry", () => {
+      const pipeline = fixture.shortlistPipeline[0];
+      const entry = shortlistEntry(fixture.scenarios.find((s) => s.id === pipeline.id)!);
+      expect(orderedBlockers(entry).map((b) => b.label)).toEqual(pipeline.entry.orderedBlockers.map((b) => b.label));
+      expect(shortlistNextStep(entry)).toEqual({
+        label: pipeline.entry.nextStep.label,
+        detail: pipeline.entry.nextStep.detail,
+        action: pipeline.entry.nextStep.action,
+      });
+      expect(blockerSummary(entry)).toEqual(pipeline.entry.blockerSummary);
+      expect(shortlistHasOfficialRoute(entry)).toEqual(pipeline.entry.hasOfficialRoute);
+    });
+  });
+
+  describe("stage 62 application plan engine", () => {
+    it.each(fixture.shortlistPipeline.map((p) => [p.id, p] as const))("%s bare plan matches", (_id, pipeline) => {
+      const entry = shortlistEntry(fixture.scenarios.find((s) => s.id === pipeline.id)!);
+      const plan = planFrom(entry, false);
+      expect(planJson(plan)).toEqual(pipeline.plan);
+    });
+
+    it.each(fixture.shortlistPipeline.map((p) => [p.id, p] as const))("%s prepared plan matches", (_id, pipeline) => {
+      const entry = shortlistEntry(fixture.scenarios.find((s) => s.id === pipeline.id)!);
+      const plan = planFrom(entry, true);
+      expect(planJson(plan)).toEqual(pipeline.preparedPlan);
+    });
+  });
+
+  describe("stage 62 expat intelligence engine", () => {
+    it.each(fixture.intelligence.map((p) => [p.id, p] as const))("%s matches", (_id, golden) => {
+      const scenario = fixture.scenarios.find((s) => s.id === golden.id)!;
+      const base = shortlistEntry(scenario);
+      const single = new ExpatIntelligenceEngine({ clock: () => CLOCK }).build(shortlistState([base], 1));
+      expect(intelligenceJson(single)).toEqual(golden.single);
+
+      const germany: ShortlistEntry = {
+        ...base,
+        job: { ...base.job, country: "Germany", countryFlag: "🇩🇪" },
+      };
+      const duplicated = new ExpatIntelligenceEngine({ clock: () => CLOCK }).build(shortlistState([base, germany], 2));
+      expect(intelligenceJson(duplicated)).toEqual(golden.duplicated);
+
+      const empty = new ExpatIntelligenceEngine({ clock: () => CLOCK }).build(shortlistState([], 0));
+      expect(intelligenceJson(empty)).toEqual(golden.empty);
+    });
+  });
 });
+
+// ------------------------------------------------------------------ stage 62 helpers
+
+function JobBenefitTypesByKey(key: string): Job["benefitEvidence"][number]["type"] {
+  const found = ALL_BENEFIT_TYPES.find((t) => t.key === key) ?? (key === JobBenefitTypes.MINIMUM_SALARY.key ? JobBenefitTypes.MINIMUM_SALARY : undefined);
+  if (!found) throw new Error(`unknown benefit type ${key}`);
+  return found;
+}
+
+type BenefitEvidenceStatus = Job["benefitEvidence"][number]["status"];
+
+function blockerJson(blocker: ReadinessBlocker) {
+  return {
+    label: blocker.label,
+    detail: blocker.detail,
+    kind: blocker.kind,
+    points: blocker.points,
+    isProfileGap: readinessBlockerIsProfileGap(blocker),
+  };
+}
+
+function entryJson(entry: ShortlistEntry) {
+  return {
+    readinessScore: entry.readinessScore,
+    readiness: entry.readiness,
+    matchScore: entry.matchScore,
+    expatScore: entry.expatScore,
+    expatEvidenceCoverage: entry.expatEvidenceCoverage,
+    benefitsMatched: entry.benefitsMatched,
+    benefitsConsidered: entry.benefitsConsidered,
+    hasOfficialRoute: shortlistHasOfficialRoute(entry),
+    blockers: entry.blockers.map(blockerJson),
+    orderedBlockers: orderedBlockers(entry).map(blockerJson),
+    highlights: entry.highlights,
+    rankComponents: entry.rankComponents.map((c) => ({
+      label: c.label,
+      detail: c.detail,
+      points: c.points,
+      maxPoints: c.maxPoints,
+    })),
+    nextStep: shortlistNextStep(entry),
+    blockerSummary: blockerSummary(entry),
+  };
+}
+
+function planJson(plan: ApplicationPlan) {
+  return {
+    jobId: plan.jobId,
+    jobTitle: plan.jobTitle,
+    company: plan.company,
+    country: plan.country,
+    matchScore: plan.matchScore,
+    readinessScore: plan.readinessScore,
+    readiness: plan.readiness,
+    steps: plan.steps.map((s) => ({
+      kind: s.kind,
+      status: s.status,
+      title: s.title,
+      detail: s.detail,
+      action: s.action,
+      weight: s.weight,
+      official: s.official,
+    })),
+    tailoring: {
+      jobTitle: plan.tailoring.jobTitle,
+      leadSkills: plan.tailoring.leadSkills.map((h) => ({ skill: h.skill, detail: h.detail })),
+      addressSkills: plan.tailoring.addressSkills,
+      keywords: plan.tailoring.keywords,
+      note: plan.tailoring.note,
+    },
+    documents: plan.documents.map((d) => ({ label: d.label, detail: d.detail, required: d.required })),
+    routeSummary: plan.routeSummary,
+    nextAction: plan.nextAction,
+    hasCoverLetter: plan.hasCoverLetter,
+    scamVerdict: plan.scamVerdict,
+    doneCount: planDoneCount(plan),
+    totalCount: planTotalCount(plan),
+    progressPercent: planProgressPercent(plan),
+    isReadyToApply: planIsReadyToApply(plan),
+    openSteps: planOpenSteps(plan).map((s) => s.kind),
+    nextStep: planNextStep(plan)?.kind ?? null,
+  };
+}
+
+function intelligenceJson(intel: {
+  totalJobs: number;
+  actionableCount: number;
+  priorityCount: number;
+  officialRouteCount: number;
+  countries: CountryOpportunity[];
+  recurringProfileGaps: ReadinessBlocker[];
+  topOpportunities: ShortlistEntry[];
+  summary: string;
+}) {
+  return {
+    totalJobs: intel.totalJobs,
+    actionableCount: intel.actionableCount,
+    priorityCount: intel.priorityCount,
+    officialRouteCount: intel.officialRouteCount,
+    countries: intel.countries.map((c) => ({
+      country: c.country,
+      countryFlag: c.countryFlag,
+      actionableCount: c.actionableCount,
+      totalCount: c.totalCount,
+      bestReadiness: c.bestReadiness,
+      hasOfficialRoute: c.hasOfficialRoute,
+    })),
+    recurringProfileGaps: intel.recurringProfileGaps.map((g) => ({ label: g.label, kind: g.kind, points: g.points })),
+    topOpportunities: intel.topOpportunities.map((e) => e.job.id),
+    summary: intel.summary,
+  };
+}

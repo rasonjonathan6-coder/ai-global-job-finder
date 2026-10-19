@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import type { Job } from "../../core/models";
 import { JobCard } from "../components/JobCard";
 import { ScreenHeader } from "../components/ScreenHeader";
@@ -6,14 +6,17 @@ import { StatTile } from "../components/StatTile";
 import { JobListSkeleton } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { Button } from "../components/Button";
-import { SAMPLE_JOBS } from "../lib/sample-jobs";
+import { useAppStore } from "../../state/app-store";
+import { dashboardStats } from "../lib/job-stats";
 import {
   ApplicationsIcon,
   ChevronRightIcon,
   ClockIcon,
+  GlobeIcon,
+  JobsIcon,
+  RefreshIcon,
   SparkIcon,
   TrendIcon,
-  JobsIcon,
 } from "../components/icons";
 
 interface HomeScreenProps {
@@ -21,31 +24,30 @@ interface HomeScreenProps {
 }
 
 /**
- * The premium dashboard. It leads with a personalised greeting, then quick statistics, then
- * the highest-scoring opportunities. A short simulated "analysis" delay drives the skeleton
- * state so the loading treatment is exercised on every visit.
+ * The premium dashboard. It leads with a personalised greeting, then the real quick
+ * statistics, then the highest-scoring opportunities pulled from the live sources. The
+ * skeleton state is driven by the actual refresh, not a simulated delay.
  */
 export function HomeScreen({ onNavigate }: HomeScreenProps) {
-  const [loading] = useState(false);
-  const jobs = SAMPLE_JOBS;
+  const { profile, jobs, refresh, refreshJobs, applications, markApplied } = useAppStore();
 
-  const stats = useMemo(
-    () => ({
-      matchingJobs: jobs.filter((j) => j.matchScore >= 70).length,
-      newOpportunities: jobs.filter((j) => j.isNew).length,
-      applications: 3,
-      interviews: 1,
-    }),
-    [jobs],
-  );
+  // Refresh once when the dashboard first opens. The pipeline reports per-source failures
+  // instead of throwing, so a single board being down never blanks the screen.
+  useEffect(() => {
+    if (refresh.status === "idle") void refreshJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const best = useMemo(
-    () => [...jobs].sort((a, b) => b.matchScore - a.matchScore).slice(0, 4),
-    [jobs],
-  );
+  const loading = refresh.status === "loading" || refresh.status === "idle";
+  const stats = useMemo(() => dashboardStats(jobs, applications), [jobs, applications]);
+  const best = useMemo(() => [...jobs].sort((a, b) => b.matchScore - a.matchScore).slice(0, 4), [jobs]);
+  const firstName = profile.fullName.trim().split(/\s+/)[0] || "there";
 
-  const handleView = (job: Job) => {
+  const open = (job: Job) => window.open(job.sourceUrl, "_blank", "noopener,noreferrer");
+  const apply = (job: Job) => {
+    markApplied(job);
     window.open(job.sourceUrl, "_blank", "noopener,noreferrer");
+    onNavigate("applications");
   };
 
   return (
@@ -53,10 +55,12 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
       <ScreenHeader title="AI Global Job Finder" subtitle="Your AI-powered search from Madagascar">
         <div className="ai-wash -mx-4 rounded-b-2xl px-4 pb-1 pt-1">
           <p className="text-[22px] font-extrabold leading-tight text-ink-primary">
-            Hello, Jonathan <span aria-hidden="true">👋</span>
+            Hello, {firstName} <span aria-hidden="true">👋</span>
           </p>
           <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-            Your CV is analysed. Here are the international roles you can realistically apply for.
+            {jobs.length > 0
+              ? "Here are the international roles you can realistically apply for."
+              : "Searching live sources for international roles you can apply for from Madagascar."}
           </p>
         </div>
       </ScreenHeader>
@@ -96,6 +100,9 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
             onClick={() => onNavigate("applications")}
           />
         </section>
+        <p className="-mt-3 text-center text-[11.5px] text-ink-tertiary">
+          Matching counts postings scoring 60% or more. New counts postings added in the last 3 days.
+        </p>
 
         <section aria-label="Your best opportunities">
           <div className="mb-3 flex items-end justify-between gap-3">
@@ -117,6 +124,14 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
 
           {loading ? (
             <JobListSkeleton count={3} />
+          ) : refresh.status === "error" && jobs.length === 0 ? (
+            <EmptyState
+              tone="error"
+              title="Could not reach the job sources"
+              message={refresh.error ?? "Check your connection and try again."}
+              actionLabel="Try again"
+              onAction={() => void refreshJobs()}
+            />
           ) : best.length === 0 ? (
             <EmptyState
               title="No opportunities yet"
@@ -127,7 +142,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
           ) : (
             <div className="space-y-3">
               {best.map((job, i) => (
-                <JobCard key={job.id} job={job} index={i} onView={handleView} onApply={handleView} />
+                <JobCard key={job.id} job={job} index={i} onView={open} onApply={apply} />
               ))}
             </div>
           )}
@@ -138,6 +153,8 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
             </Button>
           )}
         </section>
+
+        <SourceStatus onRefresh={() => void refreshJobs()} />
 
         <section aria-label="AI tip" className="card-surface overflow-hidden p-0">
           <div className="flex items-start gap-3 bg-gradient-to-br from-accent-500 to-teal-600 p-4 text-white">
@@ -155,5 +172,59 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
         </section>
       </div>
     </>
+  );
+}
+
+/** The honesty strip: which sources answered, and how many postings each returned. */
+function SourceStatus({ onRefresh }: { onRefresh: () => void }) {
+  const { refresh } = useAppStore();
+  const reports = refresh.reports;
+  if (reports.length === 0) return null;
+
+  const when = refresh.lastRefreshedAtEpochMillis
+    ? new Date(refresh.lastRefreshedAtEpochMillis).toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <section aria-label="Job sources" className="card-surface p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <GlobeIcon width={17} height={17} className="text-accent-ink" />
+          <p className="text-[13.5px] font-bold text-ink-primary">Live sources</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refresh.status === "loading"}
+          className="inline-flex items-center gap-1 rounded-xl px-2 py-1.5 text-[12.5px] font-semibold text-accent-ink transition-colors hover:bg-accent-500/[0.08] disabled:opacity-50"
+        >
+          <RefreshIcon width={14} height={14} />
+          {when ? `Updated ${when}` : "Refresh"}
+        </button>
+      </div>
+      <ul className="mt-3 space-y-2">
+        {reports.map((report) => (
+          <li key={report.providerId} className="flex items-center justify-between gap-3 text-[12.5px]">
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-ink-secondary">
+              <span
+                className={
+                  report.ok
+                    ? "h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+                    : "h-1.5 w-1.5 shrink-0 rounded-full bg-danger"
+                }
+                aria-hidden="true"
+              />
+              <span className="truncate">{report.providerName}</span>
+            </span>
+            <span className="shrink-0 tabular-nums text-ink-tertiary">
+              {report.ok ? `${report.accepted} usable` : "unavailable"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

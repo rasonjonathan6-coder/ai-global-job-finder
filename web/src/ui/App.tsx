@@ -7,9 +7,9 @@ import { ProfileScreen } from "./screens/ProfileScreen";
 import { useHashRoute } from "./navigation/useHashRoute";
 
 /**
- * Application shell. Stage 1 delivers the premium chrome — theme, typography, bottom
- * navigation and page transitions — with each destination rendered through a shared
- * animated container. Later stages replace the placeholder bodies with live data.
+ * Application shell. The chrome — theme, typography, bottom navigation and page transitions
+ * — is unchanged; the destinations now read from the live `AppStoreProvider` (job pipeline,
+ * application tracker and alerts) instead of the stage-one placeholders.
  */
 export function App() {
   const [route, navigate] = useHashRoute();
@@ -20,7 +20,7 @@ export function App() {
         {route === "jobs" ? (
           <JobsScreen onNavigate={navigate} />
         ) : route === "applications" ? (
-          <ApplicationsScreen />
+          <ApplicationsScreen onNavigate={navigate} />
         ) : route === "ai" ? (
           <AiScreen />
         ) : route === "profile" ? (

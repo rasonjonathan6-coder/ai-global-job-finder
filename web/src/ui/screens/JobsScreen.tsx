@@ -1,35 +1,47 @@
-import { useMemo, useState } from "react";
-import { MadagascarEligibility, type Job } from "../../core/models";
+import { useEffect, useMemo, useState } from "react";
+import { MadagascarEligibility, WorkMode, type Job } from "../../core/models";
 import { EmptyState } from "../components/EmptyState";
 import { JobCard } from "../components/JobCard";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { SAMPLE_JOBS } from "../lib/sample-jobs";
+import { JobListSkeleton } from "../components/Skeleton";
+import { useAppStore } from "../../state/app-store";
+import { isStrongMatch } from "../lib/job-stats";
 import { cx } from "../lib/cx";
 import { FilterIcon, SearchIcon } from "../components/icons";
 
-type FilterKey = "all" | "eligible" | "sponsored" | "remote";
+type FilterKey = "all" | "eligible" | "sponsored" | "remote" | "strong";
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "eligible", label: "Open to me" },
   { key: "sponsored", label: "Visa sponsorship" },
   { key: "remote", label: "Remote" },
+  { key: "strong", label: "Strong match" },
 ];
 
 /**
- * The jobs list: a search field, eligibility filters and the full ranked catalogue. This is
- * the Stage-1 shell; live provider data and infinite scroll land in a later stage.
+ * The jobs list: a search field, eligibility filters and the full ranked catalogue built
+ * from the live key-free sources. The skeleton and error states reflect the real refresh.
  */
 export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void }) {
+  const { jobs, refresh, refreshJobs, markApplied } = useAppStore();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
 
+  useEffect(() => {
+    if (refresh.status === "idle") void refreshJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loading = refresh.status === "loading" || refresh.status === "idle";
+
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return SAMPLE_JOBS.filter((job) => {
+    return jobs.filter((job) => {
       if (filter === "eligible" && job.eligibility === MadagascarEligibility.RESTRICTED) return false;
       if (filter === "sponsored" && job.eligibility !== MadagascarEligibility.VISA_SPONSORED) return false;
-      if (filter === "remote" && job.workMode !== "REMOTE") return false;
+      if (filter === "remote" && job.workMode !== WorkMode.REMOTE) return false;
+      if (filter === "strong" && !isStrongMatch(job)) return false;
       if (!needle) return true;
       return (
         job.title.toLowerCase().includes(needle) ||
@@ -38,13 +50,18 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
         job.matchedSkills.some((s) => s.toLowerCase().includes(needle))
       );
     });
-  }, [query, filter]);
+  }, [jobs, query, filter]);
 
   const handleView = (job: Job) => window.open(job.sourceUrl, "_blank", "noopener,noreferrer");
+  const handleApply = (job: Job) => {
+    markApplied(job);
+    window.open(job.sourceUrl, "_blank", "noopener,noreferrer");
+    onNavigate("applications");
+  };
 
   return (
     <>
-      <ScreenHeader title="Jobs" subtitle={`${SAMPLE_JOBS.length} international opportunities`} />
+      <ScreenHeader title="Jobs" subtitle={`${jobs.length} international opportunities`} />
 
       <div className="app-shell space-y-4">
         <div className="relative">
@@ -89,7 +106,17 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
           })}
         </div>
 
-        {results.length === 0 ? (
+        {loading ? (
+          <JobListSkeleton count={5} />
+        ) : refresh.status === "error" && jobs.length === 0 ? (
+          <EmptyState
+            tone="error"
+            title="Could not reach the job sources"
+            message={refresh.error ?? "Check your connection and try again."}
+            actionLabel="Try again"
+            onAction={() => void refreshJobs()}
+          />
+        ) : results.length === 0 ? (
           <EmptyState
             title="No jobs match those filters"
             message="Try a different search term or clear the filters to see every opportunity."
@@ -102,21 +129,23 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
         ) : (
           <div className="space-y-3">
             {results.map((job, i) => (
-              <JobCard key={job.id} job={job} index={i} onView={handleView} onApply={handleView} />
+              <JobCard key={job.id} job={job} index={i} onView={handleView} onApply={handleApply} />
             ))}
           </div>
         )}
 
-        <p className="flex flex-wrap items-center justify-center gap-1 pt-2 text-center text-[11.5px] text-ink-tertiary">
-          Showing demo postings. Live sources connect in a later stage.
-          <button
-            type="button"
-            onClick={() => onNavigate("ai")}
-            className="rounded-lg px-2 py-2 font-semibold text-accent-ink"
-          >
-            How matching works
-          </button>
-        </p>
+        {!loading && jobs.length > 0 && (
+          <p className="flex flex-wrap items-center justify-center gap-1 pt-2 text-center text-[11.5px] text-ink-tertiary">
+            Live postings from Remotive, Arbeitnow and Jobicy.
+            <button
+              type="button"
+              onClick={() => onNavigate("ai")}
+              className="rounded-lg px-2 py-2 font-semibold text-accent-ink"
+            >
+              How matching works
+            </button>
+          </p>
+        )}
       </div>
     </>
   );

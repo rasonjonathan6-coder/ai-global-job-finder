@@ -12,3 +12,6 @@ app/build/
 build/
 .kotlin/
 .agent_tmp/
+
+# Local shell environment (machine-specific toolchain paths). Kept on disk, never committed.
+.envrc-local

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SalaryPeriod } from "../../core/models";
-import { clampPercent, formatSalaryRange, relativeTimeFrom } from "./format";
+import { clampPercent, countryLine, formatSalaryRange, relativeTimeFrom } from "./format";
 
 describe("format helpers", () => {
   it("formats a currency range with its period suffix", () => {
@@ -30,5 +30,13 @@ describe("format helpers", () => {
     expect(clampPercent(104.6)).toBe(100);
     expect(clampPercent(-3)).toBe(0);
     expect(clampPercent(Number.NaN)).toBe(0);
+  });
+
+  it("joins city and country, collapsing a repeated country", () => {
+    expect(countryLine("Canada", "Calgary")).toBe("Calgary, Canada");
+    expect(countryLine("Germany", "Germany")).toBe("Germany");
+    expect(countryLine("United States", "USA")).toBe("United States");
+    expect(countryLine("Worldwide", "")).toBe("Worldwide");
+    expect(countryLine("", "")).toBe("Location not stated");
   });
 });

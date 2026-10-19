@@ -2516,6 +2516,159 @@ Le test écrit aussi une copie sous `app/build/parity/kotlin-parity.json` pour i
 Kotlin : fonctions pures, horloge injectée, jamais d'invention de fait (un champ absent reste
 `UNKNOWN`/`null`).
 
+## Stage 59 — édition web : UI premium, store vivant et mode démo
+
+**Objectif.** Donner à `web/` la même expérience que l'app Android : un tableau de bord premium,
+une navigation par onglets, le suivi des candidatures, le profil — le tout branché sur les
+moteurs TypeScript déjà portés, pas sur des données factices.
+
+**Store unique.** `web/src/state/app-store.tsx` est la source de vérité (miroir de
+`LiveJobRepository` + `UserPreferencesRepository`) : profil, offres classées, candidatures,
+notifications, préférences expat et mode démo. Tout est persisté sous `localStorage` avec une clé
+versionnée (`aigjf.store`, `STORAGE_VERSION`), donc un schéma stocké est migré plutôt que
+mal relu. `AppStoreProvider` enveloppe l'app dans `web/src/main.tsx`.
+
+**Écrans.** `web/src/ui/screens/` : `HomeScreen` (salutation, tuiles de stats, meilleures offres,
+bandeau de sources, astuce IA), `JobsScreen` (filtres éligible/sponsorisé/remote),
+`ApplicationsScreen` (suivi + changement de statut), `AiScreen`, `ProfileScreen` (CV, thème,
+auto-apply, mode démo).
+
+**Mode démo.** Le vrai mode démo Android (`demoMode`) est implémenté côté web : quand il est
+activé depuis `ProfileScreen`, `refreshJobs(true)` sert `web/src/ui/lib/sample-jobs.ts`
+(`SAMPLE_JOBS`, 6 offres curatées) au lieu des flux live, et le bandeau de sources affiche
+« Demo fixtures » — les données de démonstration ne sont jamais prises pour un résultat live.
+`refreshJobs(demoOverride?)` accepte l'override pour éviter une lecture périmée juste après le
+basculement du réglage.
+
+**Cohérence d'affichage.**
+- `countryLine(country, city)` (`web/src/ui/lib/format.ts`) déduplique un pays répété
+  (« Germany, Germany ») et un couple qui résout vers le même pays (« USA » + « United States »
+  → « United States »), via `resolveCountry`/`isRecognized` du catalogue géo.
+- `MATCHING_JOBS_MIN = 60` (`web/src/ui/lib/job-stats.ts`) fixe le seuil des « Jobs matching
+  you » ; `HomeScreen` l'affiche sous les tuiles pour que le chiffre soit explicable.
+
+**Vérification.** `npm run typecheck` (tsc strict), `npm run build` (Vite + PWA workbox) et
+`npm test` (vitest) passent : **256 tests web, 0 échec** (providers 14, job-mapper 87, parité
+147, format 6, BottomNav 2). Le service worker workbox precache le bundle ; après un rebuild, un
+rechargement (ou un `?cb=<n>`) est nécessaire pour activer la nouvelle version.
+
+## Stage 60 — préparation au déploiement de l'édition web
+
+**Objectif.** Rendre l'édition web/PWA déployable, sans toucher à l'app Android et sans jamais
+exposer de clé. Le guide complet est `web/DEPLOYMENT.md`.
+
+**Audit du build.** `npm run build` (`tsc --noEmit && vite build`) produit `web/dist/` :
+`index.html` 1.07 kB, JS 271.58 kB (85.76 kB gzip), CSS 29.16 kB, `manifest.webmanifest`,
+`sw.js` + `workbox-<hash>.js`, `registerSW.js`, `favicon.svg` et trois icônes PNG
+(192, 512, maskable 512). Le precache workbox liste 13 entrées (377.27 KiB).
+
+**Base path et routage.** `base: "./"` rend le bundle indépendant de l'hôte : il fonctionne à
+la racine d'un domaine comme dans un sous-dossier, sans rebuild. La navigation est en hash
+(`#/home`…), donc un rechargement ou un lien profond n'atteint jamais le serveur ; la règle de
+fallback SPA (`/* → /index.html`, fournie dans `netlify.toml` et `vercel.json` à la racine) n'est
+qu'un filet de sécurité.
+
+**Hébergement recommandé.** Netlify (offre gratuite) en premier choix, Cloudflare Pages et
+Vercel en alternatives équivalentes : HTTPS automatique, CDN, rebuild sur push. `netlify.toml`
+et `vercel.json` à la racine du dépôt (hors du module Android, ils ne touchent pas son build)
+appliquent les en-têtes de cache (`sw.js` en `max-age=0, must-revalidate`, `/assets/*` en
+`immutable`) et construisent `web/` puis publient `web/dist`.
+
+**Variables d'environnement du frontend : aucune.** Le bundle ne lit aucun `import.meta.env` ni
+`VITE_*`. Les clés éventuelles (Adzuna, Jooble) restent côté proxy.
+
+**Fournisseurs en production (vérifiés le 2026-10-13).** Remotive, Arbeitnow et Jobicy envoient
+`Access-Control-Allow-Origin: *` : ils fonctionnent depuis le navigateur, sans clé. Himalayas
+n'envoie aucun en-tête CORS et est donc bloqué côté navigateur ; Adzuna et Jooble exigent une
+clé. Ces trois sources demandent un petit proxy serveur (voir `web/DEPLOYMENT.md` §5) ; en
+attendant, l'app l'indique honnêtement dans le bandeau de diagnostics.
+
+**Mode démo.** Les fixtures (`sample-jobs.ts`) ne sont servies que si le mode démo est activé et
+sont étiquetées « Demo fixtures » : jamais présentées comme des résultats live.
+
+**Déploiement : non effectué.** Aucun jeton d'hébergement n'est présent, aucun remote Git n'est
+configuré, et un push est hors périmètre. Aucune URL publique n'est donc annoncée. Tout le
+nécessaire est prêt (build vérifié, configs, procédures). `.envrc-local` reste sur disque et est
+désormais listé dans `.gitignore`.
+
+## Stage 61 — paquet de publication web
+
+**Objectif.** Produire une archive prête à téléverser, sans toucher à l'app Android ni exposer
+de secret. Guide complet : `web/DEPLOYMENT.md` §10.
+
+**Archive.** `npm run release:package` (`web/scripts/package-release.py`) empaquette `web/dist/`
+à la racine de l'archive (aucun dossier enveloppe), plus un `_redirects`
+(`/* /index.html 200`). Sortie : **`web/release/ai-global-job-finder-web-v1.0.0.zip`**,
+**182 948 octets**, 12 entrées, accompagnée d'un `.sha256`. `release/` est dans `.gitignore` :
+c'est un artefact, régénérable.
+
+**Contenu.** `index.html`, `assets/index-<hash>.{js,css}`, `manifest.webmanifest`, `sw.js`,
+`workbox-<hash>.js`, `registerSW.js`, `favicon.svg` et les trois icônes PNG. Le script refuse de
+s'exécuter si un fichier requis manque. Aucun fichier source, aucun `.envrc-local`, aucune
+clé : seul `dist/` est lu.
+
+**Vérifications.** Le typecheck, les 256 tests et le build passent. L'archive extraite est
+**octet pour octet identique** à `dist/` (seul `_redirects` s'ajoute). `unzip -t` : aucun
+erreur. Test en aperçu statique : `/`, `/index.html`, `/manifest.webmanifest` (200
+`application/manifest+json`), `/sw.js`, `/registerSW.js`, `/workbox-*.js`, les assets hachés,
+les trois icônes et `/favicon.svg` répondent tous **200** avec le bon type. Rendu réel dans le
+navigateur depuis l'archive extraite : cartes d'offres live (48/47/46/45/44 %), lieu « Berlin »,
+navigation basse fonctionnelle. Scan de secrets de l'archive : rien.
+
+**Déploiement : toujours non effectué.** Aucun jeton d'hébergement, aucun remote Git. Aucune URL
+publique annoncée. Téléversement manuel Netlify décrit dans `web/DEPLOYMENT.md` §10.
+
+## Stage 62 — parité fonctionnelle et visuelle exacte Android → web
+
+**Objectif.** Faire de l'édition web (`web/`) le **contrepartenaire exact** de l'APK Android
+actuel : mêmes moteurs, mêmes chiffres, même expérience. Android est la source de vérité ; on
+ne reconçoit pas, on ne simplifie pas, on ne remplace pas la logique — on la porte.
+
+**Étendre les fixtures avant de porter.** Le harnais Stage 58 ne couvrait qu'une partie du
+pipeline. `Stage58GoldenParityExportTest.kt` exporte désormais, pour chaque scénario, le `Job`
+complet **reconstruit depuis le JSON** (`jobFromJson`, en plus des sorties déjà exportées) puis
+pousse ce `Job` dans les moteurs encore non vérifiés :
+- `shortlistPipeline` — `CvCompleteness`/`profileCompleteness`, `ShortlistEngine.assess` (entrée
+  complète sérialisée : readiness, blockers, orderedBlockers, highlights, rankComponents,
+  expatEvidenceCoverage, benefitsMatched/Considered) et `ApplicationPlanEngine.build` en deux
+  passes (`plan` sans lettre de motivation, `preparedPlan` avec lettre + 3 tentatives
+  d'entretien + verdict scam `NEEDS_CAUTION` + déjà postulé) ;
+- `intelligence` — `ExpatIntelligenceEngine.build` sur trois états (`single`, `duplicated` avec
+  un second pays, `empty`) : pays, gaps récurrents, top opportunités et `summary`.
+
+**Pièges rencontrés à l'export (à ne pas refaire).**
+- `jobFromJson` reçoit le **`output`** du scénario et doit dépaqueter `output["job"]` — le
+  passer directement provoquait un `NullPointerException` sur `salaryMin`.
+- `salaryMin`/`salaryMax` sont **non-null** côté `Job` (le scénario `no-salary-stated` porte des
+  sentinelles numériques) : utiliser `int(...)`, pas `intOrNull(...)`.
+- `QualificationGap.met` est `Boolean?` : caster en `Boolean?`, un `as Boolean` lève un NPE sur
+  les gaps indéterminés.
+
+**Suite de parité web.** `parity.test.ts` gagne des helpers (`jobFromScenario`, `shortlistEntry`,
+`shortlistState`, `planFrom`, `entryJson`, `planJson`, `intelligenceJson`) et cinq `describe`
+Stage 62 (complétude profil, shortlist, plan d'application ×2, intelligence expat). Le champ
+`Job.verification` est le seul non relu par ces moteurs : il reste `UNKNOWN_VERIFICATION`, avec
+un commentaire qui l'explique.
+
+**Vérifications.** Kotlin : `:app:testDebugUnitTest` **BUILD SUCCESSFUL**. Web : `npm run
+typecheck` (tsc strict) OK, `npm run build` OK, `npm test` → **302 tests, 0 échec** (parité
+**193**, job-mapper 87, providers 14, format 6, BottomNav 2).
+
+**Régénérer.** Après tout changement d'un moteur Kotlin :
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ANDROID_HOME=/home/openhands/android-sdk
+export PATH=$JAVA_HOME/bin:$PATH
+./gradlew :app:testDebugUnitTest --tests "com.aiglobal.jobfinder.Stage58GoldenParityExportTest"
+cd web && npm run typecheck && npm test
+```
+
+**Reste à faire (Stage 62, suite).** Parité **d'écran** : l'Android expose 23 écrans
+(`screens/**`) contre 5 onglets web. Les parcours secondaires (CV, adaptation CV, détail de
+candidature, lettre de motivation, guide expat, entretien, scam shield, alertes, auto-apply,
+diagnostics de sources, classement expat, shortlist, historique d'actualisation, historique de
+soumission) ont leurs moteurs portés mais pas encore leurs écrans web — c'est le prochain axe,
+onglet par onglet, sans régression sur l'existant.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
