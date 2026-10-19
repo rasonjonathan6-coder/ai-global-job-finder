@@ -8,8 +8,11 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
 /**
@@ -78,6 +81,23 @@ class JobRefreshScheduler(private val context: Context) {
             .addTag(TAG)
             .build()
         manager.enqueueUniqueWork(NOW_WORK_NAME, ExistingWorkPolicy.KEEP, request)
+    }
+
+    /**
+     * When the periodic refresh is next expected to run, or null when it is off or unknown.
+     *
+     * The value comes from WorkManager itself ([WorkInfo.getNextScheduleTimeMillis]), so the
+     * screen reports the system's own plan — which Android may still defer — rather than the
+     * interval the user chose dressed up as a fixed time.
+     */
+    suspend fun nextScheduledRunAt(): Long? = withContext(Dispatchers.IO) {
+        val manager = workManager ?: return@withContext null
+        runCatching {
+            manager.getWorkInfosForUniqueWork(WORK_NAME).get()
+                .firstOrNull { it.state == WorkInfo.State.ENQUEUED }
+                ?.nextScheduleTimeMillis
+                ?.takeIf { it > 0L }
+        }.getOrNull()
     }
 
     companion object {

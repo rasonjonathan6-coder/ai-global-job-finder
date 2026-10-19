@@ -2412,6 +2412,62 @@ Modifié : `work/RefreshRetryPolicy.kt`, `work/JobRefreshWorker.kt`,
 `data/discovery/DiscoverySummary.kt`, `AiJobFinderApp.kt`,
 `ui/screens/profile/ProfileScreen.kt`, `Stage20ProfileScreenTest.kt`, `AGENTS.md`.
 
+## Étape 56 — historique des recherches : dire ce que chaque veille a fait
+
+**Objectif.** L'étape 55 rendait le retry fini et le silence explicable, mais elle ne répondait
+qu'à « la veille s'est-elle arrêtée ? ». Elle ne disait pas **ce que** chaque exécution avait
+fait. Cette étape ajoute un historique persistant : un enregistrement par exécution terminée,
+manuelle ou planifiée, consultable depuis la carte « Découverte » du Profil.
+
+**Modèle pur.** Nouveau `data/discovery/RefreshHistory.kt` :
+`RefreshRunRecord` (id, `RefreshTrigger`, début/fin, `RefreshOutcome`, raison, résultats par
+source, compteurs) ; `RefreshHistory` (liste plus récente d'abord, plafonnée à `MAX_RUNS = 20`) ;
+et `RefreshOutcomeClassifier.classify(attempted, diagnostics, delta)` — pur, donc testable sans
+dépôt ni WorkManager. Deux règles d'honnêteté y sont centrales :
+- `NOT_ATTEMPTED` est distinct de `FAILED` : une requête refusée parce qu'une recherche tournait
+  déjà n'a **rien tenté**, l'enregistrer comme échec serait un mensonge.
+- les compteurs (`newCount`, `updatedCount`, `duplicateCount`) sont **nullables** : une lecture
+  échouée ne modifie pas le delta du dépôt, donc afficher « 0 nouvelle » serait une autre
+  affirmation fausse. Ils ne sont renseignés que lorsque la lecture a réellement mesuré.
+
+**Persistance.** `RefreshHistoryStore` écrit un petit JSON (écriture atomique, fichier corrompu
+écarté, jamais fatal) et l'expose en `Flow` (`observe()`), première émission = valeur du disque.
+Rien de personnel n'y est écrit : uniquement horaires, déclencheurs, résultats et **noms** de
+sources — jamais le contenu du CV, un identifiant ou un terme de recherche.
+
+**Un seul chemin d'exécution.** Nouveau `work/RefreshRunCoordinator.kt` : point d'entrée unique
+pour un tap « Refresh now » comme pour le worker. `Mutex.tryLock` ⇒ une seule exécution à la
+fois, une seconde demande est **refusée** (pas mise en file) ; le dépôt refusant silencieusement
+une lecture réentrante, le coordinateur compare l'horodatage de tentative **avant/après** et, s'il
+n'a pas bougé, enregistre `NOT_ATTEMPTED`. Un run manuel est repris sous `RefreshRetryPolicy` via
+`runWithBoundedRetry(...)`, exactement comme un run planifié. `refreshRunRecord(...)` (fonction
+interne partagée) construit le même enregistrement pour le coordinateur et le worker.
+
+**Câblage.** `AiJobFinderApp` expose `refreshHistoryStore`, `refreshRunCoordinator` et
+`refreshHistory`. `AppViewModel.searchNow()` passe désormais par le coordinateur (`_searchingNow`
+reste l'état d'UI) ; il expose aussi `refreshHistory`, `refreshRunning` et `nextRefreshAt` (lu de
+WorkManager via `JobRefreshScheduler.nextScheduledRunAt()`, réévalué quand les préférences
+changent — jamais promis depuis l'intervalle). `JobRefreshWorker` enregistre chaque run planifié.
+
+**UI.** `ProfileScreen` : la carte « Découverte » affiche la ligne du prochain run attendu, la
+ligne du dernier run réel (refus, succès avec « N of M sources answered », ou échec avec sa
+raison), et un bouton **History**. Nouvel écran `ui/screens/refresh/RefreshHistoryScreen.kt`
+(`RefreshHistoryViewModel`, route `SecondaryRoutes.REFRESH_HISTORY`) : en-tête, carte de synthèse
+(runs / réussis / échoués) et une carte par run (résultat, déclencheur, durée, sources ok/échouées,
+compteurs mesurés, sources injoignables), avec état vide.
+
+**Vérification.** Suite **724 tests, 0 échec, 0 erreur, 3 ignorés** (+19 : `Stage56RefreshHistoryTest`
+— 6 sur la classification, 4 sur la persistance/le plafond/la corruption, 2 sur
+`RefreshHistory`, 2 sur le coordinateur ; `ScreenshotTest` : rendu `refresh-history` et
+`refresh-history-empty` en clair et sombre ; `Stage20ProfileScreenTest` : bouton « History » et
+lignes de statut). `compileDebugKotlin`, `compileDebugUnitTestKotlin` et `testDebugUnitTest`
+réussissent. Nouveaux fichiers : `data/discovery/RefreshHistory.kt`,
+`work/RefreshRunCoordinator.kt`, `viewmodel/RefreshHistoryViewModel.kt`,
+`ui/screens/refresh/RefreshHistoryScreen.kt`, `Stage56RefreshHistoryTest.kt`. Modifié :
+`work/RefreshRetryPolicy.kt`, `work/JobRefreshScheduler.kt`, `work/JobRefreshWorker.kt`,
+`AiJobFinderApp.kt`, `viewmodel/ViewModels.kt`, `ui/screens/profile/ProfileScreen.kt`,
+`ui/AiJobFinderRoot.kt`, `ScreenshotTest.kt`, `Stage20ProfileScreenTest.kt`, `AGENTS.md`.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

@@ -94,6 +94,41 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
     val searchingNow: StateFlow<Boolean> = _searchingNow.asStateFlow()
 
     /**
+     * The recorded history of refresh runs, manual and scheduled, newest first. Backs the
+     * "Refresh history" screen so the user can see what each run did rather than only the
+     * latest summary line.
+     */
+    val refreshHistory: StateFlow<com.aiglobal.jobfinder.data.discovery.RefreshHistory> =
+        container.refreshHistory
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                com.aiglobal.jobfinder.data.discovery.RefreshHistory(),
+            )
+
+    /** True while any refresh — manual or scheduled — is running, from the coordinator. */
+    val refreshRunning: StateFlow<Boolean> = container.refreshRunCoordinator.running
+
+    /**
+     * When the periodic background refresh is next expected, from WorkManager itself, or null
+     * when automatic refresh is off. A best-effort read: Android may still defer the run.
+     */
+    private val _nextRefreshAt = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
+    val nextRefreshAt: StateFlow<Long?> = _nextRefreshAt.asStateFlow()
+
+    init {
+        // Re-read the plan whenever the preference changes, so the line stays honest without
+        // polling WorkManager on a timer.
+        viewModelScope.launch {
+            container.preferencesRepository.refreshPreferences.collect {
+                _nextRefreshAt.value = runCatching {
+                    container.jobRefreshScheduler.nextScheduledRunAt()
+                }.getOrNull()
+            }
+        }
+    }
+
+    /**
      * The postings discovered since the user last reviewed them. Shared by Home and Jobs, so
      * both surfaces show the same incremental list and neither can drift from the ledger.
      */
@@ -150,15 +185,18 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
 
     /**
      * Runs one search immediately and waits for it, so the settings section can show live
-     * progress and an updated result. A second tap while one is running is ignored rather
-     * than queued, matching the repository's own single-flight behaviour.
+     * progress and an updated result. The work goes through [RefreshRunCoordinator], which
+     * runs it one at a time and records the outcome; a second tap while one is running is
+     * refused rather than queued, so two taps can never duplicate the same network work.
      */
     fun searchNow() {
         if (_searchingNow.value) return
         viewModelScope.launch {
             _searchingNow.value = true
             try {
-                container.jobRepository.runLiveValidation()
+                container.refreshRunCoordinator.refresh(
+                    com.aiglobal.jobfinder.data.discovery.RefreshTrigger.MANUAL,
+                )
             } finally {
                 _searchingNow.value = false
             }

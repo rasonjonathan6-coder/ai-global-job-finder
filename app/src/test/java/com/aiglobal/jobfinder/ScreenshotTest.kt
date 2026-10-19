@@ -99,6 +99,12 @@ import com.aiglobal.jobfinder.ui.screens.profile.JobSourcesCard
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
 import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldContent
 import com.aiglobal.jobfinder.ui.screens.shortlist.ShortlistContent
+import com.aiglobal.jobfinder.data.discovery.RefreshHistory
+import com.aiglobal.jobfinder.data.discovery.RefreshOutcome
+import com.aiglobal.jobfinder.data.discovery.RefreshProviderResult
+import com.aiglobal.jobfinder.data.discovery.RefreshRunRecord
+import com.aiglobal.jobfinder.data.discovery.RefreshTrigger
+import com.aiglobal.jobfinder.ui.screens.refresh.RefreshHistoryContent
 import com.aiglobal.jobfinder.ui.screens.submissions.SubmissionHistoryContent
 import com.aiglobal.jobfinder.data.submissions.SubmissionChannel
 import com.aiglobal.jobfinder.data.submissions.SubmissionEntry
@@ -806,6 +812,63 @@ class ScreenshotTest {
     @Test
     fun shortlist() = renderBothModes("shortlist") {
         ShortlistContent(state = shortlistState, onBack = {}, onRefresh = {})
+    }
+
+    @Test
+    fun refreshHistory() = renderBothModes("refresh-history") {
+        RefreshHistoryContent(
+            history = RefreshHistory(
+                runs = listOf(
+                    RefreshRunRecord(
+                        id = stage5Now,
+                        trigger = RefreshTrigger.SCHEDULED,
+                        startedAtEpochMillis = stage5Now - 4_200,
+                        endedAtEpochMillis = stage5Now,
+                        outcome = RefreshOutcome.PARTIAL,
+                        reason = "2 of 6 sources could not be reached.",
+                        providers = listOf(
+                            RefreshProviderResult("remotive", "Remotive", ProviderStatus.SUCCESS_WITH_RESULTS),
+                            RefreshProviderResult("jobicy", "Jobicy", ProviderStatus.SUCCESS_WITH_RESULTS),
+                            RefreshProviderResult("himalayas", "Himalayas", ProviderStatus.SUCCESS_EMPTY),
+                            RefreshProviderResult("arbeitnow", "Arbeitnow", ProviderStatus.SUCCESS_WITH_RESULTS),
+                            RefreshProviderResult("adzuna", "Adzuna", ProviderStatus.TIMEOUT),
+                            RefreshProviderResult("jooble", "Jooble", ProviderStatus.NETWORK_ERROR),
+                        ),
+                        newCount = 4,
+                        updatedCount = 2,
+                        duplicateCount = 1,
+                    ),
+                    RefreshRunRecord(
+                        id = stage5Now - 100_000,
+                        trigger = RefreshTrigger.MANUAL,
+                        startedAtEpochMillis = stage5Now - 103_000,
+                        endedAtEpochMillis = stage5Now - 100_000,
+                        outcome = RefreshOutcome.SUCCEEDED,
+                        providers = listOf(
+                            RefreshProviderResult("remotive", "Remotive", ProviderStatus.SUCCESS_WITH_RESULTS),
+                            RefreshProviderResult("jobicy", "Jobicy", ProviderStatus.SUCCESS_WITH_RESULTS),
+                        ),
+                        newCount = 7,
+                        updatedCount = 0,
+                        duplicateCount = 0,
+                    ),
+                    RefreshRunRecord(
+                        id = stage5Now - 200_000,
+                        trigger = RefreshTrigger.MANUAL,
+                        startedAtEpochMillis = stage5Now - 200_100,
+                        endedAtEpochMillis = stage5Now - 200_000,
+                        outcome = RefreshOutcome.NOT_ATTEMPTED,
+                        reason = "A search was already running, so this one was not started.",
+                    ),
+                ),
+            ),
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun refreshHistoryEmpty() = renderBothModes("refresh-history-empty") {
+        RefreshHistoryContent(history = RefreshHistory(), onBack = {})
     }
 
     @Test

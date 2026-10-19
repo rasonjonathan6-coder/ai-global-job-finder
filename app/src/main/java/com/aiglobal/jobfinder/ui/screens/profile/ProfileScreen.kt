@@ -55,7 +55,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SettingsBrightness
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Science
@@ -105,6 +104,8 @@ import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.Skill
 import com.aiglobal.jobfinder.data.model.UserProfile
 import com.aiglobal.jobfinder.data.discovery.DiscoverySummary
+import com.aiglobal.jobfinder.data.discovery.RefreshHistory
+import com.aiglobal.jobfinder.data.discovery.RefreshOutcome
 import com.aiglobal.jobfinder.data.notifications.NotificationPermission
 import com.aiglobal.jobfinder.data.refresh.AlertThreshold
 import com.aiglobal.jobfinder.data.refresh.RefreshInterval
@@ -141,6 +142,7 @@ fun ProfileScreen(
     onOpenExpat: (String) -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     onOpenSubmissionHistory: () -> Unit = {},
+    onOpenRefreshHistory: () -> Unit = {},
     /** Postings parked for the user to confirm whether they are the same opening. */
     pendingVerifications: Int = 0,
 ) {
@@ -158,6 +160,8 @@ fun ProfileScreen(
     val notificationsEnabled by appViewModel.notificationsEnabled.collectAsStateWithLifecycle()
     val discoverySummary by appViewModel.discoverySummary.collectAsStateWithLifecycle()
     val searchingNow by appViewModel.searchingNow.collectAsStateWithLifecycle()
+    val refreshHistory by appViewModel.refreshHistory.collectAsStateWithLifecycle()
+    val nextRefreshAt by appViewModel.nextRefreshAt.collectAsStateWithLifecycle()
 
     val current = profile
     if (current == null) {
@@ -354,11 +358,14 @@ fun ProfileScreen(
                 notificationsEnabled = notificationsEnabled,
                 summary = discoverySummary,
                 searchingNow = searchingNow,
+                nextRefreshAt = nextRefreshAt,
+                history = refreshHistory,
                 onAutoRefreshChange = appViewModel::setAutoRefreshEnabled,
                 onIntervalChange = appViewModel::setRefreshInterval,
                 onNotificationsChange = appViewModel::setNotificationsEnabled,
                 onAlertThresholdChange = appViewModel::setAlertThreshold,
                 onSearchNow = appViewModel::searchNow,
+                onOpenHistory = onOpenRefreshHistory,
             )
         }
 
@@ -948,11 +955,16 @@ internal fun RefreshAndNotificationsCard(
     notificationsEnabled: Boolean,
     summary: DiscoverySummary = DiscoverySummary(),
     searchingNow: Boolean = false,
+    /** When the periodic run is next expected, from WorkManager, or null when it is off. */
+    nextRefreshAt: Long? = null,
+    /** The recorded run history, so the card can report the last run and open the full list. */
+    history: RefreshHistory = RefreshHistory(),
     onAutoRefreshChange: (Boolean) -> Unit,
     onIntervalChange: (RefreshInterval) -> Unit,
     onNotificationsChange: (Boolean) -> Unit,
     onAlertThresholdChange: (AlertThreshold) -> Unit = {},
     onSearchNow: () -> Unit = {},
+    onOpenHistory: () -> Unit = {},
 ) {
     val spacing = LocalSpacing.current
     val context = LocalContext.current
@@ -1024,7 +1036,14 @@ internal fun RefreshAndNotificationsCard(
                 }
             }
 
-            DiscoveryStatus(summary = summary, searchingNow = searchingNow, onSearchNow = onSearchNow)
+            DiscoveryStatus(
+                summary = summary,
+                searchingNow = searchingNow,
+                nextRefreshAt = nextRefreshAt,
+                history = history,
+                onSearchNow = onSearchNow,
+                onOpenHistory = onOpenHistory,
+            )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
@@ -1128,7 +1147,10 @@ internal fun RefreshAndNotificationsCard(
 private fun DiscoveryStatus(
     summary: DiscoverySummary,
     searchingNow: Boolean,
+    nextRefreshAt: Long?,
+    history: RefreshHistory,
     onSearchNow: () -> Unit,
+    onOpenHistory: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
     val busy = searchingNow || summary.isRefreshing
@@ -1179,6 +1201,37 @@ private fun DiscoveryStatus(
             )
         }
 
+        // The next scheduled run, read from WorkManager rather than promised from the interval.
+        // Android may defer it, so the line is worded as an expectation, not a fixed time.
+        if (nextRefreshAt != null) {
+            Text(
+                text = "Next automatic search about ${relativeTime(nextRefreshAt)}.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        // The most recent recorded run, so the card reflects what happened rather than only the
+        // feed's own diagnostics. A refused run (already running) is shown honestly, not as a
+        // failure — nothing was tried.
+        history.lastAttempt?.let { last ->
+            val line = when {
+                last.outcome == RefreshOutcome.NOT_ATTEMPTED ->
+                    "The last ${last.trigger.label.lowercase()} request was skipped because a search was already running."
+                last.succeeded ->
+                    "Last run: ${last.trigger.label.lowercase()}, ${last.outcome.label.lowercase()}, " +
+                        "${last.successCount} of ${last.providers.size} sources answered."
+                else ->
+                    "Last run: ${last.trigger.label.lowercase()} ${last.outcome.label.lowercase()}" +
+                        (last.reason?.let { " — $it" } ?: ".")
+            }
+            Text(
+                text = line,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         if (summary.hasFailures) {
             Text(
                 text = failureSummary(summary),
@@ -1207,13 +1260,23 @@ private fun DiscoveryStatus(
             )
         }
 
-        SecondaryButton(
-            text = "Search now",
-            onClick = onSearchNow,
-            leadingIcon = Icons.Filled.Search,
-            enabled = !busy,
-            height = 44.dp,
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+            PrimaryButton(
+                text = if (busy) "Searching…" else "Refresh now",
+                onClick = onSearchNow,
+                modifier = Modifier.weight(1f),
+                leadingIcon = Icons.Filled.Refresh,
+                enabled = !busy,
+                loading = busy,
+                height = 46.dp,
+            )
+            SecondaryButton(
+                text = "History",
+                onClick = onOpenHistory,
+                leadingIcon = Icons.Filled.History,
+                height = 46.dp,
+            )
+        }
     }
 }
 

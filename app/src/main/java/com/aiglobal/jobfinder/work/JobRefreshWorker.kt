@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.aiglobal.jobfinder.AiJobFinderApp
+import com.aiglobal.jobfinder.AppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -31,7 +32,8 @@ class JobRefreshWorker(
         val container = (applicationContext as? AiJobFinderApp)?.container
             ?: return@withContext Result.success()
         val store = container.refreshRunStateStore
-        val now = System.currentTimeMillis()
+        val startedAt = System.currentTimeMillis()
+        val before = attemptStamp(container)
 
         val runner = JobRefreshRunner(
             repository = container.jobRepository,
@@ -48,16 +50,59 @@ class JobRefreshWorker(
             return@withContext finish(
                 store = store,
                 verdict = RefreshRunClassifier.forThrownError(runAttemptCount, transient),
-                now = now,
+                now = System.currentTimeMillis(),
             )
         }
 
+        val now = System.currentTimeMillis()
+        // The repository silently refuses a re-entrant read, so a run that overlapped a manual
+        // refresh did not actually happen. The attempt timestamp is the only honest witness.
+        val after = attemptStamp(container)
+        recordHistory(
+            container = container,
+            startedAt = startedAt,
+            now = now,
+            attempted = after != null && after != before,
+        )
         val diagnostics = container.jobRepository.diagnostics.first()
         finish(
             store = store,
             verdict = RefreshRunClassifier.classify(diagnostics, runAttemptCount),
             now = now,
         )
+    }
+
+    /** The repository's last-attempt timestamp, or null when it has none yet. */
+    private suspend fun attemptStamp(container: AppContainer): Long? =
+        runCatching { container.jobRepository.diagnostics.first().lastAttemptAtEpochMillis }.getOrNull()
+
+    /**
+     * Records one finished scheduled run in the shared history, so the manual and automatic
+     * paths produce the same kind of entry. Called only after the runner returned, so a thrown
+     * error — which leaves nothing honest to record — never reaches here.
+     */
+    private suspend fun recordHistory(
+        container: AppContainer,
+        startedAt: Long,
+        now: Long,
+        attempted: Boolean,
+    ) {
+        val diagnostics = runCatching { container.jobRepository.diagnostics.first() }.getOrNull()
+            ?: return
+        val delta = runCatching { container.jobRepository.discovery.first() }
+            .getOrDefault(com.aiglobal.jobfinder.data.discovery.DiscoveryDelta())
+        runCatching {
+            container.refreshHistoryStore.record(
+                refreshRunRecord(
+                    trigger = com.aiglobal.jobfinder.data.discovery.RefreshTrigger.SCHEDULED,
+                    startedAtEpochMillis = startedAt,
+                    endedAtEpochMillis = now,
+                    attempted = attempted,
+                    diagnostics = diagnostics,
+                    delta = delta,
+                ),
+            )
+        }
     }
 
     /** Records the outcome (when there is one) and maps the decision to a WorkManager result. */

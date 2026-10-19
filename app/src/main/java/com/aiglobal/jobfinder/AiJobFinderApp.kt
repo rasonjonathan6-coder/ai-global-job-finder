@@ -375,6 +375,32 @@ open class AppContainer(application: Application) {
     }
 
     /**
+     * The history of refresh runs, manual and scheduled alike, so the user can see when the
+     * search last ran, whether it succeeded, and which sources answered — instead of only the
+     * latest outcome. Small, on-device, and free of anything personal.
+     */
+    val refreshHistoryStore: com.aiglobal.jobfinder.data.discovery.RefreshHistoryStore by lazy {
+        com.aiglobal.jobfinder.data.discovery.RefreshHistoryStore(application)
+    }
+
+    /**
+     * The one entry point for a refresh, whether a person tapped "Refresh now" or the worker
+     * woke up. It enforces one-at-a-time runs, retries a manual run under the same finite
+     * policy a scheduled one follows, and records every finished run into the history.
+     */
+    val refreshRunCoordinator: com.aiglobal.jobfinder.work.RefreshRunCoordinator by lazy {
+        com.aiglobal.jobfinder.work.RefreshRunCoordinator(
+            repository = jobRepository,
+            historyStore = refreshHistoryStore,
+        )
+    }
+
+    /** The recorded run history, newest first. Read once on start, then hot. */
+    val refreshHistory: Flow<com.aiglobal.jobfinder.data.discovery.RefreshHistory> by lazy {
+        refreshHistoryStore.observe()
+    }
+
+    /**
      * The plain-language state of automatic discovery, assembled from the repository's
      * diagnostics, the last incremental delta, and the last background-run outcome, so the
      * settings section can show when a search last ran and succeeded, how much is new, which

@@ -55,4 +55,27 @@ object RefreshRetryPolicy {
         // Retry only when at least one failure is the kind a later attempt could clear.
         return categories.any(::isTransient)
     }
+
+    /**
+     * Runs [attempt] under the same finite rule a scheduled run follows, for paths that are
+     * not themselves driven by WorkManager — a manual refresh, where no external scheduler is
+     * counting attempts. It stops at [maxAttempts] or as soon as [shouldRetry] says a further
+     * try would not help, and returns how many attempts were made.
+     */
+    suspend fun runWithBoundedRetry(
+        maxAttempts: Int = MAX_ATTEMPTS,
+        delayMillis: (attempt: Int) -> Long = { 0L },
+        shouldRetry: suspend () -> Boolean,
+        attempt: suspend () -> Unit,
+    ): Int {
+        var made = 0
+        while (made < maxAttempts) {
+            attempt()
+            made++
+            if (made >= maxAttempts || !shouldRetry()) break
+            val wait = delayMillis(made)
+            if (wait > 0) kotlinx.coroutines.delay(wait)
+        }
+        return made
+    }
 }
