@@ -2468,6 +2468,54 @@ réussissent. Nouveaux fichiers : `data/discovery/RefreshHistory.kt`,
 `AiJobFinderApp.kt`, `viewmodel/ViewModels.kt`, `ui/screens/profile/ProfileScreen.kt`,
 `ui/AiJobFinderRoot.kt`, `ScreenshotTest.kt`, `Stage20ProfileScreenTest.kt`, `AGENTS.md`.
 
+## Stage 58 — web edition parity (TypeScript port of the Kotlin engines)
+
+**Objectif.** Une édition web de l'app vit dans `web/` (Vite + React + TypeScript + Tailwind,
+PWA). Elle doit produire **exactement** les mêmes résultats que l'app Android : mêmes scores de
+matching, mêmes verdicts d'éligibilité, mêmes scores de bénéfices expat, mêmes bandes de fit
+international, mêmes rapports de scam, mêmes vérifications d'offre et mêmes inspections de lien.
+Le portage n'est pas une réécriture « inspirée » — c'est une transcription dont la parité est
+**prouvée par des fixtures**.
+
+**Contrat de parité.** `app/src/test/java/com/aiglobal/jobfinder/Stage58GoldenParityExportTest.kt`
+pousse les **vrais** moteurs Kotlin sur un jeu de scénarios partagé et sérialise entrées **et**
+sorties dans `web/src/core/parity/kotlin-parity.json`. Aucune valeur du JSON n'est écrite à la
+main : tout est la sortie du moteur de production qu'il documente. Le fichier contient :
+- `meta` (horloge fixe `1_720_000_000_000`), `profile`, `expatPreferences` ;
+- `scenarios` (9 cas : `canada-maintenance`, `saudi-pump`, `germany-fitter`, `remote-worldwide`,
+  `unrelated-marketing`, `local-only-diesel`, `thin-lab-technician`, `no-salary-stated`,
+  `missing-description`) avec, par cas, la sortie de `RoleClassifier`, `EligibilityEngine`,
+  `MatchingEngine`, `RequirementAnalyzer`/`QualificationMatcher`, `SkillLexicon`,
+  `CurrencyConverter`, `ExpatBenefitExtractor` + `ExpatBenefitsEngine`, `InternationalFitEngine`,
+  `JobEvidenceEngine`, `ScamDetector`, `OfferVerificationEngine` et le `Job` complet ;
+- `recordValidation` (15 cas de `RecordValidationEngine`), `deduplication` (4 enregistrements
+  cross-source) et `urlInspections` (13 cas de `ApplicationUrlInspector`).
+
+**Suite de parité.** `web/src/core/parity/parity.test.ts` (vitest) reconstruit le même `Job` à
+partir des entrées du fixture en n'utilisant que les moteurs TypeScript, puis compare chaque
+sortie au fixture. Un écart de moteur fait échouer le test sur la sortie de ce moteur, pas
+seulement sur un composant. `npm run typecheck` (tsc strict) et `npm test` passent :
+**147 assertions de parité, 154 tests web, 0 échec**.
+
+**Piège à connaître.** Le piège classique est le mapping des objets typés : `matchedTargetRole`
+est la **chaîne canonique** (`role.matchedTarget?.canonical`), pas l'objet `TargetRole` — comparer
+l'objet au JSON fait échouer le test avec `[object Object]` dans un libellé de raison de fit.
+
+**Régénérer les fixtures.** Après tout changement d'un moteur Kotlin :
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ANDROID_HOME=/home/openhands/android-sdk
+export PATH=$JAVA_HOME/bin:$PATH
+./gradlew :app:testDebugUnitTest --tests "com.aiglobal.jobfinder.Stage58GoldenParityExportTest"
+cd web && npm test        # la parité doit rester verte
+```
+Le test écrit aussi une copie sous `app/build/parity/kotlin-parity.json` pour inspection.
+
+**Portage TypeScript.** Les moteurs vivent sous `web/src/core/` en miroir de
+`data/jobs/engine`, `data/jobs/search`, `data/expat`, `data/scam`, `data/apply` et `data/geo`.
+`web/src/core/models.ts` est le miroir de `data/model`. Le style du portage est identique à
+Kotlin : fonctions pures, horloge injectée, jamais d'invention de fait (un champ absent reste
+`UNKNOWN`/`null`).
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

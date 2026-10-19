@@ -64,6 +64,51 @@ export enum ScamRisk {
   HIGH = "HIGH",
 }
 
+/** How a scam signal reads: a danger, a caution, or a reassurance. */
+export enum ScamSignalTone {
+  DANGER = "DANGER",
+  CAUTION = "CAUTION",
+  REASSURANCE = "REASSURANCE",
+}
+
+/** How safe a posting looks after scanning. Ordered so it can be compared directly. */
+export enum ScamVerdict {
+  LIKELY_SAFE = "LIKELY_SAFE",
+  NEEDS_CAUTION = "NEEDS_CAUTION",
+  HIGH_RISK = "HIGH_RISK",
+}
+
+/** One concrete observation about a posting, always quotable and always explained. */
+export interface ScamSignal {
+  label: string;
+  detail: string;
+  /** The exact text in the posting that triggered this, or empty for structural checks. */
+  evidence: string;
+  tone: ScamSignalTone;
+}
+
+/**
+ * The result of scanning one posting. `verdict` is derived from the signals, and the
+ * signals are shown verbatim so the user can judge for themselves — the app advises, it
+ * never blocks.
+ */
+export interface ScamReport {
+  jobId: string;
+  jobTitle: string;
+  company: string;
+  risk: ScamRisk;
+  verdict: ScamVerdict;
+  signals: ScamSignal[];
+  checkedAtEpochMillis: number;
+}
+
+/** A 0–100 confidence that the posting is legitimate. Never shown as a guarantee. */
+export function scamSafetyScore(report: ScamReport): number {
+  const dangers = report.signals.filter((s) => s.tone === ScamSignalTone.DANGER).length;
+  const cautions = report.signals.filter((s) => s.tone === ScamSignalTone.CAUTION).length;
+  return Math.max(0, Math.min(100, 100 - dangers * 28 - cautions * 11));
+}
+
 export enum WorkMode {
   ONSITE = "ONSITE",
   HYBRID = "HYBRID",
@@ -194,6 +239,33 @@ export enum VerificationAspect {
   VISA = "VISA",
   RELOCATION = "RELOCATION",
   FRESHNESS = "FRESHNESS",
+}
+
+/**
+ * Where an "Apply" tap would actually take the candidate. Deliberately explicit: the app
+ * never opens a link it has not first described.
+ */
+export enum ApplicationDestination {
+  /** The employer's own posting page. */
+  EMPLOYER_SITE = "EMPLOYER_SITE",
+  /** The job board or aggregator that published the listing. */
+  JOB_BOARD = "JOB_BOARD",
+  /** A known government or official immigration portal. */
+  GOVERNMENT_PORTAL = "GOVERNMENT_PORTAL",
+  /** A valid link, but the app cannot vouch for the host. */
+  UNKNOWN_HOST = "UNKNOWN_HOST",
+  /** Not a usable web address. */
+  INVALID = "INVALID",
+}
+
+/** The verdict for one posting's application link. */
+export interface ApplicationLinkInspection {
+  url: string;
+  host: string | null;
+  destination: ApplicationDestination;
+  canOpen: boolean;
+  message: string;
+  warnings: string[];
 }
 
 /** How well one posting fits this candidate as an international applicant, as a band. */
