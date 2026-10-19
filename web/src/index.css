@@ -1,0 +1,155 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens ported from the Android app's `ui/theme` package so the web edition
+ * reads as the same product. The navy/royal-blue foundation, the single teal accent and
+ * the semantic success/warning/danger/info roles are all mirrored here; a `.dark` class on
+ * <html> switches the whole palette (see tailwind.config.js).
+ */
+:root {
+  color-scheme: light;
+
+  --brand-navy-700: 18 42 85;
+  --brand-navy-800: 11 27 51;
+  --brand-navy-900: 5 11 24;
+  --brand-royal: 30 79 216;
+  --brand-royal-dark: 20 58 168;
+  --brand-royal-light: 110 155 255;
+  --brand-teal: 0 179 159;
+  --brand-teal-light: 53 214 192;
+
+  --surface: 255 255 255;
+  --surface-variant: 237 241 248;
+  --background: 245 247 252;
+  --outline: 211 219 234;
+  --ink-primary: 11 27 51;
+  --ink-secondary: 74 90 120;
+  --ink-tertiary: 95 109 135;
+
+  --success: 10 98 68;
+  --success-container: 226 246 236;
+  --warning: 138 79 0;
+  --warning-container: 253 241 222;
+  --danger: 190 46 38;
+  --danger-container: 252 231 229;
+  --info: 30 79 216;
+  --info-container: 227 234 251;
+  --card-stroke: 11 27 51 / 0.10;
+  --accent-ink: 26 68 190;
+  --skeleton-base: 228 233 242;
+  --skeleton-highlight: 243 246 251;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --brand-navy-700: 18 42 85;
+  --brand-navy-800: 11 27 51;
+  --brand-navy-900: 5 11 24;
+  --brand-royal: 110 155 255;
+  --brand-royal-dark: 20 58 168;
+  --brand-royal-light: 110 155 255;
+  --brand-teal: 53 214 192;
+  --brand-teal-light: 53 214 192;
+
+  --surface: 15 26 46;
+  --surface-variant: 24 37 66;
+  --background: 7 14 27;
+  --outline: 42 58 87;
+  --ink-primary: 233 238 248;
+  --ink-secondary: 166 180 206;
+  --ink-tertiary: 150 165 193;
+
+  --success: 74 222 158;
+  --success-container: 16 53 42;
+  --warning: 251 191 77;
+  --warning-container: 58 42 12;
+  --danger: 255 123 114;
+  --danger-container: 58 21 18;
+  --info: 110 155 255;
+  --info-container: 19 42 87;
+  --card-stroke: 255 255 255 / 0.14;
+  --accent-ink: 126 166 255;
+  --skeleton-base: 27 42 69;
+  --skeleton-highlight: 38 55 79;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-ink-primary font-sans antialiased;
+    min-height: 100dvh;
+  }
+
+  /* Remove the 300ms tap delay and the grey tap flash on Android Chrome. */
+  button,
+  a,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent-500 ring-offset-2 ring-offset-background;
+  }
+
+  ::selection {
+    background: rgb(var(--brand-royal) / 0.22);
+  }
+
+  /* Respect a user who has asked the OS to reduce motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* The shared premium card surface: soft radius, hairline stroke, layered shadow. */
+  .card-surface {
+    @apply rounded-2xl border border-card-stroke bg-surface shadow-card;
+  }
+
+  /* A safe-area aware page shell. `pb-28` clears the in-flow bottom navigation bar. */
+  .app-shell {
+    @apply mx-auto w-full max-w-screen-sm px-4 pb-28 pt-3;
+  }
+
+  /* The subtle AI gradient wash used behind the dashboard greeting only. */
+  .ai-wash {
+    background-image: radial-gradient(
+        120% 120% at 0% 0%,
+        rgb(var(--brand-royal) / 0.16) 0%,
+        rgb(var(--brand-royal) / 0) 55%
+      ),
+      radial-gradient(120% 120% at 100% 0%, rgb(var(--brand-teal) / 0.14) 0%, rgb(var(--brand-teal) / 0) 50%);
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-lg bg-skeleton-base;
+  }
+
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 animate-shimmer;
+    background: linear-gradient(
+      90deg,
+      rgb(var(--skeleton-base) / 0) 0%,
+      rgb(var(--skeleton-highlight) / 0.9) 50%,
+      rgb(var(--skeleton-base) / 0) 100%
+    );
+    background-size: 500px 100%;
+  }
+}

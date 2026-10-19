@@ -1,0 +1,13 @@
+# Web module build output — never committed
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+coverage/
+# Vite/PWA generated artefacts
+dev-dist/
+# Editor
+.idea/
+.vscode/
+*.tsbuildinfo
