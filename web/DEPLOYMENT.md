@@ -318,3 +318,49 @@ file (manifest, service worker, Workbox runtime, icons, hashed assets) is missin
 
 To redeploy after a change: rebuild, re-run `npm run release:package`, and drop the new ZIP on
 the same Deploys page. The service worker auto-updates (`skipWaiting` + `clientsClaim`).
+
+---
+
+## 6. Downloading the Android APK
+
+The signed release APK ships inside the web bundle so it has a **permanent, HTTPS URL** on
+whatever host serves the PWA — no separate file host needed.
+
+| Item | Path in the bundle | Notes |
+| --- | --- | --- |
+| Landing page | `download.html` | Standalone page, not part of the SPA routes |
+| Signed release APK | `download/AI-Global-Job-Finder-release.apk` | `com.aiglobal.jobfinder` v1.0.0, self-signed (key `AIGLOBAL`) |
+
+After deploying, the link is:
+
+```
+https://<site-name>/download.html
+```
+
+`download.html` is precached with the app shell; the ~8.6 MB APK is deliberately **not**
+precached (it does not match `globPatterns`), so it is fetched on demand and never bloats the
+service worker cache.
+
+To refresh the APK after a new Android build:
+
+```bash
+cp app/build/outputs/apk/release/app-release-unsigned.apk \
+   web/public/download/AI-Global-Job-Finder-release.apk   # after signing, or use the signed file
+cd web && npm run build
+```
+
+The web edition is untouched by the Android build; the APK is a static payload.
+
+### Sandbox preview links (this workspace)
+
+While the workspace container is alive, the APK is also served directly on the public
+"work-2" port by `/workspace/download/serve-apk.sh` (a watchdog restarts it if it stops):
+
+```
+https://work-2-fxikkagwuedqnwdg.prod-runtime.all-hands.dev/
+https://work-2-fxikkagwuedqnwdg.prod-runtime.all-hands.dev/AI-Global-Job-Finder-release.apk
+```
+
+These are convenience links only — the hostname changes when the sandbox is recreated. The
+`download.html` URL above is the durable one, because it lives in the deployed site.
+

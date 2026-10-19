@@ -2679,6 +2679,15 @@ refresh, exactement comme `ShortlistViewModel.sourceNote` — le texte du milieu
 littéral `"source(s)"` de Kotlin. Tests : `ShortlistScreen.test.tsx` (rendu + note) et un test
 de parité de formulation.
 
+**Stage 63b — lien APK permanent.** L'APK release **signé** (`com.aiglobal.jobfinder` v1.0.0,
+clé perso `AIGLOBAL`, 8,56 Mo) est livré **dans le bundle web** : `web/public/download.html`
+(page d'atterrissage statique, hors routes SPA) + `web/public/download/AI-Global-Job-Finder-
+release.apk`. Après déploiement, le lien durable est `https://<site>/download.html`. L'APK ne
+matche pas `globPatterns` du service worker, donc il n'est **jamais** précaché (`download.html`
+l'est). Le build web ne touche pas l'Android : l'APK est une charge statique. Un script local
+`/workspace/download/serve-apk.sh --watchdog` sert aussi les APK sur le port public « work-2 »
+(12001) pour la durée du sandbox. Détails : `web/DEPLOYMENT.md` §6.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies
