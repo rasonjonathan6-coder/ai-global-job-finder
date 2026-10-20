@@ -14,6 +14,7 @@ import { ScreenHeader } from "../components/ScreenHeader";
 import {
   AiIcon,
   ApplicationsIcon,
+  BellIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -21,6 +22,7 @@ import {
   CloudIcon,
   FileTextIcon,
   GlobeIcon,
+  RocketIcon,
   ShieldIcon,
   SmartphoneIcon,
   SparkIcon,
@@ -78,6 +80,22 @@ const CAPABILITIES: Capability[] = [
       : "The assistant prepares each application and waits for your one-tap approval before anything is sent.",
     icon: <ShieldIcon width={20} height={20} />,
     tone: "info",
+  },
+  {
+    title: "Job alerts",
+    detail: "Saved searches that tell you the moment a matching posting appears.",
+    icon: <BellIcon width={20} height={20} />,
+    tone: "info",
+    route: "alerts",
+    actionLabel: "Manage alerts",
+  },
+  {
+    title: "Safe auto-apply",
+    detail: "Prepares a tailored draft for every strong match, and never sends it for you.",
+    icon: <RocketIcon width={20} height={20} />,
+    tone: "accent",
+    route: "autoapply",
+    actionLabel: "Open auto-apply",
   },
 ];
 

@@ -2976,6 +2976,53 @@ cd web && npm run typecheck && npm test
 **Reste à faire (Stage 69+).** Passe de parité des écrans web (alertes, auto-apply, historique de
 soumission), spike KMP, décision IA distante web, iOS.
 
+## Stage 69 — passe de parité des écrans web (alertes, auto-apply)
+
+**Objectif.** Donner une contrepartie web aux écrans Android adossés aux moteurs de comportement
+portés au Stage 67 : recherches enregistrées (`JobAlertsScreen`) et auto-apply sûr
+(`AutoApplyScreen`). L'écran Android reste la source de vérité : le web reproduit ses champs, ses
+libellés et son contrat « prépare, n'envoie jamais » à l'identique, sans refonte.
+
+**Livrables.**
+- `web/src/state/app-store.tsx` — l'état persisté gagne `expatPreferences`, `applications`,
+  `notifications`, `autoApplyEnabled`, `demoMode`, `alertRules`, `alerts` et les items d'auto-apply.
+  Nouvelles actions : `refreshAlerts`, `addAlertRule`/`removeAlertRule`, `markAlertRead`,
+  `clearAlerts`, `setAutoApplyEnabled`, `setAutoApplyThreshold`, `prepareAutoApply`,
+  `approveAutoApply`, `skipAutoApply`, `setDemoMode`, `markNotificationRead`/
+  `markAllNotificationsRead`. Les alertes sont **recalculées depuis le flux courant** à chaque
+  changement de flux (miroir de `JobAlertsCenter`), en préservant l'état « lu ». `setDemoMode`
+  sème les deux recherches curées (miroir de `JobAlertsCenter.seedDefaultRules`) et un effet
+  reconstruit la file d'auto-apply quand le mode est actif — un état « on » persisté prépare donc
+  au lancement.
+- `web/src/ui/components/` — `SecondaryHeader.tsx` (en-tête des écrans secondaires + `HeaderIconButton`),
+  `Chip.tsx` (puce de filtre alignée sur les pastilles de `JobsScreen`), `Switch.tsx` (bascule
+  accessible `role="switch"`). `icons.tsx` gagne `ChevronUpIcon`, `BellIcon`, `SendIcon`, `SkipIcon`,
+  `LockIcon`, `InfoIcon`, `ShieldIcon`, `SparkIcon`, `CheckCircleIcon`.
+- `web/src/ui/screens/JobAlertsScreen.tsx` — miroir de `JobAlertsScreen.kt` : en-tête (titre +
+  « N saved searches · M new »), carte « nouveau/à jour », éditeur de règle (nom, mots-clés, pays,
+  portée, fréquence, seuil), liste des règles, section « Matched postings » avec `Clear`, squelettes,
+  état vide et lignes d'alerte (drapeau, `% Match`, `Visa support`, `New`) qui ouvrent le détail
+  partagé. Le bouton d'action de l'en-tête utilise l'icône `Refresh` (comme Android, et non `Search`).
+- `web/src/ui/screens/AutoApplyScreen.tsx` — miroir de `AutoApplyScreen.kt` : bascule maître,
+  carte de sécurité (« ce que l'auto-apply sûr fera et ne fera pas »), seuil (50/60/70/80/90),
+  section « Prepared applications » avec `Prepare`, squelettes, état vide, et cartes
+  `Draft ready`/`Approved`/`Blocked`/`Queued`/`Skipped`. Approuver ne fait que marquer l'élément :
+  l'envoi reste sur la publication (« Open posting to send »). L'icône `Draft ready` est `FileText`
+  (Description côté Android).
+- `web/src/ui/App.tsx` — routes `alerts` et `autoapply` câblées en écrans secondaires (sans barre
+  d'onglets). `AiScreen.tsx` ouvre les deux depuis les cartes de capacité.
+- Tests : `JobAlertsScreen.test.tsx` et `AutoApplyScreen.test.tsx` (vitest + Testing Library)
+  sèment le document persisté puis pilotent les vrais moteurs portés : une recherche enregistrée
+  capture les six fixtures de démo, l'éditeur ajoute une règle, la file prépare un brouillon par
+  correspondance et l'approbation affiche « Open posting to send » sans prétendre avoir envoyé.
+
+**Vérifications.** Web : `npm run typecheck` OK, `npm test` → **406 tests / 9 fichiers, 0 échec**
+(+6). `npm run build` OK. Contrôle visuel sur mobile (viewport étroit) en clair et sombre :
+recherche enregistrée qui capture une vraie publication, approbation d'un brouillon, états vides.
+
+**Reste à faire (Stage 70+).** Historique de soumission côté web, spike KMP, décision IA distante
+web, iOS.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

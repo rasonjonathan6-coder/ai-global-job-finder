@@ -10,16 +10,27 @@ import {
 } from "react";
 
 import {
+  AlertFrequency,
+  AlertScope,
+  AutoApplyStatus,
   defaultExpatPreferences,
+  letterLanguageForCountry,
   shortlistSourceNote,
+  type AutoApplyItem,
   type CandidateProfile,
+  type CoverLetter,
   type ExpatPreferences,
   type Job,
+  type JobAlert,
+  type JobAlertRule,
   type ShortlistState,
 } from "../core/models";
 import { JobPipeline, type PipelineResult, type ProviderReport } from "../core/repository/job-pipeline";
 import type { SearchCoverage } from "../core/jobs/search/search-strategy";
 import { ShortlistEngine } from "../core/shortlist/engine/shortlist-engine";
+import { JobAlertEngine } from "../core/alerts/alert-engine";
+import { AutoApplyEngine } from "../core/autoapply/auto-apply-engine";
+import { CoverLetterGenerator } from "../core/coverletter/cover-letter-generator";
 import { profileCompleteness } from "../core/cv/completeness";
 import { demoCandidateProfile } from "./demo-profile";
 import { SAMPLE_JOBS } from "../ui/lib/sample-jobs";
@@ -104,6 +115,9 @@ interface PersistedState {
   notifications: AppNotification[];
   autoApplyEnabled: boolean;
   demoMode: boolean;
+  alertRules: JobAlertRule[];
+  autoApplyItems: AutoApplyItem[];
+  coverLetters: CoverLetter[];
 }
 
 const STORAGE_KEY = "aigjf.store";
@@ -126,6 +140,9 @@ function emptyPersisted(): PersistedState {
     notifications: [],
     autoApplyEnabled: false,
     demoMode: false,
+    alertRules: [],
+    autoApplyItems: [],
+    coverLetters: [],
   };
 }
 
@@ -182,6 +199,26 @@ interface AppStoreValue {
 
   autoApplyEnabled: boolean;
   setAutoApplyEnabled: (enabled: boolean) => void;
+
+  /** Saved searches and the postings they catch, re-evaluated against the live feed. */
+  alertRules: JobAlertRule[];
+  alerts: JobAlert[];
+  alertsUnreadCount: number;
+  alertsRefreshing: boolean;
+  refreshAlerts: () => Promise<void>;
+  addAlertRule: (rule: JobAlertRule) => void;
+  removeAlertRule: (id: string) => void;
+  markAlertRead: (jobId: string) => void;
+  clearAlerts: () => void;
+
+  /** Safe auto-apply: prepared drafts that always stop at the user's approval. */
+  autoApplyItems: AutoApplyItem[];
+  autoApplyPreparing: boolean;
+  autoApplyThreshold: number;
+  setAutoApplyThreshold: (value: number) => void;
+  prepareAutoApply: () => void;
+  approveAutoApply: (jobId: string) => void;
+  skipAutoApply: (jobId: string) => void;
 }
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
@@ -216,6 +253,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     () => persisted.current.autoApplyEnabled,
   );
   const [demoMode, setDemoModeState] = useState<boolean>(() => persisted.current.demoMode);
+  const [alertRules, setAlertRules] = useState<JobAlertRule[]>(() => persisted.current.alertRules);
+  const [alerts, setAlerts] = useState<JobAlert[]>([]);
+  const [alertsRefreshing, setAlertsRefreshing] = useState(false);
+  const [autoApplyItems, setAutoApplyItems] = useState<AutoApplyItem[]>(
+    () => persisted.current.autoApplyItems,
+  );
+  const [autoApplyPreparing, setAutoApplyPreparing] = useState(false);
+  const [autoApplyThreshold, setAutoApplyThresholdState] = useState(AutoApplyEngine.DEFAULT_THRESHOLD);
+  const [coverLetters, setCoverLetters] = useState<CoverLetter[]>(() => persisted.current.coverLetters);
   const [shortlist, setShortlist] = useState<ShortlistState>(() => ({
     isLoading: true,
     entries: [],
@@ -227,6 +273,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const pipelineRef = useRef<JobPipeline | null>(null);
   const shortlistEngineRef = useRef<ShortlistEngine | null>(null);
+  const alertEngineRef = useRef<JobAlertEngine | null>(null);
+  const coverLetterGeneratorRef = useRef<CoverLetterGenerator | null>(null);
   const inFlight = useRef(false);
 
   // Persist on every meaningful change. A single effect keeps the write path in one place.
@@ -239,13 +287,26 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       notifications,
       autoApplyEnabled,
       demoMode,
+      alertRules,
+      autoApplyItems,
+      coverLetters,
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
       // Quota / private-mode failures are non-fatal: the session still works in memory.
     }
-  }, [profile, expatPreferences, applications, notifications, autoApplyEnabled, demoMode]);
+  }, [
+    profile,
+    expatPreferences,
+    applications,
+    notifications,
+    autoApplyEnabled,
+    demoMode,
+    alertRules,
+    autoApplyItems,
+    coverLetters,
+  ]);
 
   const pipeline = useMemo(() => {
     pipelineRef.current ??= new JobPipeline();
@@ -255,6 +316,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const shortlistEngine = useMemo(() => {
     shortlistEngineRef.current ??= new ShortlistEngine();
     return shortlistEngineRef.current;
+  }, []);
+
+  const alertEngine = useMemo(() => {
+    alertEngineRef.current ??= new JobAlertEngine();
+    return alertEngineRef.current;
+  }, []);
+
+  const coverLetterGenerator = useMemo(() => {
+    coverLetterGeneratorRef.current ??= new CoverLetterGenerator();
+    return coverLetterGeneratorRef.current;
   }, []);
 
   /**
@@ -431,15 +502,154 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setNotifications((current) => current.map((n) => ({ ...n, read: true })));
   }, []);
 
+  // ---- Job alerts -------------------------------------------------------
+  // Rules are stored; the alerts they produce are recomputed from the live feed on every
+  // change, so a new posting is surfaced without a background service and a deleted rule
+  // never leaves an orphan alert behind. Mirrors the Android `JobAlertsCenter`.
+  useEffect(() => {
+    if (alertRules.length === 0) {
+      setAlerts([]);
+      return;
+    }
+    const now = Date.now();
+    const produced = alertEngine.alertsFor(alertRules, jobs, now);
+    setAlerts((previous) => {
+      const readJobIds = new Set(previous.filter((a) => a.read).map((a) => a.jobId));
+      return produced
+        .map((alert) => (readJobIds.has(alert.jobId) ? { ...alert, read: true } : alert))
+        .sort((a, b) => b.detectedAtEpochMillis - a.detectedAtEpochMillis);
+    });
+  }, [alertRules, jobs, alertEngine]);
+
+  const refreshAlerts = useCallback(async () => {
+    setAlertsRefreshing(true);
+    try {
+      // A refresh re-scores the feed; the effect above then re-evaluates every saved search.
+      await refreshJobs();
+    } finally {
+      setAlertsRefreshing(false);
+    }
+  }, [refreshJobs]);
+
+  const addAlertRule = useCallback((rule: JobAlertRule) => {
+    setAlertRules((current) => [...current, rule]);
+  }, []);
+
+  const removeAlertRule = useCallback((id: string) => {
+    setAlertRules((current) => current.filter((rule) => rule.id !== id));
+  }, []);
+
+  const markAlertRead = useCallback((jobId: string) => {
+    setAlerts((current) => current.map((a) => (a.jobId === jobId ? { ...a, read: true } : a)));
+  }, []);
+
+  const clearAlerts = useCallback(() => setAlerts([]), []);
+
+  // ---- Safe auto-apply --------------------------------------------------
+  // Prepare drafts only. Approving a draft never sends anything: it marks the item ready
+  // and the send happens on the posting itself, exactly as the Android centre documents.
+  const prepareAutoApply = useCallback(
+    (threshold: number = autoApplyThreshold) => {
+      setAutoApplyPreparing(true);
+      try {
+        const engine = new AutoApplyEngine(threshold);
+        const queue = engine.buildQueue(jobs, autoApplyItems, AutoApplyEngine.DEFAULT_LIMIT);
+        const generated: CoverLetter[] = [];
+        const prepared = queue.map((item) => {
+          if (item.status !== AutoApplyStatus.DRAFT_READY) return item;
+          const job = jobs.find((candidate) => candidate.id === item.jobId);
+          if (!job) return item;
+          if (profile.fullName.trim() === "" && profile.skills.length === 0) {
+            return {
+              ...item,
+              reason: "Import and analyse your CV first, so the letter can use your real details.",
+            };
+          }
+          const letter = coverLetterGenerator.generate(job, profile, letterLanguageForCountry(job.country));
+          generated.push(letter);
+          return { ...item, coverLetterId: letter.id };
+        });
+        setAutoApplyItems(prepared);
+        if (generated.length > 0) {
+          setCoverLetters((current) => [...generated, ...current].slice(0, 50));
+        }
+      } finally {
+        setAutoApplyPreparing(false);
+      }
+    },
+    [autoApplyThreshold, jobs, autoApplyItems, profile, coverLetterGenerator],
+  );
+
+  // Mirror the Android `AutoApplyCenter`: when the mode is on, the queue is rebuilt from the
+  // live feed, so a persisted "on" state prepares on launch and a refresh never leaves a
+  // draft pointing at a posting that has since disappeared.
+  useEffect(() => {
+    if (autoApplyEnabled && jobs.length > 0) prepareAutoApply();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoApplyEnabled, jobs]);
+
+  const setAutoApplyThreshold = useCallback(
+    (value: number) => {
+      setAutoApplyThresholdState(value);
+      if (autoApplyEnabled) prepareAutoApply(value);
+    },
+    [autoApplyEnabled, prepareAutoApply],
+  );
+
+  const approveAutoApply = useCallback((jobId: string) => {
+    setAutoApplyItems((current) =>
+      current.map((item) =>
+        item.jobId === jobId
+          ? {
+              ...item,
+              status: AutoApplyStatus.APPROVED,
+              reason: "Approved. Open the posting to send it yourself.",
+            }
+          : item,
+      ),
+    );
+  }, []);
+
+  const skipAutoApply = useCallback((jobId: string) => {
+    setAutoApplyItems((current) =>
+      current.map((item) =>
+        item.jobId === jobId
+          ? { ...item, status: AutoApplyStatus.SKIPPED, reason: "You skipped this one." }
+          : item,
+      ),
+    );
+  }, []);
+
   const setExpatPreferences = useCallback((prefs: ExpatPreferences) => setExpatPreferencesState(prefs), []);
   const updateProfile = useCallback((next: CandidateProfile) => {
     setProfile(next);
     persisted.current = { ...persisted.current, profile: next };
   }, []);
-  const setAutoApplyEnabled = useCallback((enabled: boolean) => setAutoApplyState(enabled), []);
-  const setDemoMode = useCallback((enabled: boolean) => setDemoModeState(enabled), []);
+  const setAutoApplyEnabled = useCallback(
+    (enabled: boolean) => {
+      setAutoApplyState(enabled);
+      // Turning the mode on prepares the first queue straight away; turning it off clears
+      // the queue so a stale draft can never be approved later.
+      if (enabled) prepareAutoApply();
+      else setAutoApplyItems([]);
+    },
+    [prepareAutoApply],
+  );
+  const setDemoMode = useCallback(
+    (enabled: boolean) => {
+      setDemoModeState(enabled);
+      // Mirror the Android `JobAlertsCenter`: demo mode seeds two curated example searches
+      // so the alerts screen has something honest to show. Never seeds on the user's behalf
+      // outside demo mode — the alert list is their own.
+      if (enabled) {
+        setAlertRules((current) => (current.length > 0 ? current : demoAlertRules()));
+      }
+    },
+    [],
+  );
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
+  const alertsUnreadCount = useMemo(() => alerts.filter((a) => !a.read).length, [alerts]);
   const savedJobs = useMemo(
     () => applications.map((a) => a.job).sort((a, b) => b.matchScore - a.matchScore),
     [applications],
@@ -473,6 +683,22 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       autoApplyEnabled,
       setAutoApplyEnabled,
+      alertRules,
+      alerts,
+      alertsUnreadCount,
+      alertsRefreshing,
+      refreshAlerts,
+      addAlertRule,
+      removeAlertRule,
+      markAlertRead,
+      clearAlerts,
+      autoApplyItems,
+      autoApplyPreparing,
+      autoApplyThreshold,
+      setAutoApplyThreshold,
+      prepareAutoApply,
+      approveAutoApply,
+      skipAutoApply,
     }),
     [
       profile,
@@ -500,6 +726,22 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       autoApplyEnabled,
       setAutoApplyEnabled,
+      alertRules,
+      alerts,
+      alertsUnreadCount,
+      alertsRefreshing,
+      refreshAlerts,
+      addAlertRule,
+      removeAlertRule,
+      markAlertRead,
+      clearAlerts,
+      autoApplyItems,
+      autoApplyPreparing,
+      autoApplyThreshold,
+      setAutoApplyThreshold,
+      prepareAutoApply,
+      approveAutoApply,
+      skipAutoApply,
     ],
   );
 
@@ -546,4 +788,36 @@ function newOpportunityAlerts(jobs: Job[]): AppNotification[] {
       createdAtEpochMillis: now,
       read: false,
     }));
+}
+
+/**
+ * The two curated example searches demo mode seeds, mirroring the Android
+ * `JobAlertsCenter.seedDefaultRules`. Only ever used in demo mode.
+ */
+function demoAlertRules(): JobAlertRule[] {
+  const now = Date.now();
+  return [
+    {
+      id: `rule-demo-${now}-visa`,
+      name: "Visa-sponsored roles",
+      keywords: [],
+      countries: [],
+      frequency: AlertFrequency.DAILY,
+      scope: AlertScope.VISA_FRIENDLY,
+      minMatchScore: 60,
+      createdAtEpochMillis: now,
+      enabled: true,
+    },
+    {
+      id: `rule-demo-${now}-strong`,
+      name: "Strong matches anywhere",
+      keywords: [],
+      countries: [],
+      frequency: AlertFrequency.DAILY,
+      scope: AlertScope.STRONG_ONLY,
+      minMatchScore: 75,
+      createdAtEpochMillis: now,
+      enabled: true,
+    },
+  ];
 }

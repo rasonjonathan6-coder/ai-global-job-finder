@@ -357,3 +357,53 @@ export const ChevronUpIcon = (p: IconProps) => (
   </Base>
 );
 
+export const BellIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M6 9a6 6 0 0 1 12 0c0 4 1.5 5.5 2 6H4c.5-.5 2-2 2-6Z" />
+    <path d="M10 19a2 2 0 0 0 4 0" />
+  </Base>
+);
+
+export const PlusIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Base>
+);
+
+export const TrashIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M4 7h16" />
+    <path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7" />
+    <path d="M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4L17.5 7" />
+  </Base>
+);
+
+export const SendIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M4 12 20 4l-6 16-3-6z" />
+    <path d="m11 14 9-10" />
+  </Base>
+);
+
+export const SkipIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M6 5.5 15 12l-9 6.5z" />
+    <path d="M18 5.5v13" />
+  </Base>
+);
+
+export const LockIcon = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="5" y="10.5" width="14" height="9.5" rx="2.5" />
+    <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+  </Base>
+);
+
+export const RocketIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 3c3 1.5 5 5 5 9l-2.5 2h-5L7 12c0-4 2-7.5 5-9Z" />
+    <circle cx="12" cy="10" r="1.6" />
+    <path d="M9.5 17.5c-1 1-1.5 2.5-1.5 3.5 1 0 2.5-.5 3.5-1.5M14.5 17.5c1 1 1.5 2.5 1.5 3.5-1 0-2.5-.5-3.5-1.5" />
+  </Base>
+);
+
