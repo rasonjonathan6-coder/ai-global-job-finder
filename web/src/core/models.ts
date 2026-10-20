@@ -155,6 +155,69 @@ export const LANGUAGE_LEVEL_META: Record<LanguageLevel, { label: string }> = {
   [LanguageLevel.NATIVE]: { label: "Native" },
 };
 
+/**
+ * Maps the many ways a CV writes proficiency onto a level. Returns null when the document
+ * does not say, so a level the candidate never claimed is never guessed. Mirrors the Kotlin
+ * `LanguageLevel.fromToken`.
+ */
+export function languageLevelFromToken(token: string | null | undefined): LanguageLevel | null {
+  const t = (token ?? "").trim().toLowerCase();
+  if (t.length === 0) return null;
+  if (t.startsWith("native") || t.startsWith("mother") || t.startsWith("langue maternelle") ||
+      t.startsWith("natif") || t.startsWith("bilingue")) return LanguageLevel.NATIVE;
+  if (t.startsWith("fluent") || t.startsWith("courant") || t.startsWith("maternelle")) return LanguageLevel.FLUENT;
+  if (t.startsWith("adv") || t.startsWith("c1") || t.startsWith("c2") || t.startsWith("avanc")) return LanguageLevel.ADVANCED;
+  if (t.startsWith("inter") || t.startsWith("b1") || t.startsWith("b2") || t.startsWith("moyen") ||
+      t.startsWith("intermed")) return LanguageLevel.INTERMEDIATE;
+  if (t.startsWith("beg") || t.startsWith("basic") || t.startsWith("a1") || t.startsWith("a2") ||
+      t.startsWith("debut") || t.startsWith("début") || t.startsWith("notion")) return LanguageLevel.BEGINNER;
+  return null;
+}
+
+/** Editable sections of a candidate profile. Mirrors the Kotlin `CandidateField`. */
+export enum CandidateField {
+  FULL_NAME = "FULL_NAME",
+  EMAIL = "EMAIL",
+  PHONE = "PHONE",
+  LOCATION = "LOCATION",
+  CURRENT_TITLE = "CURRENT_TITLE",
+  PREVIOUS_TITLES = "PREVIOUS_TITLES",
+  YEARS_OF_EXPERIENCE = "YEARS_OF_EXPERIENCE",
+  SKILLS = "SKILLS",
+  INDUSTRIES = "INDUSTRIES",
+  EDUCATION = "EDUCATION",
+  CERTIFICATIONS = "CERTIFICATIONS",
+  LANGUAGES = "LANGUAGES",
+  PREFERRED_COUNTRIES = "PREFERRED_COUNTRIES",
+  PREFERRED_ROLES = "PREFERRED_ROLES",
+  SALARY_EXPECTATION = "SALARY_EXPECTATION",
+  RELOCATION = "RELOCATION",
+  VISA = "VISA",
+  SUMMARY = "SUMMARY",
+}
+
+/** How the optional AI pass over the CV ended. Mirrors the Kotlin `CvAiStatus`. */
+export enum CvAiStatus {
+  NONE = "NONE",
+  SUCCESS = "SUCCESS",
+  CONSENT_REQUIRED = "CONSENT_REQUIRED",
+  NOT_CONFIGURED = "NOT_CONFIGURED",
+  FAILED = "FAILED",
+}
+
+/** Which sections the document carried, so an unreadable one reads differently. */
+export interface CvSectionPresence {
+  skills: boolean;
+  education: boolean;
+  languages: boolean;
+}
+
+export const EMPTY_CV_SECTION_PRESENCE: CvSectionPresence = {
+  skills: false,
+  education: false,
+  languages: false,
+};
+
 /** How willing the candidate is to move country. Drives the eligibility filtering. */
 export enum RelocationPreference {
   UNKNOWN = "UNKNOWN",

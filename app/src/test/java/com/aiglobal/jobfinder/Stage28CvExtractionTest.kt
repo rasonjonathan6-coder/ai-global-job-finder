@@ -3,8 +3,8 @@ package com.aiglobal.jobfinder
 import androidx.test.core.app.ApplicationProvider
 import com.aiglobal.jobfinder.data.cv.ByteCvSource
 import com.aiglobal.jobfinder.data.cv.CvParserRegistry
-import com.aiglobal.jobfinder.data.cv.CvTextNormalizer
-import com.aiglobal.jobfinder.data.cv.HeuristicCvAnalyzer
+import com.aiglobal.jobfinder.data.cv.analysis.CvTextNormalizer
+import com.aiglobal.jobfinder.data.cv.analysis.HeuristicCvAnalyzer
 import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.CvFileType

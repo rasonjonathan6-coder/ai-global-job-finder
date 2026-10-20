@@ -1,4 +1,4 @@
-package com.aiglobal.jobfinder.data.cv
+package com.aiglobal.jobfinder.data.cv.analysis
 
 import java.text.Normalizer
 
@@ -14,7 +14,7 @@ import java.text.Normalizer
  * [fold] strips accents for language-tolerant matching. It is only ever used for
  * comparison — the value shown to the user is the original, unaccented-but-unchanged text.
  */
-internal object CvTextNormalizer {
+object CvTextNormalizer {
 
     private val SOFT_HYPHEN_AT_LINE_END = Regex("([A-Za-zÀ-ÿ])-\\s*\\n\\s*([A-Za-zÀ-ÿ])")
     private val MULTI_SPACE = Regex("[ \\t\\u00A0]{2,}")

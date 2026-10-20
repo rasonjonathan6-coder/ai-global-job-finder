@@ -278,9 +278,15 @@ Each stage leaves both editions building and both suites green.
   the `alertEngine`, `autoApply` and `submission` fixture sections; the `AiScreen` reads
   `SubmissionCapability.sendsNothing` so the "prepared, never sent" claim is engine-derived.
   Web 393 tests, web build green.
-- **Stage 68 — CV analysis sharing.** Split CV handling into a platform-bound *file/parse*
-  adapter and a shareable *analysis* core (`CvLexicon`, `CvTextNormalizer`, heuristics).
-  Port the analysis core; keep parsing per-platform.
+- **Stage 68 — CV analysis sharing.** ✅ **Done.** Split CV handling into a platform-bound
+  *file/parse* adapter (`data/cv`, outside the new package) and a shareable *analysis* core in
+  `data/cv/analysis/`: `CvTextNormalizer`, `CvLexicon`, `CvTextStructure`, `CvAnalyzer`,
+  `CvProfileMerger` (with `CvCompleteness`), `CvAnalysisWarnings`, plus `CvAnalysisLimits` and
+  `CvAnalysisContract` (`SCHEMA_VERSION = 1`). The package imports only `data.model` — no
+  `Context`, `Uri`, `Log` or file I/O — so it is a pure function of its inputs. Ported to
+  `web/src/core/cv/` (`normalizer`, `lexicon`, `structure`, `analyzer`, `merger`, `warnings`,
+  `limits`, `contract`) and pinned as the `cvAnalysis` fixture section (cases, normalise, fold,
+  full lexicon), `meta.stage = 68`. Android 725 tests, web 400 tests, web build green.
 - **Stage 69 — web UI parity pass.** Port the remaining Android screens to web one tab at a
   time (application detail, cover letter, interview, scam, alerts, auto-apply, expat guide,
   ranking, diagnostics, refresh/submission history, CV import/adaptation). No redesign —

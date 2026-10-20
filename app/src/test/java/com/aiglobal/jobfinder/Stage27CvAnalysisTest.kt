@@ -4,7 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.aiglobal.jobfinder.data.cv.ByteCvSource
 import com.aiglobal.jobfinder.data.cv.CvParseException
 import com.aiglobal.jobfinder.data.cv.CvParserRegistry
-import com.aiglobal.jobfinder.data.cv.HeuristicCvAnalyzer
+import com.aiglobal.jobfinder.data.cv.analysis.HeuristicCvAnalyzer
 import com.aiglobal.jobfinder.data.cv.PdfCvParser
 import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CandidateProfile

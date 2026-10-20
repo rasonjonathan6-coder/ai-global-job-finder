@@ -4,7 +4,7 @@ import com.aiglobal.jobfinder.data.apply.ApplicationUrlInspector
 import com.aiglobal.jobfinder.data.assistant.ApplicationPlanEngine
 import com.aiglobal.jobfinder.data.assistant.ExpatIntelligenceEngine
 import com.aiglobal.jobfinder.data.coverletter.CoverLetterGenerator
-import com.aiglobal.jobfinder.data.cv.CvCompleteness
+import com.aiglobal.jobfinder.data.cv.analysis.CvCompleteness
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
 import com.aiglobal.jobfinder.data.expat.ExpatOpportunityEngine
@@ -49,6 +49,7 @@ import com.aiglobal.jobfinder.data.model.BenefitEvidence
 import com.aiglobal.jobfinder.data.model.BenefitClaim
 import com.aiglobal.jobfinder.data.model.BenefitFinding
 import com.aiglobal.jobfinder.data.model.CandidateProfile
+import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CertificationEntry
 import com.aiglobal.jobfinder.data.model.CoverLetter
 import com.aiglobal.jobfinder.data.model.EducationEntry
@@ -100,6 +101,12 @@ import com.aiglobal.jobfinder.data.submissions.SubmissionKey
 import com.aiglobal.jobfinder.data.submissions.SubmissionLifecycle
 import com.aiglobal.jobfinder.data.submissions.SubmissionPreflightCheck
 import com.aiglobal.jobfinder.data.scam.ScamDetector
+import com.aiglobal.jobfinder.data.cv.analysis.CvAnalysisContract
+import com.aiglobal.jobfinder.data.cv.analysis.CvLexicon
+import com.aiglobal.jobfinder.data.cv.analysis.CvSectionPresence
+import com.aiglobal.jobfinder.data.cv.analysis.CvTextNormalizer
+import com.aiglobal.jobfinder.data.cv.analysis.HeuristicCvAnalyzer
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -312,7 +319,7 @@ class Stage58GoldenParityExportTest {
         val scenarios = cases.map { scenarioJson(it, profile, preferences) }
         val root = linkedMapOf<String, Any?>(
             "meta" to linkedMapOf(
-                "stage" to 67,
+                "stage" to 68,
                 "generatedFrom" to "Kotlin production engines",
                 "clockMillis" to fixedNow,
                 "note" to "Inputs and expected outputs are both produced by the Kotlin engines.",
@@ -336,6 +343,7 @@ class Stage58GoldenParityExportTest {
             "alertEngine" to alertEngineJson(),
             "autoApply" to autoApplyJson(scenarios),
             "submission" to submissionJson(scenarios),
+            "cvAnalysis" to cvAnalysisJson(),
         )
 
         val json = JsonWriter.write(root)
@@ -2116,12 +2124,190 @@ class Stage58GoldenParityExportTest {
         return dir
     }
 
-    // ------------------------------------------------------------------ JSON writer
+    // ------------------------------------------------------------------ cv analysis
 
     /**
-     * A tiny, dependency-free canonical JSON writer. Key order is insertion order, so the
-     * fixtures diff cleanly between runs; numbers keep their exact integer value.
+     * Golden fixtures for the shareable CV analysis core (`data/cv/analysis`).
+     *
+     * The text here is synthetic — never a real CV — so the fixture carries no personal data.
+     * Each case records the input text, the fields treated as user-protected, the profile
+     * merged into, and the full analysis output the real Kotlin core produced. The web port
+     * replays the same text through its own copy of the core and must match field for field.
      */
+    private fun cvAnalysisJson(): Map<String, Any?> {
+        val analyzer = HeuristicCvAnalyzer()
+        val cases = cvAnalysisCases()
+        val results = cases.map { case ->
+            runBlocking {
+                val result = analyzer.analyze(case.text, case.existing, case.protectedFields)
+                linkedMapOf(
+                    "id" to case.id,
+                    "text" to case.text,
+                    "protectedFields" to case.protectedFields.map { it.name }.sorted(),
+                    "existing" to profileJson(case.existing),
+                    "output" to linkedMapOf(
+                        "profile" to profileJson(result.profile),
+                        "warnings" to result.warnings,
+                        "confidence" to result.confidence,
+                        "evidence" to result.evidence.entries
+                            .sortedBy { it.key.name }
+                            .associate { it.key.name to it.value },
+                        "effectiveEngineId" to result.effectiveEngineId,
+                        "effectiveEngineLabel" to result.effectiveEngineLabel,
+                        "presence" to presenceJson(result.presence),
+                    ),
+                )
+            }
+        }
+
+        val normalizeCases = listOf(
+            "Moji" to "MÃ©canicien",
+            "soft-hyphen" to "Mainte-\nnance",
+            "bullets" to "\u2022 first\n\u25CF second",
+            "dashes" to "2018 \u2013 2020",
+            "multi-space" to "A    B\t\tC",
+            "empty" to "",
+            "blank" to "   \n  \n ",
+            "mixed-newlines" to "A\r\nB\u000CC",
+        ).map { (id, raw) -> linkedMapOf("id" to id, "raw" to raw, "output" to CvTextNormalizer.normalize(raw)) }
+
+        val foldCases = listOf(
+            "accent" to "Mécanicien",
+            "anglais" to "Anglais",
+            "electro" to "Électrotechnique",
+            "ligature" to "Œuvre",
+            "upper" to "PLOMBERIE",
+            "plain" to "maintenance",
+        ).map { (id, raw) -> linkedMapOf("id" to id, "raw" to raw, "output" to CvTextNormalizer.fold(raw)) }
+
+        return linkedMapOf(
+            "schemaVersion" to CvAnalysisContract.SCHEMA_VERSION,
+            "cases" to results,
+            "normalize" to normalizeCases,
+            "fold" to foldCases,
+            "lexicon" to lexiconJson(),
+        )
+    }
+
+    private data class CvCase(
+        val id: String,
+        val text: String,
+        val existing: CandidateProfile = CandidateProfile(),
+        val protectedFields: Set<CandidateField> = emptySet(),
+    )
+
+    private fun cvAnalysisCases(): List<CvCase> {
+        val full = listOf(
+            "Jonathan Rakoto",
+            "Maintenance Technician",
+            "Antananarivo, Madagascar",
+            "jonathan.rakoto@example.mg",
+            "+261 34 12 345 67",
+            "",
+            "Summary",
+            "Mechanical maintenance technician with six years of experience on pumps and rotating equipment.",
+            "",
+            "Experience",
+            "Maintenance Technician - Star Malgache (2018 - present)",
+            "Performed preventive maintenance, hydraulics repair and PLC diagnostics.",
+            "Mechanical Fitter - Port Services (2015 - 2018)",
+            "",
+            "Education",
+            "BTS Electrotechnics, IST Antananarivo, 2018",
+            "",
+            "Skills",
+            "Preventive maintenance, hydraulics, PLC, welding, CMMS",
+            "",
+            "Languages",
+            "French - fluent",
+            "English - intermediate",
+            "",
+            "Certifications",
+            "City & Guilds Mechanical Engineering, 2016",
+            "First Aid, 2020",
+            "",
+            "Willing to relocate. Needs visa sponsorship.",
+        ).joinToString("\n")
+
+        val french = listOf(
+            "Rasoa Marie",
+            "Technicien de maintenance",
+            "Toamasina, Madagascar",
+            "rasoa.marie@example.mg",
+            "034 12 345 67",
+            "",
+            "Expérience",
+            "Technicien de maintenance - Sucrerie (2016 - 2021)",
+            "Maintenance préventive et diagnostic électrique.",
+            "",
+            "Compétences",
+            "Maintenance préventive, mécanique, pneumatique, soudure",
+            "",
+            "Langues",
+            "Malgache - langue maternelle",
+            "Français - courant",
+            "Anglais - intermédiaire",
+            "",
+            "Formation",
+            "Licence en électrotechnique, Université d'Antananarivo, 2016",
+            "",
+            "Mobile, disponible pour expatriation.",
+        ).joinToString("\n")
+
+        val thin = "Too short."
+
+        val existing = CandidateProfile(
+            fullName = "Existing Name",
+            email = "kept@example.mg",
+            skills = listOf("Kept skill"),
+            yearsOfExperience = 9,
+        )
+
+        return listOf(
+            CvCase("full-english", full),
+            CvCase("full-french", french),
+            CvCase("thin-text", thin),
+            CvCase("empty", ""),
+            CvCase(
+                id = "merge-preserves-protected",
+                text = full,
+                existing = existing,
+                protectedFields = setOf(CandidateField.EMAIL, CandidateField.SKILLS),
+            ),
+            CvCase("merge-unprotected", text = full, existing = existing),
+        )
+    }
+
+    private fun presenceJson(presence: CvSectionPresence): Map<String, Any?> = linkedMapOf(
+        "skills" to presence.skills,
+        "education" to presence.education,
+        "languages" to presence.languages,
+    )
+
+    private fun lexiconJson(): Map<String, Any?> = linkedMapOf(
+        "skills" to CvLexicon.skills.map { skill ->
+            linkedMapOf(
+                "canonical" to skill.canonical,
+                "category" to skill.category.name,
+                "aliases" to skill.aliases,
+            )
+        },
+        "languages" to CvLexicon.languages,
+        "languageAliases" to CvLexicon.languageAliases.entries
+            .sortedBy { it.key }
+            .associate { it.key to it.value },
+        "degreeMarkers" to CvLexicon.degreeMarkers,
+        "institutionMarkers" to CvLexicon.institutionMarkers,
+        "certificationMarkers" to CvLexicon.certificationMarkers,
+        "titleMarkers" to CvLexicon.titleMarkers,
+        "countries" to CvLexicon.countries,
+        "cities" to CvLexicon.cities,
+        "foldedPlaces" to CvLexicon.foldedPlaces.sorted(),
+        "sectionKeywords" to CvLexicon.sectionKeywords.entries
+            .sortedBy { it.key }
+            .associate { it.key to it.value.name },
+    )
+
     private object JsonWriter {
         fun write(value: Any?): String = StringBuilder().also { append(it, value) }.toString()
 

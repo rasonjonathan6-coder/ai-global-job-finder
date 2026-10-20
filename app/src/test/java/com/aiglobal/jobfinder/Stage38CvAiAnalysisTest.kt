@@ -5,7 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.aiglobal.jobfinder.data.cv.CvAiAnalyzer
 import com.aiglobal.jobfinder.data.cv.CvParserRegistry
 import com.aiglobal.jobfinder.data.cv.CvFileStore
-import com.aiglobal.jobfinder.data.cv.HeuristicCvAnalyzer
+import com.aiglobal.jobfinder.data.cv.analysis.HeuristicCvAnalyzer
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.CvAiStatus
 import com.aiglobal.jobfinder.data.model.CvRecord

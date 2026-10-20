@@ -4,6 +4,7 @@ import com.aiglobal.jobfinder.data.model.CvFileType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.charset.StandardCharsets
+import com.aiglobal.jobfinder.data.cv.analysis.CvTextNormalizer
 
 /**
  * Plain text import. Useful when a user pastes or exports their CV as `.txt`, and the

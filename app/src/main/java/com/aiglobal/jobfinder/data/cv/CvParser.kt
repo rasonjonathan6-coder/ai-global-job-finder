@@ -63,7 +63,8 @@ data class CvParseResult(
 
     companion object {
         /** Below this, there is not enough text to analyse a profile from. */
-        const val MIN_USABLE_CHARACTERS = 60
+        const val MIN_USABLE_CHARACTERS =
+            com.aiglobal.jobfinder.data.cv.analysis.CvAnalysisLimits.MIN_USABLE_CHARACTERS
     }
 }
 

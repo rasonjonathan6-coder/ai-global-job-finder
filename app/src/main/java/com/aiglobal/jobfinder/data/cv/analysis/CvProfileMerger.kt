@@ -1,4 +1,4 @@
-package com.aiglobal.jobfinder.data.cv
+package com.aiglobal.jobfinder.data.cv.analysis
 
 import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CandidateProfile
@@ -12,7 +12,7 @@ import com.aiglobal.jobfinder.data.model.ProfileCompleteness
  * never overwritten, and an extraction that found nothing never erases a value the user
  * already had. That keeps re-importing a CV from destroying manual corrections.
  */
-internal object CvProfileMerger {
+object CvProfileMerger {
 
     fun merge(
         extracted: CandidateProfile,
@@ -66,7 +66,7 @@ internal object CvProfileMerger {
 }
 
 /** Field-by-field scoring of how ready a profile is to be matched against real jobs. */
-internal object CvCompleteness {
+object CvCompleteness {
 
     private data class Rule(
         val field: CandidateField,

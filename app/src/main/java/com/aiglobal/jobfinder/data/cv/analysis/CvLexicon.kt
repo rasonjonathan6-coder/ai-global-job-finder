@@ -1,4 +1,4 @@
-package com.aiglobal.jobfinder.data.cv
+package com.aiglobal.jobfinder.data.cv.analysis
 
 /**
  * Vocabulary the analyser matches against. Keeping it here as data (rather than inline
@@ -9,7 +9,7 @@ package com.aiglobal.jobfinder.data.cv
  * what the user sees, so a CV saying "LOTO" and one saying "lockout tagout" produce the
  * same skill.
  */
-internal object CvLexicon {
+object CvLexicon {
 
     data class SkillDefinition(
         val canonical: String,

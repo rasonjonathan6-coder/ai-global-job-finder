@@ -10,6 +10,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
+import com.aiglobal.jobfinder.data.cv.analysis.CvTextNormalizer
 
 /**
  * Text extraction for the OOXML `.docx` container. A .docx is a zip of XML parts; the

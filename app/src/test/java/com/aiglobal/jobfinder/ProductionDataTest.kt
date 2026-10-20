@@ -2,7 +2,7 @@ package com.aiglobal.jobfinder
 
 import com.aiglobal.jobfinder.data.applications.ApplicationCenter
 import com.aiglobal.jobfinder.data.applications.ApplicationStore
-import com.aiglobal.jobfinder.data.cv.CvCompleteness
+import com.aiglobal.jobfinder.data.cv.analysis.CvCompleteness
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.CvRecord
 import com.aiglobal.jobfinder.data.model.CvStatus

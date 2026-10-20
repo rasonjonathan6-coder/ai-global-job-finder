@@ -2,8 +2,8 @@ package com.aiglobal.jobfinder.data.repository
 
 import android.content.Context
 import android.net.Uri
-import com.aiglobal.jobfinder.data.cv.CvAnalyzer
-import com.aiglobal.jobfinder.data.cv.CvCompleteness
+import com.aiglobal.jobfinder.data.cv.analysis.CvAnalyzer
+import com.aiglobal.jobfinder.data.cv.analysis.CvCompleteness
 import com.aiglobal.jobfinder.data.cv.CvFileStore
 import com.aiglobal.jobfinder.data.cv.CvParseException
 import com.aiglobal.jobfinder.data.cv.CvParserRegistry

@@ -31,6 +31,7 @@ import {
   shortlistSourceNote,
   type AnswerFeedback,
   type CandidateProfile,
+  CandidateField,
   type CountryOpportunity,
   type CoverLetter,
   type EligibilityReason,
@@ -59,6 +60,22 @@ import {
 } from "../assistant/application-plan";
 import { ApplicationPlanEngine } from "../assistant/application-plan-engine";
 import { profileCompleteness } from "../cv/completeness";
+import { analyzeCvInto, CV_ANALYSIS_SCHEMA_VERSION } from "../cv/contract";
+import { foldCvText, normalizeCvText } from "../cv/normalizer";
+import {
+  CV_CERTIFICATION_MARKERS,
+  CV_CITIES,
+  CV_COUNTRIES,
+  CV_DEGREE_MARKERS,
+  CV_FOLDED_PLACES,
+  CV_INSTITUTION_MARKERS,
+  CV_LANGUAGE_ALIASES,
+  CV_LANGUAGES,
+  CV_SECTION_KEYWORDS,
+  CV_SKILLS,
+  CV_TITLE_MARKERS,
+  SkillCategory,
+} from "../cv/lexicon";
 import { ShortlistEngine } from "../shortlist/engine/shortlist-engine";
 import { ExpatIntelligenceEngine } from "../expat/expat-intelligence-engine";
 import { assessEligibility } from "../jobs/engine/eligibility-engine";
@@ -1361,6 +1378,159 @@ describe("Kotlin parity — golden fixtures", () => {
         };
       }
       expect(preflights).toEqual(fixture.submission.preflights);
+    });
+  });
+
+  describe("CV analysis core", () => {
+    const cv = fixture.cvAnalysis;
+    const emptyProfile = (): CandidateProfile => buildProfileEmpty();
+
+    function buildProfileEmpty(): CandidateProfile {
+      return {
+        fullName: "",
+        email: "",
+        phone: "",
+        location: "",
+        currentTitle: "",
+        previousTitles: [],
+        yearsOfExperience: null,
+        skills: [],
+        industries: [],
+        education: [],
+        certifications: [],
+        languages: [],
+        preferredCountries: [],
+        preferredRoles: [],
+        salaryExpectationMin: null,
+        salaryExpectationMax: null,
+        salaryCurrency: null,
+        relocationPreference: RelocationPreference.UNKNOWN,
+        needsVisaSponsorship: null,
+        workPermitNotes: "",
+        summary: "",
+      };
+    }
+
+    function profileFromFixture(
+      p: typeof fixture.profile | (typeof fixture.cvAnalysis.cases)[number]["existing"],
+    ): CandidateProfile {
+      return {
+        fullName: p.fullName,
+        email: p.email,
+        phone: p.phone,
+        location: p.location,
+        currentTitle: p.currentTitle,
+        previousTitles: [...p.previousTitles],
+        yearsOfExperience: p.yearsOfExperience,
+        skills: [...p.skills],
+        industries: [...p.industries],
+        education: p.education.map((e) => ({
+          degree: e.degree,
+          institution: e.institution,
+          country: e.country,
+          year: e.year,
+        })),
+        certifications: p.certifications.map((c) => ({ name: c.name, issuer: c.issuer, year: c.year })),
+        languages: p.languages.map((l): LanguageSkill => ({
+          name: l.name,
+          level: (l.level as LanguageLevel | null) ?? null,
+          evidence: l.evidence,
+        })),
+        preferredCountries: [...p.preferredCountries],
+        preferredRoles: [...p.preferredRoles],
+        salaryExpectationMin: null,
+        salaryExpectationMax: null,
+        salaryCurrency: null,
+        relocationPreference: p.relocationPreference as RelocationPreference,
+        needsVisaSponsorship: p.needsVisaSponsorship,
+        workPermitNotes: p.workPermitNotes,
+        summary: p.summary,
+      };
+    }
+
+    function profileJson(profile: CandidateProfile): Record<string, unknown> {
+      return {
+        fullName: profile.fullName,
+        email: profile.email,
+        phone: profile.phone,
+        location: profile.location,
+        currentTitle: profile.currentTitle,
+        previousTitles: profile.previousTitles,
+        yearsOfExperience: profile.yearsOfExperience,
+        skills: profile.skills,
+        industries: profile.industries,
+        education: profile.education.map((e) => ({
+          degree: e.degree,
+          institution: e.institution,
+          country: e.country,
+          year: e.year,
+        })),
+        certifications: profile.certifications.map((c) => ({ name: c.name, issuer: c.issuer, year: c.year })),
+        languages: profile.languages.map((l) => ({ name: l.name, level: l.level, evidence: l.evidence })),
+        preferredCountries: profile.preferredCountries,
+        preferredRoles: profile.preferredRoles,
+        relocationPreference: profile.relocationPreference,
+        needsVisaSponsorship: profile.needsVisaSponsorship,
+        workPermitNotes: profile.workPermitNotes,
+        summary: profile.summary,
+      };
+    }
+
+    it("records the schema version it was exported with", () => {
+      expect(cv.schemaVersion).toBe(CV_ANALYSIS_SCHEMA_VERSION);
+    });
+
+    it("analyses each case exactly as Kotlin did", () => {
+      expect(cv.cases.length).toBeGreaterThanOrEqual(6);
+      for (const testCase of cv.cases) {
+        const existing = testCase.id.startsWith("merge") ? profileFromFixture(testCase.existing) : emptyProfile();
+        const result = analyzeCvInto(testCase.text, existing, new Set(testCase.protectedFields as CandidateField[]));
+        const evidence: Record<string, string> = {};
+        for (const [key, value] of result.evidence) evidence[key] = value;
+        expect(profileJson(result.profile), testCase.id).toEqual(testCase.output.profile);
+        expect(result.warnings, testCase.id).toEqual(testCase.output.warnings);
+        expect(result.confidence, testCase.id).toBe(testCase.output.confidence);
+        expect(evidence, testCase.id).toEqual(testCase.output.evidence);
+        expect(result.effectiveEngineId, testCase.id).toBe(testCase.output.effectiveEngineId);
+        expect(result.effectiveEngineLabel, testCase.id).toBe(testCase.output.effectiveEngineLabel);
+        expect(result.presence, testCase.id).toEqual(testCase.output.presence);
+      }
+    });
+
+    it("normalises text exactly as Kotlin did", () => {
+      for (const testCase of cv.normalize) {
+        expect(normalizeCvText(testCase.raw), testCase.id).toBe(testCase.output);
+      }
+    });
+
+    it("folds text exactly as Kotlin did", () => {
+      for (const testCase of cv.fold) {
+        expect(foldCvText(testCase.raw), testCase.id).toBe(testCase.output);
+      }
+    });
+
+    it("carries the same skill lexicon", () => {
+      expect(cv.lexicon.skills).toEqual(
+        CV_SKILLS.map((s) => ({ canonical: s.canonical, category: s.category, aliases: s.aliases })),
+      );
+    });
+
+    it("carries the same language, degree, institution, certification and title vocabulary", () => {
+      expect(cv.lexicon.languages).toEqual(CV_LANGUAGES);
+      expect(cv.lexicon.languageAliases).toEqual(CV_LANGUAGE_ALIASES);
+      expect(cv.lexicon.degreeMarkers).toEqual(CV_DEGREE_MARKERS);
+      expect(cv.lexicon.institutionMarkers).toEqual(CV_INSTITUTION_MARKERS);
+      expect(cv.lexicon.certificationMarkers).toEqual(CV_CERTIFICATION_MARKERS);
+      expect(cv.lexicon.titleMarkers).toEqual(CV_TITLE_MARKERS);
+      expect(cv.lexicon.countries).toEqual(CV_COUNTRIES);
+      expect(cv.lexicon.cities).toEqual(CV_CITIES);
+      expect(cv.lexicon.foldedPlaces).toEqual([...CV_FOLDED_PLACES].sort());
+      expect(cv.lexicon.sectionKeywords).toEqual(CV_SECTION_KEYWORDS);
+    });
+
+    it("keeps the skill category vocabulary in sync", () => {
+      const categories = new Set(Object.values(SkillCategory));
+      for (const skill of CV_SKILLS) expect(categories.has(skill.category)).toBe(true);
     });
   });
 });

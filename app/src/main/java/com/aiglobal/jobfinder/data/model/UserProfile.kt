@@ -1,7 +1,7 @@
 package com.aiglobal.jobfinder.data.model
 
 import androidx.compose.runtime.Immutable
-import com.aiglobal.jobfinder.data.cv.CvCompleteness
+import com.aiglobal.jobfinder.data.cv.analysis.CvCompleteness
 import kotlinx.serialization.Serializable
 
 @Serializable

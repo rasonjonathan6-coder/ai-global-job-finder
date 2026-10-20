@@ -53,6 +53,23 @@ The `AiScreen` reads `SubmissionCapability.sendsNothing` directly, so the "prepa
 for you" claim on screen is derived from the same gate the registry enforces, not a hand-written
 sentence.
 
+Stage 68 added the **CV analysis core** — the shareable half of CV handling, split from the
+platform-bound file/parse adapter along one seam:
+
+- `cvAnalysis` (`CvAnalysisResult` + `CvTextNormalizer` + `CvLexicon`) — six analysis cases
+  (full English, full French, too-thin text, empty, merge-preserving-protected,
+  merge-unprotected), each pinned as the full profile, the "worth checking" notes, the
+  confidence score, the per-field evidence map and the section-presence flags; the normaliser
+  cases (mojibake repair, hyphenated line break, bullets, dashes, runs of spaces, empty, blank,
+  mixed newlines); the fold cases (accents, "Anglais", "electro", the `œ` ligature, upper case,
+  plain); and the entire lexicon (skills with aliases + categories, languages, language aliases,
+  degree/institution/certification/title markers, countries, cities, folded places, and every
+  section keyword).
+
+The core is a pure function of its inputs — no clock, no disk, no network — which is exactly why
+it can be shared and why the port must match character for character. The lexicon is compared in
+full, not sampled: a skill added on the Kotlin side without the TypeScript side fails the suite.
+
 Regenerate after any Kotlin engine change:
 
 ```bash

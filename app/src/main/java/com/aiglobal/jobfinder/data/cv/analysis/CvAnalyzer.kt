@@ -1,4 +1,4 @@
-package com.aiglobal.jobfinder.data.cv
+package com.aiglobal.jobfinder.data.cv.analysis
 
 import com.aiglobal.jobfinder.data.model.CandidateField
 import com.aiglobal.jobfinder.data.model.CandidateProfile
@@ -72,7 +72,7 @@ class HeuristicCvAnalyzer : CvAnalyzer {
     ): CvAnalysisResult {
         val evidence = mutableMapOf<CandidateField, String>()
 
-        if (text.count { !it.isWhitespace() } < CvParseResult.MIN_USABLE_CHARACTERS) {
+        if (text.count { !it.isWhitespace() } < CvAnalysisLimits.MIN_USABLE_CHARACTERS) {
             return CvAnalysisResult(
                 profile = existing,
                 warnings = listOf("There is not enough text in this document to analyse."),

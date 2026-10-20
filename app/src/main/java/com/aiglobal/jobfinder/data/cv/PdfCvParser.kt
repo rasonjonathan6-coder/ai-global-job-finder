@@ -10,6 +10,7 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
+import com.aiglobal.jobfinder.data.cv.analysis.CvTextNormalizer
 
 /**
  * PDF text extraction via PDFBox-Android. Runs on the IO dispatcher because a large CV

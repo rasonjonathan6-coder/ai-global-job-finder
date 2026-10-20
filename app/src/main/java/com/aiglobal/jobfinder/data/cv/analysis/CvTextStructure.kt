@@ -1,4 +1,4 @@
-package com.aiglobal.jobfinder.data.cv
+package com.aiglobal.jobfinder.data.cv.analysis
 
 /**
  * Splits a document into its named sections. Real CVs are inconsistent, so this is
@@ -6,7 +6,7 @@ package com.aiglobal.jobfinder.data.cv
  * punctuation and matches a known heading word. Text before the first heading stays
  * available as header content.
  */
-internal object CvTextStructure {
+object CvTextStructure {
 
     private const val MAX_HEADING_LENGTH = 42
     private const val MAX_HEADING_WORDS = 6

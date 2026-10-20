@@ -13,6 +13,12 @@ import com.aiglobal.jobfinder.data.model.NvidiaStatus
 import com.aiglobal.jobfinder.data.model.RelocationPreference
 import org.json.JSONArray
 import org.json.JSONObject
+import com.aiglobal.jobfinder.data.cv.analysis.CvAnalysisResult
+import com.aiglobal.jobfinder.data.cv.analysis.CvAnalysisWarnings
+import com.aiglobal.jobfinder.data.cv.analysis.CvAnalyzer
+import com.aiglobal.jobfinder.data.cv.analysis.CvProfileMerger
+import com.aiglobal.jobfinder.data.cv.analysis.CvSectionPresence
+import com.aiglobal.jobfinder.data.cv.analysis.HeuristicCvAnalyzer
 
 /**
  * Reads a CV with the configured NVIDIA model instead of the on-device heuristics.

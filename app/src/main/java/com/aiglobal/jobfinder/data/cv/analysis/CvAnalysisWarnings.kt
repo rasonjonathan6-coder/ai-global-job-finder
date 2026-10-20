@@ -1,4 +1,4 @@
-package com.aiglobal.jobfinder.data.cv
+package com.aiglobal.jobfinder.data.cv.analysis
 
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 
@@ -29,7 +29,7 @@ data class CvSectionPresence(
  * The optional [presence] only changes the *wording* ("a section was found but nothing was
  * readable" vs "no section was found"); it never decides whether a note appears.
  */
-internal object CvAnalysisWarnings {
+object CvAnalysisWarnings {
 
     fun warningsFor(
         profile: CandidateProfile,

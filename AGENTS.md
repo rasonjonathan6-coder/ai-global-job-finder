@@ -82,8 +82,14 @@ Notes that cost time to rediscover:
 ### CV pipeline (Stage 2)
 
 - `data/cv/` — `CvFileStore` (copies a picked `Uri` into app-private storage under a
-  UUID-derived name), `CvParserRegistry` (PDF via pdfbox-android, DOC/DOCX, TXT),
-  `HeuristicCvAnalyzer`, `CvLexicon`, `CvProfileMerger`. `CvFileType` lives in `data/model`.
+  UUID-derived name), `CvParserRegistry` (PDF via pdfbox-android, DOC/DOCX, TXT) and the
+  optional `CvAiAnalyzer`. `CvFileType` lives in `data/model`.
+- `data/cv/analysis/` — the **shareable** half of CV handling (Stage 68): `CvTextNormalizer`,
+  `CvLexicon`, `CvTextStructure`, `CvAnalyzer` (`HeuristicCvAnalyzer` + `CvAnalysisResult`),
+  `CvProfileMerger` (with `CvCompleteness`), `CvAnalysisWarnings`, `CvAnalysisLimits` and
+  `CvAnalysisContract`. It imports only `data.model` — no `Context`, `Uri`, `Log` or file
+  I/O — so it is a pure function of its inputs and is mirrored verbatim in
+  `web/src/core/cv/`. The platform-bound parsers read `CvAnalysisLimits`, never the reverse.
 - **pdfbox-android MUST be initialised before any PDF call.** PDFBox loads its glyph lists,
   AFM font metrics and CMaps from the app assets and, if `PDFBoxResourceLoader` was never
   initialised, the first `PDDocument.load`/`PDFTextStripper.getText` aborts the process
@@ -2915,6 +2921,60 @@ cd web && npm run typecheck && npm test
 
 **Reste à faire (Stage 68+).** Partage de l'analyse CV, passe de parité des écrans web (alertes,
 auto-apply, historique de soumission), spike KMP, décision IA distante web, iOS.
+
+## Stage 68 — partage de l'analyse CV (cœur partageable + port web)
+
+**Objectif.** Découper le traitement du CV le long de la couture plateforme : d'un côté la
+lecture/le décodage du fichier (lié à `Context`, `Uri`, au réseau), de l'autre un **cœur d'analyse
+pur** — normalisation de texte, lexique, segmentation en sections, analyseur déterministe,
+fusion de profil, notes « à vérifier ». Le second est une fonction pure de ses entrées, donc le
+web le porte à l'identique et le harnais de parité le verrouille. Aucun écran Android n'est
+modifié.
+
+**Livrables.**
+- `app/src/main/java/com/aiglobal/jobfinder/data/cv/analysis/` — nouveau paquet **autonome** :
+  `CvAnalyzer.kt`, `CvLexicon.kt`, `CvProfileMerger.kt` (contient `CvCompleteness`),
+  `CvTextNormalizer.kt`, `CvTextStructure.kt`, `CvAnalysisWarnings.kt`, plus deux fichiers
+  nouveaux : `CvAnalysisLimits.kt` (extrait `CvParseResult.MIN_USABLE_CHARACTERS` ; c'est
+  désormais le parseur qui lit la constante du cœur, et non l'inverse) et `CvAnalysisContract.kt`
+  (point d'entrée `analyze(text, existing, protectedFields)` + `SCHEMA_VERSION = 1`). Le paquet
+  n'importe plus que `data.model` : aucun `Context`, `Uri`, `Log` ni fichier.
+- Importeurs mis à jour vers les nouveaux chemins (`UserProfile.kt`, `CvRepository.kt`, tests
+  Stage 27/28/29/38/40, `ProductionDataTest`).
+- `Stage58GoldenParityExportTest.kt` — section `cvAnalysis` ajoutée, `meta.stage` passé à 68 :
+  `cases` (plein anglais, plein français, texte trop court, vide, fusion avec champs protégés,
+  fusion sans protection), `normalize` (mojibake, césure, puces, tirets, espaces multiples, vide,
+  blanc, fins de ligne mixtes), `fold` (accents, « anglais », « electro », ligature, majuscules,
+  neutre) et `lexicon` (44 compétences, 31 langues, alias, marqueurs de diplôme/établissement/
+  certification/titre, pays, villes, lieux repliés, 166 mots-clés de section).
+- `web/src/core/cv/` — port TypeScript, un fichier par module Kotlin : `normalizer.ts`
+  (`normalizeCvText`, `foldCvText`), `lexicon.ts` (mêmes données, même ordre), `structure.ts`
+  (`segmentCvSections`), `analyzer.ts` (`HeuristicCvAnalyzer`), `merger.ts` (`mergeCvProfile`),
+  `warnings.ts` (`cvAnalysisWarnings`), `limits.ts`, `contract.ts` (`analyzeCvInto`,
+  `CV_ANALYSIS_SCHEMA_VERSION`).
+- `web/src/core/parity/parity.test.ts` — bloc `describe("CV analysis core")` : 7 tests qui
+  rejouent chaque cas, chaque normalisation, chaque repli, et comparent le lexique entier en
+  `toEqual` profond.
+
+**Pourquoi c'est un vrai verrou.** Le cœur est une fonction pure : pas d'horloge, pas de disque,
+pas de réseau, donc le port doit reproduire **au caractère près** le texte normalisé, les
+compétences détectées, l'ordre des langues et les notes affichées. Le lexique entier est comparé,
+pas seulement quelques échantillons : une entrée ajoutée côté Kotlin sans l'être côté web fait
+échouer le test. Régénérer après tout changement Kotlin :
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ANDROID_HOME=/home/openhands/android-sdk
+export PATH=$JAVA_HOME/bin:$PATH
+./gradlew :app:testDebugUnitTest --tests "com.aiglobal.jobfinder.Stage58GoldenParityExportTest"
+cd web && npm run typecheck && npm test
+```
+
+**Vérifications.** Android : suite inchangée après le déplacement (**725 tests, 0 échec,
+3 ignorés**). Web : `npm run typecheck` OK, `npm test` → **400 tests / 7 fichiers, 0 échec**
+(+7). `meta.stage = 68`, `cvAnalysis.schemaVersion = 1`.
+
+**Reste à faire (Stage 69+).** Passe de parité des écrans web (alertes, auto-apply, historique de
+soumission), spike KMP, décision IA distante web, iOS.
 
 ## Conventions
 
