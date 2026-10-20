@@ -3,10 +3,14 @@ package com.aiglobal.jobfinder
 import com.aiglobal.jobfinder.data.apply.ApplicationUrlInspector
 import com.aiglobal.jobfinder.data.assistant.ApplicationPlanEngine
 import com.aiglobal.jobfinder.data.assistant.ExpatIntelligenceEngine
+import com.aiglobal.jobfinder.data.coverletter.CoverLetterGenerator
 import com.aiglobal.jobfinder.data.cv.CvCompleteness
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitExtractor
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
+import com.aiglobal.jobfinder.data.expat.ExpatOpportunityEngine
 import com.aiglobal.jobfinder.data.expat.ShortlistEngine
+import com.aiglobal.jobfinder.data.interview.InterviewCoach
+import com.aiglobal.jobfinder.data.interview.InterviewQuestionBank
 import com.aiglobal.jobfinder.data.geo.CurrencyConverter
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityEngine
 import com.aiglobal.jobfinder.data.jobs.engine.EligibilityInput
@@ -17,19 +21,53 @@ import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
 import com.aiglobal.jobfinder.data.jobs.engine.OfferVerificationEngine
 import com.aiglobal.jobfinder.data.jobs.engine.RecordValidationEngine
 import com.aiglobal.jobfinder.data.jobs.engine.SkillLexicon
+import com.aiglobal.jobfinder.data.jobs.freshness.JobFreshnessEngine
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaProvider
+import com.aiglobal.jobfinder.data.jobs.provider.ArbeitnowProvider
+import com.aiglobal.jobfinder.data.jobs.provider.AshbyProvider
+import com.aiglobal.jobfinder.data.jobs.provider.EuresProvider
+import com.aiglobal.jobfinder.data.jobs.provider.GreenhouseProvider
+import com.aiglobal.jobfinder.data.jobs.provider.HimalayasProvider
+import com.aiglobal.jobfinder.data.jobs.provider.JobicyProvider
+import com.aiglobal.jobfinder.data.jobs.provider.JobProvider
+import com.aiglobal.jobfinder.data.jobs.provider.JoobleProvider
+import com.aiglobal.jobfinder.data.jobs.provider.LeverProvider
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
+import com.aiglobal.jobfinder.data.jobs.provider.RemotiveProvider
+import com.aiglobal.jobfinder.data.jobs.provider.SmartRecruitersProvider
+import com.aiglobal.jobfinder.data.jobs.provider.WorkdayProvider
 import com.aiglobal.jobfinder.data.jobs.search.QualificationMatcher
+import com.aiglobal.jobfinder.data.jobs.search.QueryExpansion
 import com.aiglobal.jobfinder.data.jobs.search.RequirementAnalyzer
 import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
+import com.aiglobal.jobfinder.data.jobs.search.SearchStrategy
+import com.aiglobal.jobfinder.data.jobs.ExpatRankingEngine
+import com.aiglobal.jobfinder.data.model.AiCapability
+import com.aiglobal.jobfinder.data.model.AiCapabilityCatalog
+import com.aiglobal.jobfinder.data.model.AnswerConfidence
 import com.aiglobal.jobfinder.data.model.BenefitEvidence
+import com.aiglobal.jobfinder.data.model.BenefitClaim
+import com.aiglobal.jobfinder.data.model.BenefitFinding
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.CertificationEntry
+import com.aiglobal.jobfinder.data.model.CoverLetter
+import com.aiglobal.jobfinder.data.model.EducationEntry
 import com.aiglobal.jobfinder.data.model.EmploymentType
 import com.aiglobal.jobfinder.data.model.ExpatBenefitsAssessment
 import com.aiglobal.jobfinder.data.model.ExpatIntelligence
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
+import com.aiglobal.jobfinder.data.model.ExpatRankedJob
+import com.aiglobal.jobfinder.data.model.ExpatRankingState
+import com.aiglobal.jobfinder.data.model.RankingLabel
+import com.aiglobal.jobfinder.data.model.ProviderDiagnostic
+import com.aiglobal.jobfinder.data.model.ProviderStatus
+import com.aiglobal.jobfinder.data.jobs.provider.DataSourceKind
 import com.aiglobal.jobfinder.data.model.ApplicationPlan
+import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.InternationalFitAssessment
+import com.aiglobal.jobfinder.data.model.InterviewAttempt
+import com.aiglobal.jobfinder.data.model.InterviewQuestion
+import com.aiglobal.jobfinder.data.model.LetterLanguage
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobRequirements
 import com.aiglobal.jobfinder.data.model.OfferVerification
@@ -43,6 +81,24 @@ import com.aiglobal.jobfinder.data.model.ShortlistEntry
 import com.aiglobal.jobfinder.data.model.ShortlistState
 import com.aiglobal.jobfinder.data.model.VisaSupport
 import com.aiglobal.jobfinder.data.model.WorkMode
+import com.aiglobal.jobfinder.data.alerts.JobAlertEngine
+import com.aiglobal.jobfinder.data.autoapply.AutoApplyEngine
+import com.aiglobal.jobfinder.data.model.AlertFrequency
+import com.aiglobal.jobfinder.data.model.AlertScope
+import com.aiglobal.jobfinder.data.model.ApplicationDraft
+import com.aiglobal.jobfinder.data.model.AutoApplyItem
+import com.aiglobal.jobfinder.data.model.AutoApplyStatus
+import com.aiglobal.jobfinder.data.model.DraftAnswer
+import com.aiglobal.jobfinder.data.model.DraftStatus
+import com.aiglobal.jobfinder.data.model.JobAlertRule
+import com.aiglobal.jobfinder.data.model.MadagascarEligibility
+import com.aiglobal.jobfinder.data.submissions.OfficialSubmissionClassifier
+import com.aiglobal.jobfinder.data.submissions.OfficialSubmissionOutcome
+import com.aiglobal.jobfinder.data.submissions.SubmissionCapability
+import com.aiglobal.jobfinder.data.submissions.SubmissionChannel
+import com.aiglobal.jobfinder.data.submissions.SubmissionKey
+import com.aiglobal.jobfinder.data.submissions.SubmissionLifecycle
+import com.aiglobal.jobfinder.data.submissions.SubmissionPreflightCheck
 import com.aiglobal.jobfinder.data.scam.ScamDetector
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -76,7 +132,14 @@ class Stage58GoldenParityExportTest {
             "Condition monitoring", "Heavy equipment",
         ),
         industries = listOf("Industrial maintenance", "Mining"),
-        education = emptyList(),
+        education = listOf(
+            EducationEntry(
+                degree = "Diploma in Mechanical Engineering",
+                institution = "Institut Supérieur de Technologie",
+                country = "Madagascar",
+                year = 2016,
+            ),
+        ),
         certifications = listOf(
             CertificationEntry(name = "City & Guilds Mechanical Engineering", issuer = "City & Guilds", year = 2016),
             CertificationEntry(name = "First Aid", issuer = "Red Cross", year = 2020),
@@ -249,7 +312,7 @@ class Stage58GoldenParityExportTest {
         val scenarios = cases.map { scenarioJson(it, profile, preferences) }
         val root = linkedMapOf<String, Any?>(
             "meta" to linkedMapOf(
-                "stage" to 62,
+                "stage" to 67,
                 "generatedFrom" to "Kotlin production engines",
                 "clockMillis" to fixedNow,
                 "note" to "Inputs and expected outputs are both produced by the Kotlin engines.",
@@ -262,6 +325,17 @@ class Stage58GoldenParityExportTest {
             "urlInspections" to urlInspectionsJson(),
             "shortlistPipeline" to scenarios.map { shortlistJson(it, profile, preferences) },
             "intelligence" to scenarios.map { intelligenceJson(it, profile, preferences) },
+            "coverLetters" to coverLettersJson(profile),
+            "interview" to scenarios.map { interviewJson(it, profile) },
+            "aiCapabilities" to aiCapabilitiesJson(),
+            "freshness" to freshnessJson(),
+            "expatOpportunity" to scenarios.map { expatOpportunityJson(it, profile, preferences) },
+            "queryExpansion" to queryExpansionJson(),
+            "searchStrategy" to searchStrategyJson(),
+            "expatRanking" to expatRankingJson(scenarios, profile, preferences),
+            "alertEngine" to alertEngineJson(),
+            "autoApply" to autoApplyJson(scenarios),
+            "submission" to submissionJson(scenarios),
         )
 
         val json = JsonWriter.write(root)
@@ -673,6 +747,881 @@ class Stage58GoldenParityExportTest {
         "summary" to intel.summary,
     )
 
+    // ------------------------------------------------------------------ stage 62 (suite): cover letter / interview / AI catalog
+
+    /**
+     * Stage 62 — golden fixtures for the three remaining on-device engines the web edition
+     * mirrors: the cover-letter writer, the interview coach and the AI capability catalogue.
+     *
+     * The clock and the id factory are fixed so the outputs are byte-stable: the web suite
+     * replays the identical inputs through the TypeScript ports and compares the strings.
+     */
+    private fun coverLettersJson(profile: CandidateProfile): Map<String, Any?> {
+        val generator = CoverLetterGenerator(clock = { fixedNow }, idFactory = { "letter-fixed" })
+        val languageByCountry = listOf("Canada", "Germany", "France", "Saudi Arabia").associateWith {
+            LetterLanguage.forCountry(it)
+        }
+        return linkedMapOf(
+            "generatorClockMillis" to fixedNow,
+            "languageByCountry" to languageByCountry.mapValues { it.value.name },
+            "letters" to cases.map { case ->
+                val job = jobForCase(case)
+                linkedMapOf(
+                    "jobId" to case.id,
+                    "languages" to LetterLanguage.entries.map { language ->
+                        linkedMapOf(
+                            "language" to language.name,
+                            "letter" to coverLetterJson(generator.generate(job, profile, language)),
+                        )
+                    },
+                )
+            },
+        )
+    }
+
+    private fun coverLetterJson(letter: CoverLetter): Map<String, Any?> = linkedMapOf(
+        "id" to letter.id,
+        "jobId" to letter.jobId,
+        "language" to letter.language.name,
+        "subject" to letter.subject,
+        "salutation" to letter.salutation,
+        "paragraphs" to letter.paragraphs,
+        "closing" to letter.closing,
+        "signature" to letter.signature,
+        "usedFacts" to letter.usedFacts,
+        "missingFacts" to letter.missingFacts,
+        "generatedAtEpochMillis" to letter.generatedAtEpochMillis,
+        "edited" to letter.edited,
+        "plainText" to letter.asPlainText(),
+        "wordCount" to letter.wordCount,
+    )
+
+    private fun interviewJson(scenario: Map<String, Any?>, profile: CandidateProfile): Map<String, Any?> {
+        val input = scenario["input"] as Map<*, *>
+        val job = jobFromJson(scenario["output"] as Map<*, *>, input)
+
+        val prep = InterviewCoach(clock = { fixedNow }).prep(job, profile)
+        val focusAreas = InterviewQuestionBank().focusAreas(job, profile)
+
+        // Two rehearsals: a partial one (some questions answered, mixed confidence) and a full
+        // one (every question answered confidently). Both are replayed by the web suite.
+        val partialAttempts = prep.questions.filterIndexed { index, _ -> index % 2 == 0 }.mapIndexed { index, q ->
+            InterviewAttempt(
+                questionId = q.id,
+                confidence = if (index % 3 == 0) AnswerConfidence.CONFIDENT else AnswerConfidence.GETTING_THERE,
+                atEpochMillis = fixedNow,
+            )
+        }
+        val fullAttempts = prep.questions.map {
+            InterviewAttempt(questionId = it.id, confidence = AnswerConfidence.CONFIDENT, atEpochMillis = fixedNow)
+        }
+
+        val coach = InterviewCoach(clock = { fixedNow })
+        val firstQuestion = prep.questions.first()
+
+        return linkedMapOf(
+            "id" to scenario["id"],
+            "focusAreas" to focusAreas,
+            "prep" to linkedMapOf(
+                "jobId" to prep.jobId,
+                "jobTitle" to prep.jobTitle,
+                "company" to prep.company,
+                "country" to prep.country,
+                "countryFlag" to prep.countryFlag,
+                "generatedAtEpochMillis" to prep.generatedAtEpochMillis,
+                "questionCount" to prep.questionCount,
+                "questions" to prep.questions.map { questionJson(it) },
+            ),
+            "readiness" to linkedMapOf(
+                "none" to readinessJson(coach.readiness(prep.questions, emptyList())),
+                "partial" to readinessJson(coach.readiness(prep.questions, partialAttempts)),
+                "full" to readinessJson(coach.readiness(prep.questions, fullAttempts)),
+            ),
+            "feedback" to listOf(
+                "I used a hydraulic press for 3 years and reduced pump failures by 40 percent. " +
+                    "First I inspected the seals, then I repaired the leaking joints, and the result was fewer stoppages. " +
+                    "My team delivered the overhaul on time because we planned the parts early and tested every unit before restart.",
+                "I fixed a pump.",
+                "I managed a team. We improved results.",
+            ).map { answer ->
+                linkedMapOf(
+                    "questionId" to firstQuestion.id,
+                    "answer" to answer,
+                    "feedback" to feedbackJson(coach.feedback(firstQuestion, answer)),
+                )
+            },
+        )
+    }
+
+    private fun questionJson(q: InterviewQuestion): Map<String, Any?> = linkedMapOf(
+        "id" to q.id,
+        "category" to q.category.name,
+        "prompt" to q.prompt,
+        "whyItMatters" to q.whyItMatters,
+        "structure" to q.structure,
+        "grounding" to q.grounding,
+        "missingFacts" to q.missingFacts,
+    )
+
+    private fun readinessJson(r: com.aiglobal.jobfinder.data.model.InterviewReadiness): Map<String, Any?> = linkedMapOf(
+        "attempted" to r.attempted,
+        "total" to r.total,
+        "confident" to r.confident,
+        "percent" to r.percent,
+        "isComplete" to r.isComplete,
+        "label" to r.label,
+    )
+
+    private fun feedbackJson(f: com.aiglobal.jobfinder.data.model.AnswerFeedback): Map<String, Any?> = linkedMapOf(
+        "score" to f.score,
+        "headline" to f.headline,
+        "strengths" to f.strengths,
+        "improvements" to f.improvements,
+    )
+
+    private fun aiCapabilitiesJson(): Map<String, Any?> = linkedMapOf(
+        "hasOnDeviceModel" to AiCapabilityCatalog.HAS_ON_DEVICE_MODEL,
+        "hasRemoteModel" to AiCapabilityCatalog.HAS_REMOTE_MODEL,
+        "summary" to AiCapabilityCatalog.summary,
+        "capabilities" to AiCapabilityCatalog.capabilities.map { capabilityJson(it) },
+    )
+
+    private fun capabilityJson(c: AiCapability): Map<String, Any?> = linkedMapOf(
+        "name" to c.name,
+        "kind" to c.kind.name,
+        "kindLabel" to c.kind.label,
+        "location" to c.location.name,
+        "locationLabel" to c.location.label,
+        "description" to c.description,
+        "note" to c.note,
+    )
+
+    // ------------------------------------------------------------------ stage 65: freshness & expatriate opportunity
+
+    /**
+     * Stage 65 — golden fixtures for the two engines ported / verified here.
+     *
+     * [freshnessJson] drives the real `JobFreshnessEngine` over boundary and missing-data
+     * cases: a null publication date, a future date (a source clock fault), the 2/14/stale
+     * day boundaries, a custom window, and a listing with no retrieval date. [expatOpportunityJson]
+     * drives the real `ExpatOpportunityEngine` over the shared scenarios, each with its real
+     * `InternationalFitAssessment`, so the TypeScript port is pinned to the Kotlin output for
+     * the same input. Neither engine writes anything: a missing date stays missing.
+     */
+    private fun freshnessJson(): List<Map<String, Any?>> {
+        val engine = JobFreshnessEngine()
+        val custom = JobFreshnessEngine(staleAfterDays = 30)
+
+        fun at(daysAgo: Long?): Long? = daysAgo?.let { fixedNow - it * 86_400_000L }
+
+        data class FreshnessCase(
+            val id: String,
+            val postedAtEpochMillis: Long?,
+            val retrievedAtEpochMillis: Long?,
+        )
+
+        val cases = listOf(
+            FreshnessCase("null-date", null, fixedNow),
+            FreshnessCase("future-date", fixedNow + 3 * 86_400_000L, fixedNow),
+            FreshnessCase("epoch-zero", 0L, fixedNow),
+            FreshnessCase("boundary-fresh-1d", at(1), fixedNow),
+            FreshnessCase("boundary-recent-2d", at(2), fixedNow),
+            FreshnessCase("boundary-recent-13d", at(13), fixedNow),
+            FreshnessCase("boundary-aging-14d", at(14), fixedNow),
+            FreshnessCase("boundary-aging-120d", at(120), fixedNow),
+            FreshnessCase("boundary-stale-121d", at(121), fixedNow),
+            FreshnessCase("no-retrieval-date", at(10), null),
+        )
+
+        // A single base job whose dates are overwritten per case, so the engine sees a real
+        // posting rather than a synthetic stub. The freshness engine only reads the dates.
+        val baseJob = jobForCase(this.cases.first())
+
+        return cases.map { case ->
+            val jobForCase = baseJob.copy(
+                postedAtEpochMillis = case.postedAtEpochMillis,
+                retrievedAtEpochMillis = case.retrievedAtEpochMillis,
+            )
+            val assessment = engine.assess(jobForCase, fixedNow)
+            linkedMapOf(
+                "id" to case.id,
+                "input" to linkedMapOf(
+                    "postedAtEpochMillis" to case.postedAtEpochMillis,
+                    "retrievedAtEpochMillis" to case.retrievedAtEpochMillis,
+                ),
+                "output" to linkedMapOf(
+                    "freshness" to assessment.freshness.name,
+                    "label" to assessment.label,
+                    "detail" to assessment.detail,
+                ),
+                "custom30" to custom.assess(jobForCase, fixedNow).freshness.name,
+            )
+        }
+    }
+
+    private fun expatOpportunityJson(
+        scenario: Map<String, Any?>,
+        profile: CandidateProfile,
+        preferences: ExpatPreferences,
+    ): Map<String, Any?> {
+        val input = scenario["input"] as Map<*, *>
+        val output = scenario["output"] as Map<*, *>
+        val job = jobFromJson(output, input)
+        val salaryEur = output["salaryEurPerYear"] as Int?
+
+        // Rebuild the exact fit the scenario produced, so the opportunity engine sees the
+        // same InternationalFitAssessment the pipeline did.
+        val expatAssessment = ExpatBenefitsEngine().assess(job.benefitEvidence, preferences, salaryEur)
+        val fit = InternationalFitEngine().assess(job, profile, expatAssessment)
+
+        val engine = ExpatOpportunityEngine { fixedNow }
+        val opportunity = engine.assess(job, preferences, fit)
+
+        // Variant cases that exercise the honesty rules, all on the same posting:
+        //  - as-is (the real fit),
+        //  - with no fit at all (a posting opened before a CV is analysed),
+        //  - with a high scam risk (must cap the score and disqualify),
+        //  - restricted eligibility (a hard stop),
+        //  - an expired application link (a hard stop).
+        val noFit = engine.assess(job, preferences, null)
+        val scammy = engine.assess(job.copy(scamRisk = ScamRisk.HIGH), preferences, fit)
+        val restricted = engine.assess(
+            job.copy(eligibility = com.aiglobal.jobfinder.data.model.MadagascarEligibility.RESTRICTED),
+            preferences,
+            fit,
+        )
+        val deadLink = engine.assess(
+            job.copy(
+                verification = job.verification.copy(
+                    link = com.aiglobal.jobfinder.data.model.VerificationState.INACCESSIBLE,
+                ),
+            ),
+            preferences,
+            fit,
+        )
+
+        return linkedMapOf(
+            "id" to scenario["id"],
+            "opportunity" to opportunityJson(opportunity),
+            "noFit" to opportunityJson(noFit),
+            "highScamRisk" to opportunityJson(scammy),
+            "restrictedEligibility" to opportunityJson(restricted),
+            "expiredLink" to opportunityJson(deadLink),
+        )
+    }
+
+    private fun opportunityJson(o: com.aiglobal.jobfinder.data.model.ExpatOpportunity): Map<String, Any?> = linkedMapOf(
+        "score" to o.score,
+        "band" to o.band.name,
+        "confidence" to o.confidence.name,
+        "confidenceNote" to o.confidenceNote,
+        "hardStops" to o.hardStops,
+        "disqualified" to o.disqualified,
+        "labels" to o.labels,
+        "routeSummary" to o.routeSummary,
+        "explanation" to o.explanation,
+        "dimensions" to o.dimensions.map {
+            linkedMapOf(
+                "dimension" to it.dimension.name,
+                "points" to it.points,
+                "maxPoints" to it.maxPoints,
+                "summary" to it.summary,
+                "strength" to it.strength.name,
+            )
+        },
+        "claims" to o.claims.map {
+            linkedMapOf(
+                "label" to it.label,
+                "finding" to it.finding.name,
+                "evidence" to it.evidence,
+                "sourceUrl" to it.sourceUrl,
+                "sourceType" to it.sourceType,
+                "explicit" to it.explicit,
+                "limitations" to it.limitations,
+            )
+        },
+        "salary" to o.salary?.let {
+            linkedMapOf(
+                "originalAmount" to it.originalAmount,
+                "originalCurrency" to it.originalCurrency,
+                "originalPeriod" to it.originalPeriod.name,
+                "eurPerYear" to it.eurPerYear,
+                "rateSource" to it.rateSource,
+                "rateAsOfEpochMillis" to it.rateAsOfEpochMillis,
+                "converted" to it.converted,
+                "note" to it.note,
+            )
+        },
+    )
+
+    // ------------------------------------------------------------------ stage 66: query expansion, search strategy & expat ranking
+
+    /**
+     * Stage 66 — golden fixtures for the three capabilities ported here.
+     *
+     * [queryExpansionJson] drives the real `QueryExpansion` over the taxonomy's own queries plus
+     * partial input and near-misses, so the TypeScript port is pinned to the same whole-word and
+     * word-prefix behaviour. [searchStrategyJson] runs `SearchStrategy` against the **real**
+     * provider instances and **real** diagnostics, so the plan (server-side vs broad sample) and
+     * the coverage wording are the production output, not a paraphrase. [expatRankingJson] runs
+     * the real `ExpatRankingEngine` over the real shortlist of every scenario, so the rank,
+     * labels, reasons and counts are exactly what the Android screen shows.
+     */
+    private fun queryExpansionJson(): Map<String, Any?> {
+        val queries = listOf(
+            "Mechanical Seal Technician", // the original failing query
+            "pump",
+            "Pump Technician",
+            "rotating equipment",
+            "rotat", // partial input, matches as a word prefix
+            "maintenance",
+            "diesel mechanic",
+            "vibration analysis",
+            "Marketing", // a non-trade query
+            "pumpkin", // a complete term must not fire inside another word
+            "pum", // partial, below the three-character floor
+            "  ", // blank
+        )
+        val haystacks = listOf(
+            "Rotating Equipment Maintenance Technician",
+            "Mechanical Seal Fitter",
+            "Pump Technician",
+            "Field Service Engineer",
+            "Frontend Developer",
+            "Heavy Equipment Diesel Mechanic",
+            "Pumpkin Farmer",
+        )
+        return linkedMapOf(
+            "knownPhrases" to QueryExpansion.knownPhrases().sorted(),
+            "cases" to queries.map { query ->
+                linkedMapOf(
+                    "query" to query,
+                    "expanded" to QueryExpansion.expand(query),
+                    "isTrade" to QueryExpansion.isTradeQuery(query),
+                    "matches" to haystacks.associateWith { QueryExpansion.matches(query, it) },
+                )
+            },
+        )
+    }
+
+    private fun searchStrategyJson(): Map<String, Any?> {
+        val titles = buildProfile().let {
+            (listOf(it.currentTitle) + it.previousTitles + it.preferredRoles).filter { t -> t.isNotBlank() }
+        }
+        val providers: List<JobProvider> = listOf(
+            ArbeitnowProvider(),
+            RemotiveProvider(),
+            JobicyProvider(),
+            HimalayasProvider(),
+            EuresProvider(),
+            WorkdayProvider(),
+            GreenhouseProvider(),
+            AshbyProvider(),
+            LeverProvider(),
+            SmartRecruitersProvider(),
+            AdzunaProvider(credentials = { AdzunaCredentials() }),
+            JoobleProvider(apiKey = { "" }),
+        )
+        val plans = providers.map { provider ->
+            val plan = SearchStrategy.planFor(provider, titles)
+            linkedMapOf(
+                "providerId" to plan.providerId,
+                "providerName" to plan.providerName,
+                "serverSideSearch" to plan.serverSideSearch,
+                "broadSample" to plan.broadSample,
+                "keywordSets" to plan.keywordSets,
+            )
+        }
+
+        // A hand-built diagnostics list over the same provider ids, so the coverage report is
+        // driven by the real `coverageFrom` with realistic counts (including a source that
+        // returned postings none of which matched the trade).
+        val relevant = linkedMapOf(
+            "adzuna" to 4, "eures" to 3, "smartrecruiters" to 2,
+        )
+        val totals = linkedMapOf(
+            "arbeitnow" to 60, "remotive" to 40, "jobicy" to 35, "himalayas" to 50,
+            "eures" to 12, "workday" to 18, "greenhouse" to 9, "ashby" to 6,
+            "lever" to 7, "smartrecruiters" to 11, "adzuna" to 20, "jooble" to 25,
+        )
+        val diagnostics = providers.map { provider ->
+            ProviderDiagnostic(
+                providerId = provider.id,
+                name = provider.name,
+                homepage = provider.homepage,
+                documentationUrl = provider.documentationUrl,
+                dataSource = DataSourceKind.LIVE,
+                status = ProviderStatus.SUCCESS_WITH_RESULTS,
+                enabled = true,
+                serverSideSearch = provider.capabilities.serverSideKeyword,
+                validJobCount = totals[provider.id] ?: 0,
+            )
+        }
+        val coverage = SearchStrategy.coverageFrom(diagnostics, relevant, totals)
+        val emptyCoverage = SearchStrategy.coverageFrom(emptyList(), emptyMap(), emptyMap())
+
+        return linkedMapOf(
+            "titles" to titles,
+            "plans" to plans,
+            "coverage" to linkedMapOf(
+                "sources" to coverage.sources.map {
+                    linkedMapOf(
+                        "providerId" to it.providerId,
+                        "providerName" to it.providerName,
+                        "targeted" to it.targeted,
+                        "relevantCount" to it.relevantCount,
+                        "totalCount" to it.totalCount,
+                    )
+                },
+                "totalRelevant" to coverage.totalRelevant,
+                "totalRetrieved" to coverage.totalRetrieved,
+                "targetedSourceCount" to coverage.targetedSourceCount,
+                "broadSampleSourceCount" to coverage.broadSampleSourceCount,
+                "hasTargetedSource" to coverage.hasTargetedSource,
+                "hasRelevantResults" to coverage.hasRelevantResults,
+                "relevantSharePercent" to coverage.relevantSharePercent,
+                "summary" to coverage.summary,
+            ),
+            "emptyCoverage" to linkedMapOf(
+                "totalRelevant" to emptyCoverage.totalRelevant,
+                "totalRetrieved" to emptyCoverage.totalRetrieved,
+                "summary" to emptyCoverage.summary,
+            ),
+        )
+    }
+
+    private fun expatRankingJson(
+        scenarios: List<Map<String, Any?>>,
+        profile: CandidateProfile,
+        preferences: ExpatPreferences,
+    ): Map<String, Any?> {
+        val completeness = CvCompleteness.of(profile).percent
+        val entries = scenarios.map { scenario ->
+            val input = scenario["input"] as Map<*, *>
+            val job = jobFromJson(scenario["output"] as Map<*, *>, input)
+            val salaryEur = (scenario["output"] as Map<*, *>)["salaryEurPerYear"] as Int?
+            ShortlistEngine { fixedNow }.assess(
+                job = job,
+                profile = profile,
+                preferences = preferences,
+                profileCompletenessPercent = completeness,
+                salaryEurPerYear = salaryEur,
+            )
+        }
+
+        fun stateJson(state: ExpatRankingState): Map<String, Any?> = linkedMapOf(
+            "isLoading" to state.isLoading,
+            "totalJobs" to state.totalJobs,
+            "actionableCount" to state.actionableCount,
+            "disqualifiedCount" to state.disqualifiedCount,
+            "topOpportunityIds" to state.topOpportunities.map { it.job.id },
+            "ranked" to state.ranked.map { rankedJobJson(it) },
+        )
+
+        val engine = ExpatRankingEngine(clock = { fixedNow })
+        val ranked = engine.rank(
+            shortlist = ShortlistState(
+                isLoading = false,
+                entries = entries,
+                totalJobs = entries.size,
+                isLive = true,
+                sourceNote = "",
+                generatedAtEpochMillis = fixedNow,
+            ),
+            preferences = preferences,
+        )
+
+        // A two-entry subset, fed in reverse order, proves the ordering is deterministic and
+        // independent of input order: the engine sorts, it does not preserve.
+        val subset = entries.take(2).reversed()
+        val subsetRanked = engine.rank(
+            shortlist = ShortlistState(
+                isLoading = false,
+                entries = subset,
+                totalJobs = subset.size,
+                isLive = true,
+                sourceNote = "",
+                generatedAtEpochMillis = fixedNow,
+            ),
+            preferences = preferences,
+        )
+
+        val empty = engine.rank(shortlist = ShortlistState(isLoading = true), preferences = preferences)
+
+        return linkedMapOf(
+            "full" to stateJson(ranked),
+            "subset" to stateJson(subsetRanked),
+            "empty" to linkedMapOf(
+                "isLoading" to empty.isLoading,
+                "totalJobs" to empty.totalJobs,
+                "ranked" to empty.ranked,
+                "generatedAtEpochMillis" to empty.generatedAtEpochMillis,
+            ),
+        )
+    }
+
+    // ------------------------------------------------------------------ behaviour engines
+
+    private fun alertEngineJson(): Map<String, Any?> {
+        val engine = JobAlertEngine()
+        val rules = listOf(
+            JobAlertRule(
+                id = "any-strong", name = "Strong maintenance", keywords = emptyList(),
+                frequency = AlertFrequency.DAILY, scope = AlertScope.STRONG_ONLY,
+                minMatchScore = 60, createdAtEpochMillis = fixedNow,
+            ),
+            JobAlertRule(
+                id = "visa-canada", name = "Visa-friendly Canada", keywords = listOf("maintenance"),
+                countries = listOf("Canada"), frequency = AlertFrequency.WEEKLY,
+                scope = AlertScope.VISA_FRIENDLY, minMatchScore = 50, createdAtEpochMillis = fixedNow,
+            ),
+            JobAlertRule(
+                id = "any-pump", name = "Any pump role", keywords = listOf("pump"),
+                frequency = AlertFrequency.MONTHLY, scope = AlertScope.ANY_MATCH,
+                minMatchScore = 40, createdAtEpochMillis = fixedNow,
+            ),
+            JobAlertRule(
+                id = "disabled", name = "Disabled rule", keywords = listOf("maintenance"),
+                frequency = AlertFrequency.DAILY, scope = AlertScope.ANY_MATCH,
+                minMatchScore = 40, createdAtEpochMillis = fixedNow, enabled = false,
+            ),
+        )
+        val jobs = cases.map { jobForCase(it) }
+        val alerts = engine.alertsFor(rules, jobs, fixedNow)
+
+        return linkedMapOf(
+            "rules" to rules.map { rule ->
+                linkedMapOf(
+                    "id" to rule.id,
+                    "name" to rule.name,
+                    "keywords" to rule.keywords,
+                    "countries" to rule.countries,
+                    "frequency" to rule.frequency.name,
+                    "scope" to rule.scope.name,
+                    "minMatchScore" to rule.minMatchScore,
+                    "enabled" to rule.enabled,
+                )
+            },
+            "matches" to rules.associate { rule ->
+                rule.id to cases.associate { case ->
+                    case.id to engine.matches(rule, jobForCase(case))
+                }
+            },
+            "alerts" to alerts.map { alert ->
+                linkedMapOf(
+                    "ruleId" to alert.ruleId,
+                    "ruleName" to alert.ruleName,
+                    "jobId" to alert.jobId,
+                    "jobTitle" to alert.jobTitle,
+                    "company" to alert.company,
+                    "country" to alert.country,
+                    "countryFlag" to alert.countryFlag,
+                    "matchScore" to alert.matchScore,
+                    "isVisaFriendly" to alert.isVisaFriendly,
+                    "detectedAtEpochMillis" to alert.detectedAtEpochMillis,
+                    "read" to alert.read,
+                )
+            },
+        )
+    }
+
+    private fun autoApplyItemJson(item: AutoApplyItem): Map<String, Any?> = linkedMapOf(
+        "jobId" to item.jobId,
+        "jobTitle" to item.jobTitle,
+        "company" to item.company,
+        "country" to item.country,
+        "countryFlag" to item.countryFlag,
+        "matchScore" to item.matchScore,
+        "sourceUrl" to item.sourceUrl,
+        "status" to item.status.name,
+        "coverLetterId" to item.coverLetterId,
+        "reason" to item.reason,
+        "preparedAtEpochMillis" to item.preparedAtEpochMillis,
+    )
+
+    private fun autoApplyJson(scenarios: List<Map<String, Any?>>): Map<String, Any?> {
+        val jobs = cases.map { jobForCase(it) }
+        val engine = AutoApplyEngine(threshold = 70, clock = { fixedNow })
+
+        val decisions = jobs.associate { job ->
+            val decision = engine.decide(job)
+            job.id to linkedMapOf(
+                "status" to decision.status.name,
+                "reason" to decision.reason,
+                "eligible" to decision.eligible,
+            )
+        }
+
+        val baseQueue = engine.buildQueue(jobs, emptyList())
+        // A previously approved entry must survive a refresh, so the queue keeps APPROVED
+        // (and an explicit SKIP) rather than re-deriving the status from the job alone.
+        val existing = listOf(
+            baseQueue.first().copy(status = AutoApplyStatus.APPROVED),
+            baseQueue.getOrNull(1)?.copy(status = AutoApplyStatus.SKIPPED),
+        ).filterNotNull()
+        val preservedQueue = engine.buildQueue(jobs, existing)
+
+        return linkedMapOf(
+            "threshold" to 70,
+            "decisions" to decisions,
+            "baseQueue" to baseQueue.map { autoApplyItemJson(it) },
+            "preservedQueue" to preservedQueue.map { autoApplyItemJson(it) },
+        )
+    }
+
+    private fun submissionJson(scenarios: List<Map<String, Any?>>): Map<String, Any?> {
+        // The channels, and the capability statement that reads the same gate.
+        val channels = SubmissionChannel.values().map { channel ->
+            linkedMapOf(
+                "name" to channel.name,
+                "label" to channel.label,
+                "realSendSupported" to channel.realSendSupported,
+                "compatibilityNote" to channel.compatibilityNote,
+                "statement" to SubmissionCapability.statement(channel),
+            )
+        }
+
+        // Channel inference over a handful of representative URLs.
+        val inferUrls = listOf(
+            "https://boards.greenhouse.io/acme/jobs/1",
+            "https://jobs.lever.co/acme/abc",
+            "https://acme.myworkdayjobs.com/en-US/careers/job/1",
+            "mailto:hr@acme.example",
+            "https://careers.acme.example/apply/9",
+            "",
+            "not a url",
+        )
+        val inference = inferUrls.map { url ->
+            val probe = jobForCase(cases.first()).copy(sourceUrl = url)
+            linkedMapOf(
+                "url" to url,
+                "channel" to SubmissionChannel.infer(probe).name,
+            )
+        }
+
+        // Identity keys, including the employer-blank fallback and cross-source stability.
+        val identity = cases.take(3).map { case ->
+            val job = jobForCase(case)
+            linkedMapOf(
+                "jobId" to job.id,
+                "key" to SubmissionKey.of(job).value,
+                "normalizedCompany" to SubmissionKey.of(job).normalizedCompany,
+                "normalizedTitle" to SubmissionKey.of(job).normalizedTitle,
+                "normalizedCountry" to SubmissionKey.of(job).normalizedCountry,
+            )
+        }
+        val blankEmployerKey = SubmissionKey.of(
+            jobForCase(cases.first()).copy(company = "", title = "Field Service Engineer"),
+        ).value
+
+        // The classifier over a matrix of statuses and ids.
+        val classifierCases = listOf(
+            null to null,
+            null to "abc",
+            201 to "app-42",
+            200 to "",
+            200 to null,
+            409 to "existing-1",
+            429 to "later",
+            500 to "",
+            503 to "maybe",
+            400 to "bad-request",
+            422 to "",
+            302 to "redirect",
+        )
+        val classified = classifierCases.map { (status, id) ->
+            val outcome = OfficialSubmissionClassifier.classify(status, id)
+            val (kind, detail) = when (outcome) {
+                is OfficialSubmissionOutcome.Confirmed -> "CONFIRMED" to outcome.remoteApplicationId
+                is OfficialSubmissionOutcome.Failed -> "FAILED" to outcome.reason
+                is OfficialSubmissionOutcome.Unknown -> "UNKNOWN" to outcome.reason
+            }
+            linkedMapOf(
+                "httpStatus" to status,
+                "remoteApplicationId" to id,
+                "kind" to kind,
+                "detail" to detail,
+                "lifecycle" to OfficialSubmissionClassifier.lifecycleOf(outcome).name,
+            )
+        }
+
+        // The lifecycle mapping for every draft status.
+        val lifecycle = DraftStatus.entries.map { status ->
+            linkedMapOf(
+                "draftStatus" to status.name,
+                "lifecycle" to SubmissionLifecycle.of(status).name,
+                "isConfirmedSent" to SubmissionLifecycle.of(status).isConfirmedSent,
+                "isNotSent" to SubmissionLifecycle.of(status).isNotSent,
+            )
+        }
+
+        // Preflight over the cases that matter: blocked, content-changed, and allowed.
+        fun draft(
+            status: DraftStatus,
+            contentHash: String,
+            approvedHash: String?,
+            cvSummary: String = "Maintenance technician, 8 years.",
+            coverLetterText: String = "Dear team, I am applying.",
+        ) = ApplicationDraft(
+            id = "draft-1",
+            jobId = cases.first().id,
+            jobTitle = cases.first().title,
+            company = cases.first().company,
+            country = cases.first().country,
+            countryFlag = "🌍",
+            sourceUrl = cases.first().url,
+            channelKey = SubmissionChannel.EMPLOYER_PORTAL.name,
+            cvSummary = cvSummary,
+            coverLetterId = "cl-1",
+            coverLetterText = coverLetterText,
+            answers = listOf(DraftAnswer(question = "Notice period?", answer = "One month")),
+            documents = listOf("cv.pdf"),
+            status = status,
+            contentHash = contentHash,
+            approvedHash = approvedHash,
+            approvedAtEpochMillis = if (approvedHash != null) fixedNow else null,
+            preparedAtEpochMillis = fixedNow,
+            updatedAtEpochMillis = fixedNow,
+        )
+
+        val notApproved = draft(DraftStatus.READY_FOR_REVIEW, "h1", null)
+        val approved = draft(DraftStatus.APPROVED, "h1", "h1")
+        val changed = draft(DraftStatus.APPROVED, "h2", "h1")
+        val missingContent = draft(DraftStatus.APPROVED, "h1", "h1", cvSummary = "", coverLetterText = "")
+
+        fun preflightJson(
+            label: String,
+            d: ApplicationDraft,
+            realSubmissionAvailable: Boolean,
+            consentGiven: Boolean,
+            alreadyApplied: Boolean,
+        ): Pair<String, Map<String, Any?>> {
+            val result = SubmissionPreflightCheck.evaluate(d, realSubmissionAvailable, consentGiven, alreadyApplied)
+            return label to linkedMapOf(
+                "blockers" to result.blockers.map { it.name },
+                "allowed" to result.allowed,
+                "primaryBlocker" to result.primaryBlocker?.name,
+                "explanation" to result.explanation,
+            )
+        }
+
+        val preflights = listOf(
+            preflightJson("not-approved", notApproved, realSubmissionAvailable = false, consentGiven = false, alreadyApplied = false),
+            preflightJson("approved-but-no-route", approved, realSubmissionAvailable = false, consentGiven = true, alreadyApplied = false),
+            preflightJson("changed-content", changed, realSubmissionAvailable = true, consentGiven = true, alreadyApplied = false),
+            preflightJson("missing-content", missingContent, realSubmissionAvailable = true, consentGiven = true, alreadyApplied = false),
+            preflightJson("no-consent", approved, realSubmissionAvailable = true, consentGiven = false, alreadyApplied = false),
+            preflightJson("already-applied", approved, realSubmissionAvailable = true, consentGiven = true, alreadyApplied = true),
+            preflightJson("allowed", approved, realSubmissionAvailable = true, consentGiven = true, alreadyApplied = false),
+        )
+
+        return linkedMapOf(
+            "channels" to channels,
+            "capability" to linkedMapOf(
+                "sendsNothing" to SubmissionCapability.sendsNothing,
+                "supportedChannelCount" to SubmissionCapability.supportedChannelCount,
+            ),
+            "inference" to inference,
+            "identity" to identity,
+            "blankEmployerKey" to blankEmployerKey,
+            "classifier" to classified,
+            "lifecycle" to lifecycle,
+            "preflights" to preflights.toMap(),
+        )
+    }
+
+    private fun rankedJobJson(item: ExpatRankedJob): Map<String, Any?> = linkedMapOf(
+        "jobId" to item.job.id,
+        "rank" to item.rank,
+        "finalScore" to item.finalScore,
+        "readinessScore" to item.readinessScore,
+        "readiness" to item.readiness.name,
+        "disqualified" to item.opportunity.disqualified,
+        "opportunityScore" to item.opportunity.score,
+        "opportunityBand" to item.opportunity.band.name,
+        "labels" to item.labels.map { it.name },
+        "reasons" to item.reasons,
+    )
+
+    /** A standalone `Job` for the cover-letter and interview fixtures, built the same way as a scenario. */
+    private fun jobForCase(case: Case): Job {
+        val role = RoleClassifier.classify(case.title, case.description)
+        val matching = MatchingEngine().assess(
+            MatchInput(
+                title = case.title,
+                country = case.country,
+                description = case.description,
+                tags = case.tags,
+                postedDaysAgo = case.postedDaysAgo,
+            ),
+            buildProfile(),
+        )
+        val eligibility = EligibilityEngine().assess(
+            EligibilityInput(
+                title = case.title,
+                location = case.country,
+                description = case.description,
+                tags = case.tags,
+                employmentType = case.employmentType,
+                isRemote = case.isRemote,
+                isRecognizedCountry = case.isRecognizedCountry,
+            ),
+        )
+        val requirements = RequirementAnalyzer.analyze(case.description)
+        val gaps = QualificationMatcher.gaps(requirements, buildProfile())
+        val benefits = ExpatBenefitExtractor().extract(
+            title = case.title,
+            description = case.description,
+            tags = case.tags,
+            source = case.source,
+            verifiedAtEpochMillis = fixedNow,
+        )
+        return Job(
+            id = case.id,
+            title = case.title,
+            company = case.company,
+            companyAccent = 0xFF1E4FD8,
+            country = case.country,
+            countryFlag = "🌍",
+            city = case.city,
+            salaryMin = case.salaryMin,
+            salaryMax = case.salaryMax,
+            currencyCode = case.currency,
+            salaryPeriod = case.period,
+            matchScore = matching.score,
+            eligibility = eligibility.eligibility,
+            visaSupport = eligibility.visaSupport,
+            scamRisk = ScamRisk.LOW,
+            postedAtEpochMillis = case.postedDaysAgo?.let { fixedNow - it * 86_400_000L },
+            expiresAtEpochMillis = case.expiresAtEpochMillis,
+            retrievedAtEpochMillis = fixedNow,
+            source = case.source,
+            sourceUrl = case.url,
+            workMode = if (case.isRemote) WorkMode.REMOTE else WorkMode.ONSITE,
+            employmentType = EmploymentType.FULL_TIME,
+            experienceYears = requirements.minYears ?: 0,
+            matchedSkills = matching.matchedSkills,
+            missingSkills = matching.missingSkills,
+            languages = case.languages,
+            summary = case.description,
+            responsibilities = emptyList(),
+            benefits = emptyList(),
+            aiInsight = "",
+            providerId = case.providerId,
+            salaryPeriodInferred = false,
+            salaryUnitUncertain = case.salaryUnitUncertain,
+            matchReasons = matching.reasons,
+            eligibilityReasons = eligibility.reasons,
+            benefitEvidence = benefits,
+            roleFamily = role.family,
+            matchedTargetRole = role.matchedTarget?.canonical,
+            requirements = requirements,
+            qualificationGaps = gaps,
+            evidence = emptyList(),
+            openToApplicants = null,
+        )
+    }
+
     /**
      * Rebuilds the `Job` the Kotlin exporter scored from the serialised fixture map, so the
      * shortlist / intelligence / plan engines see exactly the same input the scenario did.
@@ -959,6 +1908,14 @@ class Stage58GoldenParityExportTest {
         "yearsOfExperience" to profile.yearsOfExperience,
         "skills" to profile.skills,
         "industries" to profile.industries,
+        "education" to profile.education.map {
+            linkedMapOf(
+                "degree" to it.degree,
+                "institution" to it.institution,
+                "country" to it.country,
+                "year" to it.year,
+            )
+        },
         "certifications" to profile.certifications.map {
             linkedMapOf("name" to it.name, "issuer" to it.issuer, "year" to it.year)
         },

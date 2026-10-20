@@ -18,6 +18,7 @@ import {
   type ShortlistState,
 } from "../core/models";
 import { JobPipeline, type PipelineResult, type ProviderReport } from "../core/repository/job-pipeline";
+import type { SearchCoverage } from "../core/jobs/search/search-strategy";
 import { ShortlistEngine } from "../core/shortlist/engine/shortlist-engine";
 import { profileCompleteness } from "../core/cv/completeness";
 import { demoCandidateProfile } from "./demo-profile";
@@ -87,6 +88,12 @@ export interface RefreshState {
   lastRefreshedAtEpochMillis: number | null;
   error: string | null;
   reports: ProviderReport[];
+  /**
+   * An honest account of the last search: which sources narrowed by keyword, which only
+   * returned a broad sample, and how many postings matched the trade. Mirrors the Android
+   * `LiveJobRepository.coverage` flow.
+   */
+  coverage: SearchCoverage;
 }
 
 interface PersistedState {
@@ -107,6 +114,7 @@ const EMPTY_REFRESH: RefreshState = {
   lastRefreshedAtEpochMillis: null,
   error: null,
   reports: [],
+  coverage: { sources: [], totalRelevant: 0, totalRetrieved: 0 },
 };
 
 function emptyPersisted(): PersistedState {
@@ -303,8 +311,29 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           lastRefreshedAtEpochMillis: Date.now(),
           error: null,
           reports: [
-            { providerId: "demo", providerName: "Demo fixtures", ok: true, fetched: SAMPLE_JOBS.length, accepted: SAMPLE_JOBS.length, message: null },
+            {
+              providerId: "demo",
+              providerName: "Demo fixtures",
+              ok: true,
+              fetched: SAMPLE_JOBS.length,
+              accepted: SAMPLE_JOBS.length,
+              message: null,
+              serverSideSearch: false,
+            },
           ],
+          coverage: {
+            sources: [
+              {
+                providerId: "demo",
+                providerName: "Demo fixtures",
+                targeted: false,
+                relevantCount: SAMPLE_JOBS.length,
+                totalCount: SAMPLE_JOBS.length,
+              },
+            ],
+            totalRelevant: SAMPLE_JOBS.length,
+            totalRetrieved: SAMPLE_JOBS.length,
+          },
         });
         inFlight.current = false;
         return;
@@ -319,6 +348,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
             ? "No source could be reached. Check your connection and try again."
             : null,
           reports: result.reports,
+          coverage: result.coverage,
         });
         if (!result.allFailed) pushNotifications(newOpportunityAlerts(result.jobs));
       } catch (error) {
@@ -327,6 +357,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
           lastRefreshedAtEpochMillis: null,
           error: error instanceof Error ? error.message : "The refresh failed unexpectedly.",
           reports: [],
+          coverage: { sources: [], totalRelevant: 0, totalRetrieved: 0 },
         });
       } finally {
         inFlight.current = false;

@@ -1,8 +1,7 @@
 import {
   AnswerConfidence,
   InterviewCategory,
-  INTERVIEW_CATEGORY_ORDER,
-  MadagascarEligibility,
+  LANGUAGE_LEVEL_META,
   VisaSupport,
   type AnswerFeedback,
   type CandidateProfile,
@@ -14,165 +13,344 @@ import {
 } from "../models";
 
 /**
- * Builds the rehearsal question set for one posting. Mirrors the Kotlin `InterviewQuestionBank`.
+ * Builds the rehearsal set for one posting from that posting and the candidate's CV. Mirrors
+ * the Kotlin `InterviewQuestionBank`.
  *
- * Questions are not generic. Each one is anchored to a fact from the posting or the CV, and
- * carries the STAR-style skeleton the answer should follow plus the facts the candidate can
- * lean on. Where the CV is silent the question says so in `missingFacts` rather than inviting
- * the candidate to invent an answer.
+ * Every question is grounded: it either names a real detail of the posting (a required skill,
+ * the destination country, the visa posture) or a real detail of the CV (a matched skill, a
+ * certification, a language). Questions the CV cannot support are still asked — an interviewer
+ * will ask them — but the missing facts are recorded so the user sees the gap instead of an
+ * answer the app invented.
+ *
+ * The bank is a pure function of its inputs, so it is covered by tests without a device.
  */
-
-export interface InterviewQuestionBankOptions {
-  clock?: () => number;
-}
-
-function normalize(text: string): string {
-  return text.trim().toLowerCase();
-}
-
 export class InterviewQuestionBank {
-  build(job: Job, profile: CandidateProfile): InterviewQuestion[] {
-    const questions: InterviewQuestion[] = [];
-    const hasName = profile.fullName.trim().length > 0;
-    const hasTitle = profile.currentTitle.trim().length > 0;
-    const skills = job.matchedSkills.slice(0, 5);
-    const missingSkills = job.missingSkills.slice(0, 5);
+  /** The full rehearsal set for one posting, in display order. */
+  questions(job: Job, profile: CandidateProfile): InterviewQuestion[] {
+    return [
+      this.opening(job, profile),
+      ...this.experience(job, profile),
+      ...this.technical(job, profile),
+      ...this.behavioural(job),
+      this.relocation(job),
+      ...(this.languageQuestion(job, profile) ? [this.languageQuestion(job, profile)!] : []),
+      ...this.salary(job, profile),
+      this.askThem(job),
+    ];
+  }
 
-    questions.push({
-      id: `${job.id}-opening`,
+  /** The one-line pointers the coach prioritises, derived from the match gaps. */
+  focusAreas(job: Job, profile: CandidateProfile): string[] {
+    const areas: string[] = [];
+    if (job.missingSkills.length > 0) {
+      areas.push(
+        `Prepare a short story for each skill the posting asks for but your CV does not show yet: ${job.missingSkills.join(", ")}.`,
+      );
+    }
+    if (job.visaSupport === VisaSupport.NOT_MENTIONED) {
+      areas.push(
+        "The posting does not state visa support, so be ready to ask how they handle sponsorship for a Madagascar-based hire.",
+      );
+    }
+    if (job.languages.length > 0) {
+      areas.push(
+        `The posting names ${job.languages.join(", ")}. Be ready to hold a short conversation in the language they will interview you in.`,
+      );
+    }
+    if (profile.certifications.length === 0) {
+      areas.push(
+        "You list no certifications. Interviewers in this market often ask which trade certificates you hold — gather the documents first.",
+      );
+    }
+    if (profile.yearsOfExperience == null) {
+      areas.push(
+        'Your CV does not state your years of experience. Add it, so you can answer "how many years?" without hesitating.',
+      );
+    }
+    if (job.experienceYears > 0) {
+      areas.push(`The posting asks for ${job.experienceYears}+ years. Map your work history onto that number out loud.`);
+    }
+    if (areas.length === 0) {
+      areas.push("Your CV covers the posting well. Rehearse the STAR structure so your answers stay tight.");
+    }
+    return areas;
+  }
+
+  private opening(job: Job, profile: CandidateProfile): InterviewQuestion {
+    return {
+      id: `opening-${job.id}`,
       category: InterviewCategory.OPENING,
-      prompt: `Tell me about yourself and why you are applying for the ${job.title} role at ${job.company}.`,
-      whyItMatters: "The opening answer sets the tone; a tight two-minute story beats a life history.",
+      prompt: `Tell me about yourself and why you are applying for ${job.title} at ${job.company}.`,
+      whyItMatters:
+        "This is almost always the first question. A rehearsed 60–90 second answer sets the tone for the whole interview.",
       structure: [
-        "One line on who you are today.",
-        "Two or three sentences on the experience that fits this posting.",
-        "One line on why this role, at this company, in this country.",
+        "Who you are today, in one sentence.",
+        `Your most relevant experience for ${job.title}.`,
+        "One concrete result you are proud of.",
+        "Why this role and this country, in one sentence.",
       ],
       grounding: [
-        ...(hasTitle ? [`Your current title: ${profile.currentTitle}`] : []),
+        ...(profile.currentTitle.trim().length > 0 ? [`Your current title: ${profile.currentTitle}`] : []),
         ...(profile.yearsOfExperience != null ? [`Your experience: ${profile.yearsOfExperience} years`] : []),
-        ...(skills.length > 0 ? [`Skills that match: ${skills.join(", ")}`] : []),
+        ...(job.matchedSkills.length > 0
+          ? [`Skills that match the posting: ${job.matchedSkills.join(", ")}`]
+          : []),
       ],
       missingFacts: [
-        ...(hasName ? [] : ["Your name"]),
-        ...(hasTitle ? [] : ["Your professional title"]),
+        ...(profile.fullName.trim().length === 0
+          ? ["Your CV does not show your name — add it before rehearsing."]
+          : []),
+        ...(profile.currentTitle.trim().length === 0
+          ? ["Your CV does not show a current professional title."]
+          : []),
+        ...(profile.yearsOfExperience == null ? ["Your CV does not state your years of experience."] : []),
       ],
+    };
+  }
+
+  private experience(job: Job, profile: CandidateProfile): InterviewQuestion[] {
+    const questions: InterviewQuestion[] = [];
+    const roleWord = job.title.split(" ").find((w) => w.length > 3)?.toLowerCase() ?? "role";
+    questions.push({
+      id: `experience-1-${job.id}`,
+      category: InterviewCategory.EXPERIENCE,
+      prompt: `Walk me through your most relevant work experience for this ${roleWord} position.`,
+      whyItMatters:
+        "The interviewer is checking whether your day-to-day work actually resembles this job.",
+      structure: [
+        "Name the employer, the role and the dates.",
+        "Describe what you were responsible for.",
+        "Give one measurable result.",
+        `Connect it to what ${job.company} needs.`,
+      ],
+      grounding: profile.previousTitles.slice(0, 2).map((title) => `Previous role: ${title}`),
+      missingFacts:
+        profile.previousTitles.length === 0
+          ? ["Your CV does not list previous job titles — add at least one recent role."]
+          : [],
     });
 
-    questions.push({
-      id: `${job.id}-experience`,
-      category: InterviewCategory.EXPERIENCE,
-      prompt: `Walk me through the experience that makes you ready for a ${job.title} role.`,
-      whyItMatters: "Interviewers hire on evidence, not adjectives. Numbers and outcomes carry the answer.",
+    if (job.experienceYears > 0) {
+      const years = profile.yearsOfExperience;
+      questions.push({
+        id: `experience-2-${job.id}`,
+        category: InterviewCategory.EXPERIENCE,
+        prompt: `The posting asks for ${job.experienceYears}+ years. How does your experience cover that requirement?`,
+        whyItMatters:
+          "A mismatch here is the fastest way to be filtered out, so answer it directly rather than hoping it is not raised.",
+        structure: [
+          "State your total years up front.",
+          "Break them down by the roles that are most relevant.",
+          "Name the parts of the requirement you have already done.",
+          "Name the parts you would grow into, honestly.",
+        ],
+        grounding: years != null ? [`Your CV states ${years} years of experience`] : [],
+        missingFacts: years == null ? ["Your CV does not state your total years of experience."] : [],
+      });
+    }
+    return questions;
+  }
+
+  private technical(job: Job, profile: CandidateProfile): InterviewQuestion[] {
+    void profile;
+    const questions: InterviewQuestion[] = [];
+    job.matchedSkills.slice(0, 3).forEach((skill, index) => {
+      questions.push({
+        id: `technical-${index}-${job.id}`,
+        category: InterviewCategory.TECHNICAL,
+        prompt: `Describe a time you used ${skill} in practice.`,
+        whyItMatters: `${skill} is named in the posting and appears in your CV, so the interviewer will test it.`,
+        structure: [
+          "Set the scene briefly.",
+          `Explain exactly what you did with ${skill}.`,
+          "Give the result, with a number if you have one.",
+          "Say what you would do differently now.",
+        ],
+        grounding: [`${skill} appears in both the posting and your CV`],
+      });
+    });
+    job.missingSkills.slice(0, 3).forEach((skill, index) => {
+      questions.push({
+        id: `technical-gap-${index}-${job.id}`,
+        category: InterviewCategory.TECHNICAL,
+        prompt: `The role mentions ${skill}. How would you get up to speed on it?`,
+        whyItMatters: `${skill} is in the posting but not in your CV. Interviewers accept a gap when you show a concrete plan.`,
+        structure: [
+          "Acknowledge the gap honestly.",
+          "Name the closest skill you do have.",
+          "Describe how you have learned something similar before.",
+          "Give a specific first step you would take.",
+        ],
+        grounding: [],
+        missingFacts: [`${skill} is not shown in your CV yet`],
+      });
+    });
+    if (job.matchedSkills.length === 0 && job.missingSkills.length === 0) {
+      questions.push({
+        id: `technical-generic-${job.id}`,
+        category: InterviewCategory.TECHNICAL,
+        prompt: "What are the core technical skills this role needs, and how strong are you in each?",
+        whyItMatters:
+          "When the posting is light on detail, the interviewer still wants a clear self-assessment.",
+        structure: [
+          "List the three skills the role needs most.",
+          "Rate yourself honestly on each.",
+          "Give one piece of evidence per skill.",
+          "Name the one you are actively improving.",
+        ],
+        grounding: [],
+      });
+    }
+    return questions;
+  }
+
+  private behavioural(job: Job): InterviewQuestion[] {
+    return [
+      {
+        id: `behavioural-1-${job.id}`,
+        category: InterviewCategory.BEHAVIOURAL,
+        prompt: "Tell me about a time you solved a problem under pressure.",
+        whyItMatters:
+          "This tests how you think, not just what you know — and it is asked in almost every international interview.",
+        structure: [
+          "Situation — set the scene in two sentences.",
+          "Task — what you specifically had to deliver.",
+          "Action — what you actually did, step by step.",
+          "Result — the outcome, with a number if possible.",
+        ],
+        grounding: [],
+      },
+      {
+        id: `behavioural-2-${job.id}`,
+        category: InterviewCategory.BEHAVIOURAL,
+        prompt: "Describe a disagreement with a colleague or manager and how you handled it.",
+        whyItMatters:
+          "Working abroad means working across cultures. Interviewers look for calm, direct conflict handling.",
+        structure: [
+          "The situation, without blaming anyone.",
+          "What you wanted and what they wanted.",
+          "How you listened and found common ground.",
+          "What the outcome was and what you learned.",
+        ],
+        grounding: [],
+      },
+    ];
+  }
+
+  private relocation(job: Job): InterviewQuestion {
+    const country = job.country.trim().length > 0 ? job.country : "the destination country";
+    return {
+      id: `relocation-${job.id}`,
+      category: InterviewCategory.RELOCATION,
+      prompt: `You are applying from Madagascar. Are you willing and able to relocate to ${country}?`,
+      whyItMatters: "Employers ask this first because relocation is a real cost and a real risk for them.",
       structure: [
-        "Name the role and the company where you did this work.",
-        "State the problem you were given.",
-        "State what you did and the result, with a number if you have one.",
+        "Answer yes or no clearly, in the first sentence.",
+        "State when you could start.",
+        `Say what you have already researched about living in ${country}.`,
+        "Ask what support they provide for the move.",
       ],
       grounding: [
-        ...(profile.summary.trim().length > 0 ? [profile.summary] : []),
-        ...(skills.length > 0 ? [`Core skills to evidence: ${skills.join(", ")}`] : []),
+        `The posting is based in ${country}`,
+        ...(job.visaSupport === VisaSupport.FULL_SPONSORSHIP
+          ? ["The posting states full visa sponsorship"]
+          : job.visaSupport === VisaSupport.RELOCATION_PACKAGE
+            ? ["The posting offers a relocation package"]
+            : job.visaSupport === VisaSupport.SPONSORSHIP_AVAILABLE
+              ? ["The posting says sponsorship is available"]
+              : []),
       ],
-      missingFacts: skills.length === 0 ? ["Skills that overlap with this posting"] : [],
-    });
+      missingFacts:
+        job.visaSupport === VisaSupport.NOT_MENTIONED
+          ? ["The posting does not state visa support — ask about it explicitly."]
+          : [],
+    };
+  }
 
-    if (skills.length > 0 || missingSkills.length > 0) {
-      questions.push({
-        id: `${job.id}-technical`,
-        category: InterviewCategory.TECHNICAL,
-        prompt: `The posting asks for ${skills.length > 0 ? skills.join(", ") : "specific trade skills"}. How do you handle these day to day?`,
-        whyItMatters: "This is where the panel checks your hands-on depth, not your vocabulary.",
-        structure: [
-          "Pick one skill and give a concrete example of using it.",
-          "Explain how you would diagnose a fault or a failure in it.",
-          "Say what safety or quality step you never skip.",
-        ],
-        grounding: skills.length > 0 ? [`Skills this posting lists: ${skills.join(", ")}`] : [],
-        missingFacts: [
-          ...(skills.length === 0 ? ["Skills that overlap with this posting"] : []),
-          ...(missingSkills.length > 0 ? [`Skills to prepare a story for: ${missingSkills.join(", ")}`] : []),
-        ],
-      });
-    }
-
-    questions.push({
-      id: `${job.id}-behavioural`,
-      category: InterviewCategory.BEHAVIOURAL,
-      prompt: "Describe a time you disagreed with a supervisor or a colleague. How did you handle it?",
-      whyItMatters: "Behavioural questions predict how you will behave on a team you have not met.",
+  private languageQuestion(job: Job, profile: CandidateProfile): InterviewQuestion | null {
+    const required = job.languages;
+    if (required.length === 0 && profile.languages.length === 0) return null;
+    const language = required[0] ?? profile.languages[0].name;
+    const skill = profile.languages.find((s) => s.name.toLowerCase() === language.toLowerCase());
+    const level = skill?.level ?? null;
+    return {
+      id: `language-${job.id}`,
+      category: InterviewCategory.LANGUAGE,
+      prompt: `This role is conducted in ${language}. Tell me about your level and give an example of using it at work.`,
+      whyItMatters: "A language gap is a common reason offers are withdrawn after the interview.",
       structure: [
-        "Set the scene in one sentence.",
-        "Say what you did and why.",
-        "Give the outcome, and what you learned.",
-      ],
-      grounding: hasTitle ? [`Frame it from your role as ${profile.currentTitle}`] : [],
-      missingFacts: [],
-    });
-
-    questions.push({
-      id: `${job.id}-relocation`,
-      category: InterviewCategory.RELOCATION,
-      prompt: `This role is in ${job.country}. Are you ready to relocate, and what do you need from us to make it work?`,
-      whyItMatters: "Employers ask because relocation logistics decide whether an offer is real.",
-      structure: [
-        "State your position on relocating plainly.",
-        "Name the documents and timelines you can control.",
-        "Ask what support they provide for the visa and the move.",
-      ],
-      grounding: [`Destination: ${job.country}`, `Visa support on the posting: ${job.visaSupport}`],
-      missingFacts: [],
-    });
-
-    if (job.languages.length > 0) {
-      questions.push({
-        id: `${job.id}-language`,
-        category: InterviewCategory.LANGUAGE,
-        prompt: `The role works in ${job.languages.join(", ")}. Can you describe your level and give an example?`,
-        whyItMatters: "Language is often the deciding factor for an international hire, above the trade skills.",
-        structure: [
-          "State your level in each language honestly.",
-          "Give one example of using it at work.",
-          "Say what you are doing to improve.",
-        ],
-        grounding: job.languages.map((lang) => `Posting language: ${lang}`),
-        missingFacts: profile.languages.length === 0 ? ["Languages and levels on your CV"] : [],
-      });
-    }
-
-    questions.push({
-      id: `${job.id}-salary`,
-      category: InterviewCategory.SALARY,
-      prompt: "What salary are you expecting, and how did you arrive at that figure?",
-      whyItMatters: "A number you can justify protects you from being anchored too low.",
-      structure: [
-        "Give a range, not a single figure.",
-        "Say what you based it on (market, cost of living, your experience).",
-        "State that you are open to discussing the full package.",
+        "State your level plainly.",
+        `Give one work example where you used ${language}.`,
+        "Name the setting you are weakest in (phone, writing, technical terms).",
+        "Say how you are improving it.",
       ],
       grounding:
-        job.salaryMax > 0
-          ? [`The posting advertises ${job.currencyCode} ${job.salaryMin}–${job.salaryMax}`]
-          : ["The posting does not advertise a salary — ask for the band first."],
-      missingFacts: profile.salaryExpectationMin == null ? ["Your salary expectation"] : [],
-    });
+        level != null
+          ? [`Your CV lists ${language} — ${LANGUAGE_LEVEL_META[level].label}`]
+          : profile.languages.length > 0
+            ? [`Your CV lists: ${profile.languages.map((s) => s.name).join(", ")}`]
+            : [],
+      missingFacts: level == null ? [`Your CV does not state a level for ${language}.`] : [],
+    };
+  }
 
-    questions.push({
-      id: `${job.id}-ask-them`,
+  private salary(job: Job, profile: CandidateProfile): InterviewQuestion[] {
+    return [
+      {
+        id: `salary-${job.id}`,
+        category: InterviewCategory.SALARY,
+        prompt: "What salary are you expecting for this role?",
+        whyItMatters:
+          "Answering too low costs you money; answering too high ends the process. Have a range ready.",
+        structure: [
+          "Give a researched range, not a single number.",
+          `Base it on the local market for ${job.country}, not on Madagascar salaries.`,
+          "Mention that you are flexible on the package as a whole.",
+          "Ask what range is budgeted for the role.",
+        ],
+        grounding:
+          job.salaryMin > 0
+            ? [
+                `The posting advertises ${job.currencyCode} ${job.salaryMin}–${job.salaryMax} per ${job.salaryPeriod.toLowerCase()}`,
+              ]
+            : ["The posting does not state a salary"],
+        missingFacts:
+          profile.salaryExpectationMin == null
+            ? ["You have not recorded a salary expectation in your profile."]
+            : [],
+      },
+      {
+        id: `contract-${job.id}`,
+        category: InterviewCategory.SALARY,
+        prompt: "What do you need in the offer to accept it — beyond salary?",
+        whyItMatters:
+          "Visa costs, housing and flights are negotiable and are often easier for the employer to give than a higher salary.",
+        structure: [
+          "Separate what you need from what you would like.",
+          "Name the relocation costs you cannot cover yourself.",
+          "Ask about the visa route and who pays for it.",
+          "Ask about the probation period and notice.",
+        ],
+        grounding: [`Destination: ${job.country}`],
+      },
+    ];
+  }
+
+  private askThem(job: Job): InterviewQuestion {
+    return {
+      id: `ask-${job.id}`,
       category: InterviewCategory.ASK_THEM,
-      prompt: "What questions will you ask them?",
-      whyItMatters: "Good questions show you are evaluating them too, and they surface the real terms.",
+      prompt: `What questions should you ask ${job.company} at the end of the interview?`,
+      whyItMatters:
+        "The questions you ask show whether you understand the move. They are also the moment to clarify visa reality.",
       structure: [
-        "Ask about the visa and permit process and who handles it.",
-        "Ask about relocation support: housing, flights, settling-in.",
-        "Ask what success looks like in the first six months.",
+        "Ask how the visa and work permit process works for a Madagascar-based hire.",
+        "Ask what the first three months in the role look like.",
+        "Ask how the team is structured and who you would report to.",
+        "Ask what would make someone succeed in this role.",
       ],
-      grounding: [`Visa support stated: ${job.visaSupport}`, `Benefits listed: ${job.benefits.length}`],
-      missingFacts: [],
-    });
-
-    return questions.sort(
-      (a, b) => INTERVIEW_CATEGORY_ORDER.indexOf(a.category) - INTERVIEW_CATEGORY_ORDER.indexOf(b.category),
-    );
+      grounding: [`Employer: ${job.company}`, ...(job.source.trim().length > 0 ? [`Source: ${job.source}`] : [])],
+    };
   }
 }
 
@@ -181,10 +359,24 @@ export interface InterviewCoachOptions {
   bank?: InterviewQuestionBank;
 }
 
+const NUMBER = /\d/;
+const EVIDENCE_WORDS = [
+  "used", "built", "led", "managed", "installed", "repaired", "tested", "delivered", "team", "project",
+];
+const STRUCTURE_HINTS = [
+  "situation", "task", "action", "result", "because", "so", "then", "after", "first", "finally", "when", "while",
+];
+const RESULT_WORDS = [
+  "result", "outcome", "increased", "reduced", "saved", "improved", "delivered", "achieved", "so we", "which meant",
+];
+
 /**
- * The interview coach. Mirrors the Kotlin `InterviewCoach`: it assembles the prep set, scores
- * a written answer against the posting's own vocabulary, and derives readiness from the saved
- * rehearsal attempts so the progress number is measured, never guessed.
+ * The interview coach. Mirrors the Kotlin `InterviewCoach`: it builds the rehearsal set for a
+ * posting and grades a written answer against the same structure the question asked for.
+ *
+ * Grading is deliberately about shape, not content: the app cannot know whether an anecdote is
+ * true, so it only checks whether the answer is long enough to be credible, whether it names
+ * evidence, and whether it reaches a result. It never rewrites the candidate's story.
  */
 export class InterviewCoach {
   private readonly clock: () => number;
@@ -196,122 +388,115 @@ export class InterviewCoach {
   }
 
   prep(job: Job, profile: CandidateProfile): InterviewPrep {
-    const questions = this.bank.build(job, profile);
-    const focusAreas: string[] = [];
-    if (job.missingSkills.length > 0) {
-      focusAreas.push(`Close the gaps on ${job.missingSkills.slice(0, 3).join(", ")}`);
-    }
-    if (job.languages.length > 0) focusAreas.push(`Practise speaking ${job.languages.join(", ")}`);
-    if (
-      job.visaSupport === VisaSupport.FULL_SPONSORSHIP ||
-      job.visaSupport === VisaSupport.RELOCATION_PACKAGE ||
-      job.visaSupport === VisaSupport.SPONSORSHIP_AVAILABLE
-    ) {
-      focusAreas.push("Be ready to explain your visa situation clearly");
-    }
-    if (job.eligibility === MadagascarEligibility.ELIGIBLE || job.eligibility === MadagascarEligibility.VISA_SPONSORED) {
-      focusAreas.push(`Show you understand working in ${job.country}`);
-    }
-
     return {
       jobId: job.id,
       jobTitle: job.title,
       company: job.company,
       country: job.country,
       countryFlag: job.countryFlag,
-      questions,
-      focusAreas,
+      questions: this.bank.questions(job, profile),
+      focusAreas: this.bank.focusAreas(job, profile),
       generatedAtEpochMillis: this.clock(),
     };
   }
 
-  /** Deterministic feedback on a written answer, checked against the question's own grounding. */
+  /** Grades one written answer. The score is 0–100 and the notes are all actionable. */
   feedback(question: InterviewQuestion, answer: string): AnswerFeedback {
-    const words = answer.split(/\s+/).filter((w) => w.length > 0);
+    const text = answer.trim();
+    const words = text.split(/\s+/).filter((w) => w.length > 0);
+    const wordCount = words.length;
+
     const strengths: string[] = [];
     const improvements: string[] = [];
     let score = 0;
 
-    if (words.length >= 60) {
-      strengths.push("The answer is developed, not a one-liner.");
-      score += 30;
-    } else if (words.length >= 25) {
-      improvements.push("Add more detail — aim for 60 words or more.");
+    // Length: enough to be credible, not so long it rambles.
+    if (wordCount >= 60) {
+      score += 35;
+      strengths.push(`Your answer is detailed enough to be credible (${wordCount} words).`);
+    } else if (wordCount >= 30) {
+      score += 25;
+      strengths.push(`A solid length (${wordCount} words); expand it with one more detail to be safe.`);
+    } else if (wordCount >= 12) {
+      score += 12;
+      improvements.push(`Only ${wordCount} words. Aim for 60–120 words so the interviewer gets a full picture.`);
+    } else {
+      improvements.push("This is too short to answer the question. Write at least a few sentences.");
+    }
+
+    // Evidence: numbers and named tools/employers.
+    const hasNumbers = NUMBER.test(text);
+    const hasEvidenceWords = EVIDENCE_WORDS.some((w) => text.toLowerCase().includes(w));
+    if (hasNumbers && hasEvidenceWords) {
+      score += 25;
+      strengths.push("You back the answer with specifics and figures.");
+    } else if (hasNumbers || hasEvidenceWords) {
       score += 15;
+      improvements.push("Add one more concrete detail — a number, a tool or an employer name.");
     } else {
-      improvements.push("This is too short to judge. Expand it with a concrete example.");
+      improvements.push("No specifics detected. Name the tools you used and add one measurable result.");
     }
 
-    const lower = normalize(answer);
-    const grounded = question.grounding.filter((g) => {
-      const tokens = normalize(g).split(/\W+/).filter((t) => t.length > 3);
-      return tokens.some((t) => lower.includes(t));
-    });
-    if (grounded.length > 0) {
-      strengths.push("You used facts from your CV and the posting.");
-      score += 30;
-    } else if (question.grounding.length > 0) {
-      improvements.push("Reference a concrete fact: a skill, a role, or the country.");
-    }
-
-    const hasNumber = /\d/.test(answer);
-    if (hasNumber) {
-      strengths.push("You included a number, which makes the answer credible.");
-      score += 20;
+    // Structure: the STAR pieces the question asked for.
+    const matchedStructure = question.structure.filter(
+      (step) => step.trim().length > 0 && STRUCTURE_HINTS.some((hint) => text.toLowerCase().includes(hint)),
+    ).length;
+    if (question.structure.length > 0) {
+      if (matchedStructure >= 3) {
+        score += 25;
+        strengths.push("You cover the situation, the action and the result.");
+      } else if (matchedStructure === 2) {
+        score += 14;
+        improvements.push("You cover two of the four parts. Add the missing result or situation.");
+      } else {
+        improvements.push(`Follow the ${question.structure.length}-part structure listed for this question.`);
+      }
     } else {
-      improvements.push("Add a figure — a year, a team size, a result.");
+      score += 15;
     }
 
-    if (words.length >= 60 && grounded.length > 0 && hasNumber) score += 20;
+    // Outcome: does the answer actually land on a result?
+    if (RESULT_WORDS.some((w) => text.toLowerCase().includes(w))) {
+      score += 15;
+      strengths.push("You state an outcome, which is what interviewers remember.");
+    } else {
+      improvements.push("Finish with the result: what changed because of what you did?");
+    }
 
-    const bounded = Math.min(100, score);
+    const finalScore = Math.max(0, Math.min(100, score));
     const headline =
-      bounded >= 80
-        ? "Strong answer"
-        : bounded >= 50
-          ? "Solid — tighten the detail"
-          : "Needs more substance";
+      finalScore >= 80
+        ? "Strong answer — ready to say out loud."
+        : finalScore >= 60
+          ? "Good base — tighten the evidence and the ending."
+          : finalScore >= 35
+            ? "Workable, but thin. Add structure and specifics."
+            : "Needs a rewrite. Follow the structure below step by step.";
+    if (improvements.length === 0) {
+      improvements.push("Nothing critical missing — rehearse it out loud and time yourself.");
+    }
 
-    return { score: bounded, headline, strengths, improvements };
+    return { score: finalScore, headline, strengths, improvements };
   }
 
-  /** Turns saved attempts into a measured readiness figure for one prep set. */
-  readiness(prep: InterviewPrep, attempts: InterviewAttempt[]): InterviewReadiness {
-    const byQuestion = new Map(attempts.map((a) => [a.questionId, a]));
-    let attempted = 0;
-    let confident = 0;
-    let points = 0;
-    const total = prep.questions.length;
-
-    for (const question of prep.questions) {
-      const attempt = byQuestion.get(question.id);
-      if (!attempt) continue;
-      attempted += 1;
-      switch (attempt.confidence) {
-        case AnswerConfidence.CONFIDENT:
-          confident += 1;
-          points += 100;
-          break;
-        case AnswerConfidence.GETTING_THERE:
-          points += 60;
-          break;
-        default:
-          points += 20;
-          break;
-      }
-    }
-
-    const percent = total === 0 ? 0 : Math.round(points / total);
-    const isComplete = total > 0 && attempted === total;
+  /** Derives progress from the saved attempts, so readiness is never guessed. */
+  readiness(questions: InterviewQuestion[], attempts: InterviewAttempt[]): InterviewReadiness {
+    const questionIds = new Set(questions.map((q) => q.id));
+    const attempted = new Set(attempts.map((a) => a.questionId).filter((id) => questionIds.has(id))).size;
+    const confident = attempts.filter((a) => a.confidence === AnswerConfidence.CONFIDENT).length;
+    const total = questions.length;
+    const percent = total === 0 ? 0 : Math.trunc((attempted * 100) / total);
+    const isComplete = total > 0 && attempted >= total;
     const label =
-      isComplete && percent >= 80
-        ? "You are ready"
-        : isComplete
-          ? "Covered — keep sharpening"
-          : attempted === 0
-            ? "Not started"
-            : `${attempted} of ${total} rehearsed`;
-
+      total === 0
+        ? "Not started"
+        : percent >= 100 && confident === total
+          ? "Interview ready"
+          : percent >= 100
+            ? "Rehearsed — polish the weak answers"
+            : percent >= 50
+              ? "Half rehearsed"
+              : "Just started";
     return { attempted, total, confident, percent, isComplete, label };
   }
 }

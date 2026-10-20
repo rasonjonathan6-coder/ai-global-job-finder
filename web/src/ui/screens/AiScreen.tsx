@@ -1,4 +1,13 @@
 import { useEffect, useState } from "react";
+import {
+  AI_CAPABILITY_CATALOG,
+  AI_CAPABILITY_KIND_META,
+  AI_PROCESSING_LOCATION_META,
+  AiCapabilityKind,
+  AiProcessingLocation,
+  type AiCapability,
+} from "../../core/models";
+import { SubmissionCapability } from "../../core/submissions/submission-capability";
 import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { ScreenHeader } from "../components/ScreenHeader";
@@ -6,12 +15,17 @@ import {
   AiIcon,
   ApplicationsIcon,
   CheckIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
+  CloudIcon,
   FileTextIcon,
   GlobeIcon,
   ShieldIcon,
+  SmartphoneIcon,
   SparkIcon,
   TrendIcon,
+  VerifiedUserIcon,
 } from "../components/icons";
 
 interface Capability {
@@ -57,6 +71,14 @@ const CAPABILITIES: Capability[] = [
     icon: <ApplicationsIcon width={20} height={20} />,
     tone: "success",
   },
+  {
+    title: "Prepared, never sent for you",
+    detail: SubmissionCapability.sendsNothing
+      ? "The assistant prepares each application and stops at one-tap approval. No channel can be driven by the app, so nothing is ever submitted automatically."
+      : "The assistant prepares each application and waits for your one-tap approval before anything is sent.",
+    icon: <ShieldIcon width={20} height={20} />,
+    tone: "info",
+  },
 ];
 
 const TONE_CLASS: Record<Capability["tone"], string> = {
@@ -84,7 +106,7 @@ export function AiScreen({ onNavigate }: { onNavigate: (route: string) => void }
 
   return (
     <>
-      <ScreenHeader title="AI Assistant" subtitle="How your matches are worked out" />
+      <ScreenHeader title="AI Assistant" subtitle="Your CV, matched against real international openings" />
       <div className="app-shell space-y-5">
         <section className="card-surface overflow-hidden p-0">
           <div className="ai-wash p-4">
@@ -155,6 +177,9 @@ export function AiScreen({ onNavigate }: { onNavigate: (route: string) => void }
               "Silence is never a claim — an unstated benefit is shown as unknown, not refused.",
               "A high score cannot hide a disqualifier: ineligible or scam-flagged postings are capped.",
               "Every point is traceable to a sentence in the posting or your own profile.",
+              SubmissionCapability.sendsNothing
+                ? `Prepared, not sent: ${SubmissionCapability.supportedChannelCount} application routes can be driven by the app, so every application stops at your approval.`
+                : `Prepared, not sent without you: the app can submit on ${SubmissionCapability.supportedChannelCount} verified route(s).`,
             ].map((line) => (
               <li key={line} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-ink-secondary">
                 <CheckIcon width={15} height={15} className="mt-0.5 shrink-0 text-success" />
@@ -163,6 +188,8 @@ export function AiScreen({ onNavigate }: { onNavigate: (route: string) => void }
             ))}
           </ul>
         </section>
+
+        <TransparencyCard />
 
         <section className="flex items-center gap-3 rounded-2xl border border-card-stroke bg-surface p-4">
           <TrendIcon width={20} height={20} className="shrink-0 text-accent-ink" />
@@ -178,5 +205,82 @@ export function AiScreen({ onNavigate }: { onNavigate: (route: string) => void }
         </Button>
       </div>
     </>
+  );
+}
+
+/** Pill styling per capability kind, matching the Kotlin `AiCapabilityRow` accents. */
+const KIND_PILL: Record<AiCapabilityKind, string> = {
+  [AiCapabilityKind.REMOTE_MODEL]: "bg-danger-container text-danger",
+  [AiCapabilityKind.ON_DEVICE_MODEL]: "bg-accent-500/[0.12] text-accent-ink",
+  [AiCapabilityKind.RULE_BASED]: "bg-info-container text-info",
+  [AiCapabilityKind.DOCUMENT_PARSER]: "bg-info-container text-info",
+  [AiCapabilityKind.TEMPLATE]: "bg-info-container text-info",
+};
+
+function CapabilityRow({ capability }: { capability: AiCapability }) {
+  const remote = capability.location === AiProcessingLocation.REMOTE;
+  return (
+    <li className="space-y-1">
+      <div className="flex items-center gap-2">
+        <p className="min-w-0 flex-1 text-[13px] font-semibold text-ink-primary">{capability.name}</p>
+        <span
+          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none ${KIND_PILL[capability.kind]}`}
+        >
+          {AI_CAPABILITY_KIND_META[capability.kind].label}
+        </span>
+      </div>
+      <p className="text-[12px] leading-relaxed text-ink-secondary">{capability.description}</p>
+      <div className="flex items-center gap-1.5 text-ink-tertiary">
+        {remote ? <CloudIcon width={13} height={13} /> : <SmartphoneIcon width={13} height={13} />}
+        <span className="text-[11px] font-medium">{AI_PROCESSING_LOCATION_META[capability.location].label}</span>
+      </div>
+      <p className="text-[11px] leading-relaxed text-ink-tertiary">{capability.note}</p>
+    </li>
+  );
+}
+
+/**
+ * The honest inventory of what the app's "AI" actually does, ported from the Kotlin
+ * `AiTransparencyCard`. The list is collapsed by default and expands to the full breakdown
+ * so the screen states plainly which parts run on-device and which one is an opt-in remote model.
+ */
+function TransparencyCard() {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <section className="card-surface space-y-3 p-4">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info-container text-info">
+          <VerifiedUserIcon width={20} height={20} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[13.5px] font-semibold text-ink-primary">How this app&apos;s AI works</p>
+          <p className="text-[12px] text-ink-secondary">
+            Rules and parsers on-device, plus one optional NVIDIA model
+          </p>
+        </div>
+      </div>
+
+      <p className="text-[12px] leading-relaxed text-ink-secondary">{AI_CAPABILITY_CATALOG.summary}</p>
+
+      {expanded && (
+        <ul className="space-y-3 pt-1">
+          {AI_CAPABILITY_CATALOG.capabilities.map((capability) => (
+            <CapabilityRow key={capability.name} capability={capability} />
+          ))}
+        </ul>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between rounded-xl py-1.5 text-left"
+      >
+        <span className="text-[12.5px] font-semibold text-accent-ink">
+          {expanded ? "Hide the full breakdown" : "See the full breakdown"}
+        </span>
+        {expanded ? <ChevronUpIcon width={18} height={18} className="text-accent-ink" /> : <ChevronDownIcon width={18} height={18} className="text-accent-ink" />}
+      </button>
+    </section>
   );
 }

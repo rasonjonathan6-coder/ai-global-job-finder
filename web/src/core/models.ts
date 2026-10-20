@@ -147,6 +147,15 @@ export enum LanguageLevel {
   NATIVE = "NATIVE",
 }
 
+export const LANGUAGE_LEVEL_META: Record<LanguageLevel, { label: string }> = {
+  [LanguageLevel.BEGINNER]: { label: "Beginner" },
+  [LanguageLevel.INTERMEDIATE]: { label: "Intermediate" },
+  [LanguageLevel.ADVANCED]: { label: "Advanced" },
+  [LanguageLevel.FLUENT]: { label: "Fluent" },
+  [LanguageLevel.NATIVE]: { label: "Native" },
+};
+
+/** How willing the candidate is to move country. Drives the eligibility filtering. */
 export enum RelocationPreference {
   UNKNOWN = "UNKNOWN",
   PREFERS_RELOCATION = "PREFERS_RELOCATION",
@@ -154,6 +163,14 @@ export enum RelocationPreference {
   REMOTE_ONLY = "REMOTE_ONLY",
   NO_RELOCATION = "NO_RELOCATION",
 }
+
+export const RELOCATION_PREFERENCE_META: Record<RelocationPreference, { label: string }> = {
+  [RelocationPreference.UNKNOWN]: { label: "Not specified" },
+  [RelocationPreference.PREFERS_RELOCATION]: { label: "Actively wants to relocate" },
+  [RelocationPreference.OPEN_TO_RELOCATION]: { label: "Open to relocating" },
+  [RelocationPreference.REMOTE_ONLY]: { label: "Remote only" },
+  [RelocationPreference.NO_RELOCATION]: { label: "Not willing to relocate" },
+};
 
 /** What an evidence item is about. */
 export enum EvidenceKind {
@@ -300,10 +317,23 @@ export interface LanguageSkill {
   evidence: string;
 }
 
+/** The label shown for a language skill. Mirrors the Kotlin `LanguageSkill.displayLabel`. */
+export function languageSkillDisplayLabel(skill: LanguageSkill): string {
+  return skill.level == null ? skill.name : `${skill.name} — ${LANGUAGE_LEVEL_META[skill.level].label}`;
+}
+
 export interface CertificationEntry {
   name: string;
   issuer: string;
   year: number | null;
+}
+
+/** One qualification on the CV. Mirrors the Kotlin `EducationEntry`. */
+export interface EducationEntry {
+  degree: string;
+  institution: string;
+  country: string;
+  year: number;
 }
 
 /** The structured, matching-ready view of the candidate. */
@@ -317,7 +347,7 @@ export interface CandidateProfile {
   yearsOfExperience: number | null;
   skills: string[];
   industries: string[];
-  education: unknown[];
+  education: EducationEntry[];
   certifications: CertificationEntry[];
   languages: LanguageSkill[];
   preferredCountries: string[];
@@ -700,30 +730,143 @@ export const UNKNOWN_VERIFICATION: OfferVerification = {
 // --------------------------------------------------------------------------- AI capability
 
 /**
- * How a feature actually produces its output. Ported from the Kotlin `AiCapabilityKind`:
- * the app must never describe a deterministic rule as generative AI, so every feature that
- * surfaces itself as "AI" declares which kind it is, and the UI labels it honestly.
+ * How a feature actually works. Ported from the Kotlin `AiCapabilityKind`: the app must never
+ * describe a deterministic rule as a generative model, and must never imply that CV text is
+ * sent to a cloud service when it is not. `label` is the honest name the UI shows.
  */
 export enum AiCapabilityKind {
-  /** Pure, offline logic: rules and scoring. Runs on the device, no model involved. */
+  /** A pure function of its inputs: phrase tables, weights, thresholds. */
   RULE_BASED = "RULE_BASED",
-  /** Text assembled from facts the app already holds. Grounded, never invented. */
+  /** Reads a document into structured fields (PDF/DOCX/TXT). */
+  DOCUMENT_PARSER = "DOCUMENT_PARSER",
+  /** Template filled from verified facts only. */
   TEMPLATE = "TEMPLATE",
-  /** A generative model writes the text. Requires a network call and a provider key. */
-  GENERATIVE = "GENERATIVE",
+  /** A trained machine-learning model running on the device. */
+  ON_DEVICE_MODEL = "ON_DEVICE_MODEL",
+  /** A remote generative or ML service, reached only when the user configures and enables it. */
+  REMOTE_MODEL = "REMOTE_MODEL",
 }
 
+export const AI_CAPABILITY_KIND_META: Record<AiCapabilityKind, { label: string }> = {
+  [AiCapabilityKind.RULE_BASED]: { label: "On-device rules" },
+  [AiCapabilityKind.DOCUMENT_PARSER]: { label: "Document parser" },
+  [AiCapabilityKind.TEMPLATE]: { label: "Grounded template" },
+  [AiCapabilityKind.ON_DEVICE_MODEL]: { label: "On-device model" },
+  [AiCapabilityKind.REMOTE_MODEL]: { label: "Remote AI service" },
+};
+
+/** Where the feature runs, so the privacy claim is explicit rather than implied. */
+export enum AiProcessingLocation {
+  ON_DEVICE = "ON_DEVICE",
+  /** Data leaves the device and is processed by NVIDIA. */
+  REMOTE = "REMOTE",
+}
+
+export const AI_PROCESSING_LOCATION_META: Record<AiProcessingLocation, { label: string }> = {
+  [AiProcessingLocation.ON_DEVICE]: { label: "On this device" },
+  [AiProcessingLocation.REMOTE]: { label: "Sent to NVIDIA" },
+};
+
+/**
+ * One capability of the app, described exactly as it is implemented. `note` carries the
+ * plain-language caveat that keeps the screen truthful (for example, that a rule-based score
+ * is not a machine-learning prediction).
+ */
 export interface AiCapability {
-  id: string;
-  title: string;
-  detail: string;
+  name: string;
   kind: AiCapabilityKind;
+  location: AiProcessingLocation;
+  description: string;
+  note: string;
 }
 
-/** Whether a capability can run right now, given whether a generative provider is configured. */
-export function aiCapabilityIsAvailable(kind: AiCapabilityKind, hasGenerativeProvider: boolean): boolean {
-  return kind !== AiCapabilityKind.GENERATIVE || hasGenerativeProvider;
-}
+/**
+ * The complete, current inventory of what the "AI" in this app does. Mirrors the Kotlin
+ * `AiCapabilityCatalog`; every entry names the mechanism that actually runs, so the list can
+ * be checked against the source tree.
+ */
+export const AI_CAPABILITY_CATALOG = {
+  /** True when the app ships a trained on-device model. It does not, today. */
+  HAS_ON_DEVICE_MODEL: false,
+  /** True when the app can contact a remote AI service. It can, once the user configures NVIDIA. */
+  HAS_REMOTE_MODEL: true,
+  capabilities: [
+    {
+      name: "CV reading",
+      kind: AiCapabilityKind.DOCUMENT_PARSER,
+      location: AiProcessingLocation.ON_DEVICE,
+      description: "Opens your PDF, Word or text CV and reads it into structured fields.",
+      note: "This is a document parser, not a language model. It reads the file you picked and nothing else.",
+    },
+    {
+      name: "CV skill extraction",
+      kind: AiCapabilityKind.RULE_BASED,
+      location: AiProcessingLocation.ON_DEVICE,
+      description:
+        "Finds skills, titles, employers, dates and languages using a fixed vocabulary and pattern rules.",
+      note: "Deterministic and offline. A skill is only listed when its phrase appears in your CV.",
+    },
+    {
+      name: "Job matching",
+      kind: AiCapabilityKind.RULE_BASED,
+      location: AiProcessingLocation.ON_DEVICE,
+      description:
+        "Scores each posting on six weighted signals: role, skills, experience, location, language and recency.",
+      note: "A transparent weighted score, not a machine-learning prediction. Every point is explained.",
+    },
+    {
+      name: "Madagascar eligibility check",
+      kind: AiCapabilityKind.RULE_BASED,
+      location: AiProcessingLocation.ON_DEVICE,
+      description:
+        "Reads the posting for statements about who may apply and whether a visa is sponsored.",
+      note: "Only what the posting states is treated as fact; silence is reported as 'not stated'.",
+    },
+    {
+      name: "Expat benefit evidence",
+      kind: AiCapabilityKind.RULE_BASED,
+      location: AiProcessingLocation.ON_DEVICE,
+      description:
+        "Finds accommodation, relocation, flights, leave and insurance claims with the sentence that proves each one.",
+      note: "Benefits are never assumed from a job being international; each claim carries its evidence.",
+    },
+    {
+      name: "Scam screening",
+      kind: AiCapabilityKind.RULE_BASED,
+      location: AiProcessingLocation.ON_DEVICE,
+      description:
+        "Flags upfront fees, unregistered employers, unrealistic pay and contact red flags.",
+      note: "A rule-based warning list, not a guarantee. Always verify the employer yourself.",
+    },
+    {
+      name: "Cover letter drafting",
+      kind: AiCapabilityKind.TEMPLATE,
+      location: AiProcessingLocation.ON_DEVICE,
+      description: "Writes a letter from your verified CV facts and the selected posting.",
+      note: "A grounded template, not a generative model. It reports which facts it could and could not use.",
+    },
+    {
+      name: "Interview coaching",
+      kind: AiCapabilityKind.TEMPLATE,
+      location: AiProcessingLocation.ON_DEVICE,
+      description:
+        "Builds practice questions from the posting and your CV and scores your answers on structure.",
+      note: "Question templates and a rubric, not a live AI interviewer.",
+    },
+    {
+      name: "AI drafting assistant",
+      kind: AiCapabilityKind.REMOTE_MODEL,
+      location: AiProcessingLocation.REMOTE,
+      description:
+        "An optional NVIDIA-hosted language model that explains a match, drafts a cover letter, or rewrites your summary.",
+      note: "Off until you turn it on. When on, only your CV facts and the posting text are sent to NVIDIA — never the CV file, your email, phone or address. Review every draft before you send it.",
+    },
+  ] as AiCapability[],
+  summary:
+    "Most capabilities run on your device as transparent rules and parsers. " +
+    "One optional drafting assistant uses NVIDIA's hosted model, and only when you " +
+    "turn it on — your CV file is never uploaded.",
+} as const;
 
 // --------------------------------------------------------------------------- cover letter
 
@@ -838,8 +981,10 @@ export interface InterviewQuestion {
   prompt: string;
   whyItMatters: string;
   structure: string[];
-  grounding: string[];
-  missingFacts: string[];
+  /** CV/posting facts the answer can lean on. Defaults to empty, as in Kotlin. */
+  grounding?: string[];
+  /** What the CV does not yet provide. Defaults to empty, as in Kotlin. */
+  missingFacts?: string[];
 }
 
 /** The full rehearsal set for one application. */
@@ -1314,6 +1459,227 @@ export interface ExpatIntelligence {
   topOpportunities: ShortlistEntry[];
   summary: string;
   generatedAtEpochMillis: number;
+}
+
+// --------------------------------------------------------------------------- alerts
+// Behaviour engines (alerts, auto-apply, submissions). Mirrors the Kotlin models the same
+// way the rest of this file does: one shape per concept, no behaviour beyond the tiny
+// derivations the screens read.
+
+/** How often a saved search should look for new postings. */
+export enum AlertFrequency {
+  DAILY = "DAILY",
+  WEEKLY = "WEEKLY",
+  MONTHLY = "MONTHLY",
+}
+
+export const ALERT_FREQUENCY_LABEL: Record<AlertFrequency, string> = {
+  [AlertFrequency.DAILY]: "Daily",
+  [AlertFrequency.WEEKLY]: "Weekly",
+  [AlertFrequency.MONTHLY]: "Monthly",
+};
+
+/** Which saved postings an alert is allowed to surface. */
+export enum AlertScope {
+  ANY_MATCH = "ANY_MATCH",
+  STRONG_ONLY = "STRONG_ONLY",
+  VISA_FRIENDLY = "VISA_FRIENDLY",
+}
+
+export const ALERT_SCOPE_LABEL: Record<AlertScope, string> = {
+  [AlertScope.ANY_MATCH]: "Any new match",
+  [AlertScope.STRONG_ONLY]: "Strong matches only",
+  [AlertScope.VISA_FRIENDLY]: "Visa-sponsoring only",
+};
+
+/**
+ * A saved search. Alerts are derived by re-scoring the live feed against this rule, so a
+ * new posting is caught the moment it appears rather than on a stored snapshot.
+ */
+export interface JobAlertRule {
+  id: string;
+  name: string;
+  /** Case-insensitive keywords matched against the title, employer and summary. */
+  keywords: string[];
+  countries: string[];
+  frequency: AlertFrequency;
+  scope: AlertScope;
+  minMatchScore: number;
+  createdAtEpochMillis: number;
+  enabled: boolean;
+}
+
+export function defaultJobAlertRule(overrides: Partial<JobAlertRule> = {}): JobAlertRule {
+  return {
+    id: "rule",
+    name: "Saved search",
+    keywords: [],
+    countries: [],
+    frequency: AlertFrequency.DAILY,
+    scope: AlertScope.ANY_MATCH,
+    minMatchScore: 60,
+    createdAtEpochMillis: 0,
+    enabled: true,
+    ...overrides,
+  };
+}
+
+/** A posting an alert rule caught, kept until the user dismisses or acts on it. */
+export interface JobAlert {
+  ruleId: string;
+  ruleName: string;
+  jobId: string;
+  jobTitle: string;
+  company: string;
+  country: string;
+  countryFlag: string;
+  matchScore: number;
+  isVisaFriendly: boolean;
+  detectedAtEpochMillis: number;
+  /** True once the user has opened it, so the unread badge is honest. */
+  read: boolean;
+}
+
+/** Shared notion of "this employer will sponsor a candidate from abroad". Mirrors `Job.isVisaFriendly`. */
+export function jobIsVisaFriendly(job: Job): boolean {
+  return (
+    job.visaSupport === VisaSupport.FULL_SPONSORSHIP ||
+    job.visaSupport === VisaSupport.SPONSORSHIP_AVAILABLE ||
+    job.visaSupport === VisaSupport.RELOCATION_PACKAGE
+  );
+}
+
+// --------------------------------------------------------------------------- auto-apply
+
+/**
+ * Where a queued job stands in the auto-apply flow. The flow is deliberately "prepare,
+ * never submit": [DRAFT_READY] means the CV and cover letter are ready for one-tap
+ * approval, not that anything was sent.
+ */
+export enum AutoApplyStatus {
+  QUEUED = "QUEUED",
+  DRAFT_READY = "DRAFT_READY",
+  APPROVED = "APPROVED",
+  SKIPPED = "SKIPPED",
+  BLOCKED = "BLOCKED",
+}
+
+export const AUTO_APPLY_STATUS_LABEL: Record<AutoApplyStatus, string> = {
+  [AutoApplyStatus.QUEUED]: "Queued",
+  [AutoApplyStatus.DRAFT_READY]: "Draft ready",
+  [AutoApplyStatus.APPROVED]: "Approved to send",
+  [AutoApplyStatus.SKIPPED]: "Skipped",
+  [AutoApplyStatus.BLOCKED]: "Blocked",
+};
+
+/** Why the engine put a job in the queue, or refused to. Always shown to the user. */
+export interface AutoApplyItem {
+  jobId: string;
+  jobTitle: string;
+  company: string;
+  country: string;
+  countryFlag: string;
+  matchScore: number;
+  sourceUrl: string;
+  status: AutoApplyStatus;
+  coverLetterId: string | null;
+  reason: string;
+  preparedAtEpochMillis: number;
+}
+
+// --------------------------------------------------------------------------- submissions
+
+/**
+ * Where a prepared application stands. The flow is deliberately **prepare → review → approve
+ * → submit**, with submission as its own state so a crash between "the user approved" and
+ * "the submission was recorded" can be recovered rather than lost.
+ */
+export enum DraftStatus {
+  DRAFT = "DRAFT",
+  READY_FOR_REVIEW = "READY_FOR_REVIEW",
+  APPROVED = "APPROVED",
+  NEEDS_RESUBMISSION = "NEEDS_RESUBMISSION",
+  SUBMISSION_PENDING = "SUBMISSION_PENDING",
+  SUBMISSION_SIMULATED = "SUBMISSION_SIMULATED",
+  SUBMISSION_SENT = "SUBMISSION_SENT",
+  SKIPPED = "SKIPPED",
+  BLOCKED = "BLOCKED",
+}
+
+export const DRAFT_STATUS_LABEL: Record<DraftStatus, string> = {
+  [DraftStatus.DRAFT]: "Draft",
+  [DraftStatus.READY_FOR_REVIEW]: "Ready for review",
+  [DraftStatus.APPROVED]: "Approved",
+  [DraftStatus.NEEDS_RESUBMISSION]: "Changed — re-approve",
+  [DraftStatus.SUBMISSION_PENDING]: "Submitting",
+  [DraftStatus.SUBMISSION_SIMULATED]: "Simulated (nothing sent)",
+  [DraftStatus.SUBMISSION_SENT]: "Sent",
+  [DraftStatus.SKIPPED]: "Skipped",
+  [DraftStatus.BLOCKED]: "Blocked",
+};
+
+/** True while the draft is waiting for the user, rather than the app. */
+export function draftAwaitsUser(status: DraftStatus): boolean {
+  return status === DraftStatus.READY_FOR_REVIEW || status === DraftStatus.NEEDS_RESUBMISSION;
+}
+
+/** One question the employer asked, and the answer the user reviewed. */
+export interface DraftAnswer {
+  question: string;
+  answer: string;
+}
+
+/** The outcome of one submission attempt, recorded so the flow can resume after a restart. */
+export interface SubmissionAttempt {
+  atEpochMillis: number;
+  /** The content hash at the moment of the attempt, so a stale attempt is detectable. */
+  contentHash: string;
+  outcome: string;
+  detail: string;
+  simulated: boolean;
+}
+
+/** A fully prepared application the user reviews before anything is sent. */
+export interface ApplicationDraft {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  company: string;
+  country: string;
+  countryFlag: string;
+  sourceUrl: string;
+  channelKey: string;
+  cvSummary: string;
+  coverLetterId: string | null;
+  coverLetterText: string;
+  answers: DraftAnswer[];
+  documents: string[];
+  status: DraftStatus;
+  /** Hash of the reviewed content right now. */
+  contentHash: string;
+  approvedHash: string | null;
+  approvedAtEpochMillis: number | null;
+  preparedAtEpochMillis: number;
+  updatedAtEpochMillis: number;
+  attempts: SubmissionAttempt[];
+  consentGiven: boolean;
+  remoteApplicationId: string | null;
+  confirmedAtEpochMillis: number | null;
+  reason: string;
+}
+
+/** True when the reviewed content matches the last approval and is ready to submit. */
+export function draftIsApproved(draft: ApplicationDraft): boolean {
+  return (
+    draft.approvedHash != null &&
+    draft.approvedHash === draft.contentHash &&
+    (draft.status === DraftStatus.APPROVED || draft.status === DraftStatus.SUBMISSION_PENDING)
+  );
+}
+
+/** True when the content changed after approval, so a fresh approval is required. */
+export function draftNeedsResubmission(draft: ApplicationDraft): boolean {
+  return draft.approvedHash != null && draft.approvedHash !== draft.contentHash;
 }
 
 // --------------------------------------------------------------------------- tiny helpers

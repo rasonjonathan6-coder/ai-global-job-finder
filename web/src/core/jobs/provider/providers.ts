@@ -13,10 +13,17 @@ import {
   type JsonFeed,
 } from "./feed";
 import { isoEpochMillis, SalaryParser } from "./text-parsing";
+import { defaultProviderCapabilities, type ProviderCapabilities } from "../search/search-strategy";
 
 /**
  * Translates one source's feed into `RawJob`s. Mirrors the Kotlin `JobProvider`: it only
  * translates, never scores or enriches, so a field the source did not send stays null.
+ *
+ * `capabilities` records what the source's API actually supports. It is a fact about the
+ * provider, established from its documentation and from what the feed does with a parameter,
+ * and it drives the search strategy: a provider that cannot filter server-side is fetched
+ * once and its results are filtered locally, so the app never claims a targeted search it
+ * did not run.
  */
 export interface JobProvider {
   readonly id: string;
@@ -24,6 +31,7 @@ export interface JobProvider {
   readonly homepage: string;
   readonly kind: ProviderKind;
   readonly documentationUrl: string;
+  readonly capabilities: ProviderCapabilities;
   fetch(keywords?: string[], limit?: number): Promise<RawJob[]>;
 }
 
@@ -75,6 +83,10 @@ export class RemotiveProvider implements JobProvider {
   readonly homepage = "https://remotive.com";
   readonly kind = ProviderKind.REMOTE_BOARD;
   readonly documentationUrl = "https://remotive.com/remote-jobs/api";
+  // Remotive documents a `search` parameter, but a live check on the production feed returns
+  // the same newest-first list with or without it, so it is recorded as not effective rather
+  // than claimed as a working filter.
+  readonly capabilities = defaultProviderCapabilities();
 
   constructor(private readonly feed: JsonFeed = HttpJsonFeed) {}
 
@@ -130,6 +142,7 @@ export class ArbeitnowProvider implements JobProvider {
   readonly homepage = "https://www.arbeitnow.com";
   readonly kind = ProviderKind.AGGREGATOR;
   readonly documentationUrl = "https://www.arbeitnow.com/blog/arbeitnow-api";
+  readonly capabilities = defaultProviderCapabilities({ pagination: true });
 
   constructor(private readonly feed: JsonFeed = HttpJsonFeed) {}
 
@@ -178,6 +191,10 @@ export class JobicyProvider implements JobProvider {
   readonly homepage = "https://jobicy.com";
   readonly kind = ProviderKind.REMOTE_BOARD;
   readonly documentationUrl = "https://jobicy.com/jobs-rss-feed";
+  // Jobicy exposes `industry`/`tag`, but a live check shows they only loosely steer the feed
+  // and never narrow it to the candidate's trade, so it is a broad sample, not a targeted
+  // search.
+  readonly capabilities = defaultProviderCapabilities();
 
   constructor(private readonly feed: JsonFeed = HttpJsonFeed) {}
 
@@ -233,6 +250,9 @@ export class HimalayasProvider implements JobProvider {
   readonly homepage = "https://himalayas.app";
   readonly kind = ProviderKind.REMOTE_BOARD;
   readonly documentationUrl = "https://himalayas.app/jobs/api";
+  // Himalayas documents no keyword parameter on its public jobs endpoint; the feed is a
+  // broad newest-first sample, so it is filtered locally.
+  readonly capabilities = defaultProviderCapabilities();
 
   constructor(private readonly feed: JsonFeed = HttpJsonFeed) {}
 

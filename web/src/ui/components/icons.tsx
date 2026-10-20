@@ -323,3 +323,37 @@ export const CheckCircleIcon = (p: IconProps) => (
   </Base>
 );
 
+/* ------------------------------------------------------------------ AI capability icons */
+
+export const CloudIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M7 18.5a4 4 0 0 1-.4-8 5.5 5.5 0 0 1 10.6 1.3A3.6 3.6 0 0 1 16.5 18.5z" />
+  </Base>
+);
+
+export const SmartphoneIcon = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="6.5" y="3" width="11" height="18" rx="2.5" />
+    <path d="M11 6.5h2M11 18h2" />
+  </Base>
+);
+
+export const VerifiedUserIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z" />
+    <path d="m9 11.5 2 2 4-4" />
+  </Base>
+);
+
+export const ChevronDownIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="m6 9.5 6 6 6-6" />
+  </Base>
+);
+
+export const ChevronUpIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="m6 14.5 6-6 6 6" />
+  </Base>
+);
+

@@ -7,7 +7,9 @@ import { JobListSkeleton } from "../components/Skeleton";
 import { useAppStore } from "../../state/app-store";
 import { isStrongMatch } from "../lib/job-stats";
 import { cx } from "../lib/cx";
-import { FilterIcon, SearchIcon } from "../components/icons";
+import { FilterIcon, GlobeIcon, SearchIcon } from "../components/icons";
+import { coverageHasTargetedSource, coverageSummary } from "../../core/jobs/search/search-strategy";
+import { queryMatches } from "../../core/jobs/search/query-expansion";
 
 type FilterKey = "all" | "eligible" | "sponsored" | "remote" | "strong";
 
@@ -36,19 +38,19 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
   const loading = refresh.status === "loading" || refresh.status === "idle";
 
   const results = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = query.trim();
     return jobs.filter((job) => {
       if (filter === "eligible" && job.eligibility === MadagascarEligibility.RESTRICTED) return false;
       if (filter === "sponsored" && job.eligibility !== MadagascarEligibility.VISA_SPONSORED) return false;
       if (filter === "remote" && job.workMode !== WorkMode.REMOTE) return false;
       if (filter === "strong" && !isStrongMatch(job)) return false;
       if (!needle) return true;
-      return (
-        job.title.toLowerCase().includes(needle) ||
-        job.company.toLowerCase().includes(needle) ||
-        job.country.toLowerCase().includes(needle) ||
-        job.matchedSkills.some((s) => s.toLowerCase().includes(needle))
-      );
+      // Trade-aware search, mirroring the Android `JobsViewModel`: a query matches when a
+      // posting carries the query itself or a local synonym of the trade it names. The haystack
+      // is the posting's own text; `matchedSkills` is deliberately excluded, because searching
+      // this app's own tag let an unrelated title surface on a generic skill.
+      const haystack = [job.title, job.company, job.country, job.city, job.summary].join(" ");
+      return queryMatches(needle, haystack);
     });
   }, [jobs, query, filter]);
 
@@ -105,6 +107,17 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
             );
           })}
         </div>
+
+        {!loading && refresh.coverage.totalRetrieved > 0 && (
+          <div className="flex items-start gap-1.5">
+            {coverageHasTargetedSource(refresh.coverage) ? (
+              <SearchIcon width={15} height={15} className="mt-0.5 shrink-0 text-info" />
+            ) : (
+              <GlobeIcon width={15} height={15} className="mt-0.5 shrink-0 text-warning" />
+            )}
+            <p className="text-[12px] leading-relaxed text-ink-secondary">{coverageSummary(refresh.coverage)}</p>
+          </div>
+        )}
 
         {loading ? (
           <JobListSkeleton count={5} />

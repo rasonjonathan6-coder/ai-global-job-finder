@@ -1,8 +1,11 @@
 import {
   LetterLanguage,
+  RELOCATION_PREFERENCE_META,
   RelocationPreference,
+  languageSkillDisplayLabel,
   type CandidateProfile,
   type CoverLetter,
+  type EducationEntry,
   type Job,
 } from "../models";
 
@@ -19,12 +22,6 @@ import {
 export interface CoverLetterGeneratorOptions {
   clock?: () => number;
   idFactory?: () => string;
-}
-
-interface EducationShape {
-  degree?: unknown;
-  institution?: unknown;
-  year?: unknown;
 }
 
 /** The values the writer had available, resolved once so all languages agree. */
@@ -47,9 +44,8 @@ interface Facts {
   missing: string[];
 }
 
-function firstEducation(profile: CandidateProfile): EducationShape | null {
-  const entry = profile.education.find((e): e is EducationShape => typeof e === "object" && e !== null);
-  return entry ?? null;
+function firstEducation(profile: CandidateProfile): EducationEntry | null {
+  return profile.education[0] ?? null;
 }
 
 function buildFacts(job: Job, profile: CandidateProfile): Facts {
@@ -59,19 +55,18 @@ function buildFacts(job: Job, profile: CandidateProfile): Facts {
       : `${job.city}, ${job.country}`;
 
   const edu = firstEducation(profile);
-  const degree = edu && typeof edu.degree === "string" ? edu.degree.trim() : "";
-  const institution = edu && typeof edu.institution === "string" ? edu.institution.trim() : "";
-  const year = edu && typeof edu.year === "number" && edu.year > 0 ? edu.year : null;
   const education =
-    degree.length === 0
+    edu == null
       ? null
-      : `${degree}${institution.length > 0 ? ` — ${institution}` : ""}${year != null ? ` (${year})` : ""}`;
+      : `${edu.degree}${edu.institution.trim().length > 0 ? ` — ${edu.institution}` : ""}${
+          edu.year > 0 ? ` (${edu.year})` : ""
+        }`;
 
   const matchedSkills = job.matchedSkills.slice(0, 6);
   const certifications = profile.certifications.map((cert) =>
     cert.year != null ? `${cert.name} (${cert.year})` : cert.name,
   );
-  const languages = profile.languages.map((lang) => lang.name);
+  const languages = profile.languages.map((lang) => languageSkillDisplayLabel(lang));
 
   const used: string[] = [`Posting: ${job.title} at ${job.company} (${location})`];
   if (job.source.trim().length > 0) used.push(`Source: ${job.source}`);
@@ -84,7 +79,7 @@ function buildFacts(job: Job, profile: CandidateProfile): Facts {
   if (certifications.length > 0) used.push(`Certifications: ${certifications.join(", ")}`);
   if (languages.length > 0) used.push(`Languages: ${languages.join(", ")}`);
   if (profile.relocationPreference !== RelocationPreference.UNKNOWN) {
-    used.push(`Relocation preference: ${profile.relocationPreference}`);
+    used.push(`Relocation preference: ${RELOCATION_PREFERENCE_META[profile.relocationPreference].label}`);
   }
   if (profile.summary.trim().length > 0) used.push("Professional summary from your CV");
 

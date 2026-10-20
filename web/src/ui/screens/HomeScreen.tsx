@@ -217,6 +217,7 @@ function ShortlistBanner({ onNavigate }: { onNavigate: (route: string) => void }
 function SourceStatus({ onRefresh }: { onRefresh: () => void }) {
   const { refresh } = useAppStore();
   const reports = refresh.reports;
+  const coverage = refresh.coverage;
   if (reports.length === 0) return null;
 
   const when = refresh.lastRefreshedAtEpochMillis
@@ -263,6 +264,20 @@ function SourceStatus({ onRefresh }: { onRefresh: () => void }) {
           </li>
         ))}
       </ul>
+      {/* Per-source coverage: which sources narrowed by keyword and which only returned a
+          broad sample. Same wording the jobs screen uses, so the two never disagree. */}
+      {coverage.sources.length > 0 && (
+        <ul className="mt-2 space-y-1 border-t border-card-stroke pt-2">
+          {coverage.sources.map((source) => (
+            <li key={source.providerId} className="flex items-center justify-between gap-3 text-[11.5px] text-ink-tertiary">
+              <span className="truncate">{source.providerName}</span>
+              <span className="shrink-0 tabular-nums">
+                {source.targeted ? "keyword search" : "broad sample"} · {source.relevantCount}/{source.totalCount}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

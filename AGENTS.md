@@ -2669,6 +2669,20 @@ diagnostics de sources, classement expat, historique d'actualisation, historique
 ont leurs moteurs portés mais pas encore leurs écrans web — c'est le prochain axe, onglet par
 onglet, sans régression sur l'existant.
 
+**Stage 62 — moteurs restants et catalogue IA (fait).** Trois moteurs « on-device » encore non
+portés le sont maintenant : lettre de motivation (`cover-letter-generator.ts`, éducation
+sérialisée ajoutée à l'exporteur Kotlin), coach d'entretien (`interview-coach.ts`, champ
+`missingFacts` ajouté au modèle), et le **catalogue de capacités IA**. `AiScreen.tsx` ne
+liste plus des capacités codées en dur : il rend une `TransparencyCard` pilotée par
+`AI_CAPABILITY_CATALOG` / `AI_CAPABILITY_KIND_META` / `AI_PROCESSING_LOCATION_META` (portés
+depuis `AiCapabilityCatalog`, `AiCapabilityKind`, `AiProcessingLocation`). La carte est
+repliée par défaut (« See the full breakdown ») et déplie les 9 capacités avec leur libellé de
+type (pastille colorée par `kind`), l'icône nuage/téléphone selon `location` et la note
+d'honnêteté — mêmes libellés que le Kotlin `AiCapabilityRow`. Fixtures Stage 62 ajoutées à
+`Stage58GoldenParityExportTest.kt` ; `kotlin-parity.json` régénéré. **Vérifications :** web
+`npm run typecheck` + `npm test` → **326 tests, 0 échec** (parité 215, job-mapper 87,
+providers 14, format 6, BottomNav 2, AiScreen 1, ShortlistScreen 1) ; `npm run build` OK.
+
 **Stage 63 — écran shortlist web (fait).** `ui/screens/ShortlistScreen.tsx` +
 `ui/components/ReadinessRing.tsx` portent l'écran Android : en-tête, résumé héros, tableau de
 qualité, cartes d'entrée (badges « Stated route in » via `shortlistHasOfficialRoute`),
@@ -2709,6 +2723,198 @@ Le workflow Pages est rendu résilient : il construit le PWA, puis **saute** le 
 (`POST /repos/.../pages` → 403). **Action manuelle restante** : Settings → Pages → Source =
 « GitHub Actions », puis relancer le workflow. URL alors : `https://rasonjonathan6-coder.github.io/
 ai-global-job-finder/download.html`.
+
+## Stage 64 — architecture unifiée et parité inter-plateformes
+
+**Objectif.** Faire évoluer ensemble Android, Web/PWA et (à terme) iOS : préserver l'existant,
+rendre la logique métier réutilisable, viser une **vraie** parité de cœur partagé (pas seulement
+des UI qui se ressemblent). Android reste la source de vérité.
+
+**Audit (état réel, mesuré).** Android : **21 écrans**, ~**44 600 LOC** main, **725 tests,
+0 échec** (3 sondes live opt-in *skipped*). Web : **6 écrans**, ~**14 600 LOC**,
+**7 fichiers de test / 326 tests, 0 échec**. Fournisseurs : 13 côté Android (dont 8 liés à des
+ATS), 3 utilisables en navigateur (CORS) côté web. Le harnais de parité (`kotlin-parity.json` +
+`parity.test.ts`) couvre déjà **24 moteurs** sur 9 scénarios, dont la chaîne Stage 62
+(shortlist → plan → intelligence → lettre → entretien → catalogue IA). Aucun assistant IA
+distant, aucun import de CV, aucune alerte/auto-apply côté web.
+
+**Écarts identifiés.** *Moteurs non portés :* `JobFreshnessEngine`, `ExpatRankingEngine`,
+`QueryExpansion`, `SearchStrategy`, moteurs alertes/auto-apply/submissions/adaptation CV, et
+l'analyse CV (le parsing PDF reste lié à la plateforme). `ExpatOpportunityEngine` existe côté
+web mais n'est pas verrouillé par une fixture. *Écrans web manquants (15) :* détail candidature,
+lettre, entretien, scam, alertes, auto-apply, guide expat, diagnostics, classement expat,
+historiques (actualisation, soumission), import/adaptation CV, intelligence expat, assistant.
+*Filtrage Jobs :* les filtres web sont une version simplifiée du `JobsUiState` Android — à
+porter pour une parité stricte.
+
+**Livrables.** `docs/ARCHITECTURE.md` (référence inter-plateformes : les 3 couches — cœur
+partagé / adaptateurs / UI — la **matrice de capacités**, le **contrat de la couche 1**, le plan
+Stage 65→72 et la stratégie de test) ; `docs/web-parity.md` (le fichier déjà cité par trois
+sources mais absent : parité + sources CORS + proxy optionnel) ; `web/scripts/export-kotlin-fixtures.sh`
+(le `npm run parity:export` déclaré dans `package.json` mais absent : exporte les fixtures Kotlin
+puis relance typecheck + tests web).
+
+**Décision d'architecture (recommandation).** Trois options : (A) SSOT Kotlin + contrat golden
+— *l'état actuel, déjà vert* ; (B) **Kotlin Multiplatform** (`:core` commun → JVM/Android,
+JS/Wasm web, Native iOS) ; (C) cœur côté serveur — **rejeté** (détruit la promesse on-device,
+hors-ligne et privée). Recommandation : **A maintenant, B comme destination, après un spike
+prouvé**. Étape 1 : figer le contrat de la couche 1 (déjà respecté par les moteurs Kotlin purs).
+Étape 2 : compiler `MatchingEngine` en Kotlin/JS et faire tourner la **fixture de parité
+existante** dessus depuis `web/`, en mesurant bundle et build. Étape 3 : seulement si le spike
+est vert, migrer la couche 1 moteur par moteur (le portage TS reste jusqu'à ce que le binding
+KMP passe la même fixture), puis iOS devient une cible supplémentaire.
+
+**Contrat de la couche 1 (à faire respecter en revue).** Pur (fonctions pures, horloge injectée,
+aucune E/S) ; honnête (un champ absent reste `UNKNOWN`/`null`, jamais inventé ; `official = true`
+seulement si l'offre l'affirme) ; déterministe (même entrée + même horloge ⇒ même sortie
+octet pour octet) ; E/S sérialisable (JSON, pas de type plateforme) ; fixture **versionnée**
+(`meta.stage`). Les adaptateurs de couche 2 sont énumérés par plateforme dans le document.
+
+**Vérifications.** Android `:app:testDebugUnitTest` → **BUILD SUCCESSFUL**, **725 tests,
+0 échec**, 3 *skipped*. Web : `npm run typecheck` OK, `npm test` → **326 tests / 7 fichiers,
+0 échec**, `npm run parity:export` exécuté de bout en bout (export Kotlin + typecheck + tests
+verts).
+
+**Reste à faire.** Stages 65–72 du plan : fraîcheur/opportunité, classement + intention de
+recherche, moteurs de comportement, partage de l'analyse CV, passe de parité des écrans web,
+spike KMP, IA distante web (décision), iOS.
+
+## Stage 65 — parité fraîcheur & opportunité expatriée
+
+**Objectif.** Étendre le harnais de parité existant à deux moteurs restés hors contrat : porter
+`JobFreshnessEngine` en TypeScript et **verrouiller** `ExpatOpportunityEngine` (fichier web
+présent mais non exercé). Android reste la source de vérité ; on porte la logique, on ne
+redessine rien.
+
+**Livrables.**
+- `web/src/core/jobs/freshness/job-freshness-engine.ts` — port fidèle et pur du moteur Kotlin.
+  `Freshness` = FRESH (< 2 j) / RECENT (< 14 j) / AGING (≤ seuil) / STALE (> seuil) / UNKNOWN.
+  Horloge injectée ; **une date de publication absente ou future reste `UNKNOWN`** (aucune date
+  inventée). `retrievedAtEpochMillis` (heure de collecte de l'app) ne sert qu'à la phrase
+  explicative, jamais à décider la fraîcheur. Seuil par défaut 120 j, constructeur configurable.
+- `Stage58GoldenParityExportTest.kt` — deux sections ajoutées, `meta.stage` passé à 65 :
+  `freshness` (10 cas limites : date nulle, date future, époque 0, bornes 1/2/13/14/120/121 j,
+  absence de date de collecte, plus une fenêtre personnalisée de 30 j) et `expatOpportunity`
+  (9 scénarios × 5 variantes : réel, sans *fit*, `scamRisk = HIGH`, éligibilité restreinte,
+  lien expiré).
+- `web/src/core/parity/parity.test.ts` — deux blocs `describe` de plus : `stage 65 job freshness
+  engine` et `stage 65 expatriate opportunity engine`, ce dernier vérifiant aussi le plafonnement
+  + disqualification sur arrêt dur et la règle « un avantage CONFIRMED a toujours une preuve ».
+
+**Pourquoi c'est un vrai verrou (et pas un test décoratif).** Les deux sections sont générées
+par les moteurs Kotlin réels et comparées en `toEqual` profond. Vérifié par **mutation** : passer
+la borne web de 2 à 3 jours fait échouer 1 test ; passer le plafond de disqualification de 35 à
+40 fait échouer 6 tests. Une dérive du port échoue donc localement, sur le moteur fautif.
+
+**Vérifications.** Android `:app:testDebugUnitTest` → **BUILD SUCCESSFUL**, **74 classes,
+725 tests, 0 échec**, 3 *skipped*. Web : `npm run typecheck` OK, `npm test` → **348 tests /
+7 fichiers, 0 échec** (+22), `npm run build` OK (PWA, 428,17 KiB precache), `npm run parity:export`
+vert de bout en bout.
+
+**Reste à faire (Stage 66+).** Classement expat + intention de recherche (`ExpatRankingEngine`,
+`QueryExpansion`, `SearchStrategy`), moteurs de comportement (alertes, auto-apply, soumissions),
+partage de l'analyse CV, passe de parité des écrans web, spike KMP, décision IA distante web, iOS.
+
+## Stage 66 — parité recherche, stratégie de sources & classement expat
+
+**Objectif.** Porter en web les trois capacités Kotlin restées hors contrat — expansion de
+requête, stratégie de recherche pilotée par les capacités des sources, classement expatrié — et
+les **verrouiller** dans le harnais de parité. Android reste la source de vérité.
+
+**Livrables.**
+- `web/src/core/jobs/search/query-expansion.ts` — port de `QueryExpansion` : taxonomie de
+  synonymes de métiers (10 groupes), deux *clusters* de proximité (mécanique de maintenance ;
+  équipement rotatif / industrie lourde), expansion `expand`, `isTradeQuery`, `knownQueryPhrases`
+  et `queryMatches`. Règle clé : un terme de métier **complet** se matche en mot entier (« pump »
+  ne doit pas matcher « pumpkin ») ; un terme **partiel** se matche en préfixe de mot (≥ 3
+  caractères, « rotat » trouve « Rotating Equipment »).
+- `web/src/core/jobs/search/search-strategy.ts` — port de `SearchStrategy` : `planFor` lit
+  `ProviderCapabilities` pour décider si une source filtre côté serveur (jeu de mots-clés par
+  rôle) ou renvoie un échantillon large filtré localement ; `coverageFrom` construit le rapport
+  `SearchCoverage` (sources ciblées/échantillon, pertinents/retrouvés, phrase honnête).
+- `web/src/core/jobs/provider/providers.ts` — champ `capabilities` ajouté aux 4 fournisseurs web
+  (Remotive, Arbeitnow, Jobicy, Himalayas) ; `job-pipeline.ts` déclenche une recherche pilotée
+  par les capacités et publie `RefreshState.coverage` dans le store.
+- `web/src/core/jobs/expat-ranking-engine.ts` — logique de `reasons` corrigée (imports
+  `BenefitFinding`, `ExpatOpportunityBand`, `opportunityConfidenceIsEnough`, …).
+- `web/src/ui/screens/JobsScreen.tsx` — la recherche de l'écran passe par `queryMatches` sur le
+  texte propre du posting (titre, entreprise, pays, ville, résumé) ; `matchedSkills` est
+  **exclu** comme côté Kotlin. Bandeau `SearchCoverage` (icône loupe/globe + résumé) affiché
+  sous les filtres, miroir exact de `JobsScreen.kt`.
+- `Stage58GoldenParityExportTest.kt` — trois sections ajoutées, `meta.stage` passé à 66 :
+  `queryExpansion` (12 cas + 70 phrases connues + tables de correspondance), `searchStrategy`
+  (12 plans + rapport de couverture + couverture vide), `expatRanking` (classement complet,
+  sous-ensemble inversé, état vide).
+- `web/src/core/parity/parity.test.ts` — trois blocs `describe` de plus (`stage 66 query
+  expansion`, `stage 66 search strategy`, `stage 66 expat ranking engine`). La stratégie est
+  aussi comparée aux capacités des **vrais** fournisseurs web (`defaultProviders()`).
+
+**Pourquoi c'est un vrai verrou (et pas un test décoratif).** Les trois sections sont générées
+par les moteurs Kotlin réels et comparées en `toEqual` profond. Vérifié par **mutation** : porter
+le plancher de préfixe de 3 à 4 caractères fait échouer 2 tests. Le classement vérifie en plus
+que le sous-ensemble inversé donne le même ordre (déterminisme) et qu'un posting disqualifié est
+plafonné à 35 et jamais placé au-dessus d'un posting actionnable.
+
+**Vérifications.** Web : `npm run typecheck` OK, `npm test` → **381 tests / 7 fichiers, 0 échec**
+(+33), `npm run build` OK (PWA). Android inchangé (le port n'altère aucune source Kotlin).
+
+**Reste à faire (Stage 67+).** Moteurs de comportement (alertes, auto-apply, soumissions),
+partage de l'analyse CV, passe de parité des écrans web, spike KMP, décision IA distante web,
+iOS.
+
+## Stage 67 — parité des moteurs de comportement (alertes, auto-apply, soumissions)
+
+**Objectif.** Porter en web les moteurs qui *agissent* sur un flux déjà scoré — alertes de
+recherche, file d'auto-apply sûre, contrat de soumission — et les verrouiller dans le harnais de
+parité. Android reste la source de vérité ; aucun écran Android n'est modifié.
+
+**Livrables.**
+- `web/src/core/alerts/alert-engine.ts` — port de `JobAlertEngine` : `matches(rule, job)` (mots
+  clés, pays, plancher de score, périmètre `AlertScope`), `alertsFor(rules, jobs, now)` avec
+  dédoublonnage et tri par date, et la garantie qu'une règle désactivée ne produit jamais d'alerte.
+- `web/src/core/autoapply/auto-apply-engine.ts` — port de `AutoApplyEngine` (seuil 70 par
+  défaut) : `decide(job)` applique les barrières dans l'ordre (scam → éligibilité → seuil → lien
+  manquant), `buildQueue(jobs, existing)` trie par `matchScore` décroissant, **écarte** les
+  postings `SKIPPED` et **préserve** un statut `APPROVED` ou `SKIPPED` existant au rafraîchissement.
+- `web/src/core/submissions/` — le contrat de soumission complet, en six modules :
+  `submission-channel.ts` (`SubmissionChannel.infer(job, sourceUrl)` : ATS_API / EMAIL /
+  EMPLOYER_PORTAL / UNKNOWN ; URL vide ⇒ UNKNOWN, jamais une supposition),
+  `submission-capability.ts` (`SubmissionCapability.sendsNothing`, `supportedChannelCount`,
+  `statement(channel)`), `submission-identity.ts` (`SubmissionKey.of(job)` — clé
+  `entreprise|titre|pays` normalisée, avec repli sur le titre quand l'employeur est vide),
+  `submission-classifier.ts` (`OfficialSubmissionClassifier` : un 2xx **sans** identifiant, un 409
+  et un 5xx restent *inconnus*, jamais un succès), `submission-lifecycle.ts` (mapping de chaque
+  `DraftStatus` vers `SubmissionLifecycle`) et `submission-preflight.ts`
+  (`SubmissionPreflightCheck` : les sept cas qui gardent un envoi réel — non approuvé, pas de
+  route, contenu modifié, contenu manquant, pas de consentement, déjà postulé, autorisé).
+- `Stage58GoldenParityExportTest.kt` — trois sections ajoutées, `meta.stage` passé à 67 :
+  `alertEngine` (matrice `matches` de 4 règles × 9 postings + liste d'alertes),
+  `autoApply` (`decisions` par posting, `baseQueue`, `preservedQueue`) et `submission`
+  (`channels`, `capability`, `inference`, `identity`, `blankEmployerKey`, `classifier`,
+  `lifecycle`, `preflights`).
+- `web/src/core/parity/parity.test.ts` — trois blocs `describe` de plus (`stage 67 job alert
+  engine`, `stage 67 auto-apply engine`, `stage 67 submission engines`) ; 11 tests.
+- `web/src/ui/screens/AiScreen.tsx` — la carte « Prepared, never sent for you » et la ligne
+  « Honest by design » lisent `SubmissionCapability.sendsNothing` / `supportedChannelCount` :
+  l'affirmation à l'écran est **dérivée du moteur**, pas écrite à la main.
+
+**Pourquoi c'est un vrai verrou.** Les trois sections sont produites par les moteurs Kotlin réels
+et comparées en `toEqual` profond. Le test de soumission vérifie explicitement qu'aucune ambiguïté
+(2xx sans id, 409, 5xx) n'est convertie en succès, et que la préflight refuse chacun des six cas
+interdits. Régénérer après tout changement Kotlin :
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ANDROID_HOME=/home/openhands/android-sdk
+export PATH=$JAVA_HOME/bin:$PATH
+./gradlew :app:testDebugUnitTest --tests "com.aiglobal.jobfinder.Stage58GoldenParityExportTest"
+cd web && npm run typecheck && npm test
+```
+
+**Vérifications.** Web : `npm run typecheck` OK, `npm test` → **393 tests / 7 fichiers, 0 échec**
+(+12). Android : suite inchangée (le port n'altère aucune source Kotlin).
+
+**Reste à faire (Stage 68+).** Partage de l'analyse CV, passe de parité des écrans web (alertes,
+auto-apply, historique de soumission), spike KMP, décision IA distante web, iOS.
 
 ## Conventions
 

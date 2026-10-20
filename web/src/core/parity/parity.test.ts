@@ -2,27 +2,42 @@ import { describe, expect, it } from "vitest";
 
 import fixture from "./kotlin-parity.json";
 import {
+  AI_CAPABILITY_CATALOG,
+  AI_CAPABILITY_KIND_META,
+  AI_PROCESSING_LOCATION_META,
   ALL_BENEFIT_TYPES,
+  AnswerConfidence,
   EmploymentType,
   JobBenefitTypes,
   LanguageLevel,
+  LetterLanguage,
+  MadagascarEligibility,
   RelocationPreference,
   SalaryPeriod,
   ScamRisk,
   ScamSignalTone,
   ScamVerdict,
   UNKNOWN_VERIFICATION,
+  VerificationState,
   WorkMode,
   blockerSummary,
+  coverLetterPlainText,
+  coverLetterWordCount,
+  letterLanguageForCountry,
   orderedBlockers,
   readinessBlockerIsProfileGap,
   shortlistHasOfficialRoute,
   shortlistNextStep,
   shortlistSourceNote,
+  type AnswerFeedback,
   type CandidateProfile,
   type CountryOpportunity,
+  type CoverLetter,
   type EligibilityReason,
   type ExpatPreferences,
+  type InterviewPrep,
+  type InterviewQuestion,
+  type InterviewReadiness,
   type Job,
   type LanguageSkill,
   type MatchReason,
@@ -31,6 +46,8 @@ import {
   type ShortlistEntry,
   type ShortlistState,
 } from "../models";
+import { CoverLetterGenerator } from "../coverletter/cover-letter-generator";
+import { InterviewCoach, InterviewQuestionBank } from "../interview/interview-coach";
 import {
   planDoneCount,
   planIsReadyToApply,
@@ -47,6 +64,9 @@ import { ExpatIntelligenceEngine } from "../expat/expat-intelligence-engine";
 import { assessEligibility } from "../jobs/engine/eligibility-engine";
 import { MatchingEngine } from "../jobs/engine/matching-engine";
 import { InternationalFitEngine } from "../jobs/engine/international-fit-engine";
+import { JobFreshnessEngine } from "../jobs/freshness/job-freshness-engine";
+import { ExpatOpportunityEngine } from "../expat/expat-opportunity-engine";
+import { BenefitFinding } from "../expat/opportunity";
 import { OfferVerificationEngine } from "../jobs/engine/offer-verification-engine";
 import { ApplicationUrlInspector } from "../apply/application-url-inspector";
 import { buildEvidence } from "../jobs/engine/job-evidence-engine";
@@ -66,7 +86,53 @@ import { extractBenefits } from "../expat/expat-benefit-extractor";
 import { assessExpatBenefits } from "../expat/expat-benefits-engine";
 import { toEurPerYear } from "../geo/currency-converter";
 import { scanForScams } from "../scam/scam-detector";
-import { rawJob, type RawJob } from "../jobs/provider/raw-job";
+import { rawJob, ProviderKind, type RawJob } from "../jobs/provider/raw-job";
+import { defaultProviders, type JobProvider } from "../jobs/provider/providers";
+import { expand, isTradeQuery, knownQueryPhrases, queryMatches } from "../jobs/search/query-expansion";
+import {
+  SearchStrategy,
+  broadSampleSourceCount,
+  coverageHasRelevantResults,
+  coverageHasTargetedSource,
+  coverageRelevantSharePercent,
+  coverageSummary,
+  defaultProviderCapabilities,
+  targetedSourceCount,
+  type CoverageDiagnostic,
+  type ProviderCapabilities,
+} from "../jobs/search/search-strategy";
+import { ExpatRankingEngine } from "../jobs/expat-ranking-engine";
+import {
+  expatRankingActionableCount,
+  expatRankingDisqualifiedCount,
+  expatRankingTopOpportunities,
+  type ExpatRankedJob,
+  type ExpatRankingState,
+} from "../jobs/expat-ranking";
+import { JobAlertEngine } from "../alerts/alert-engine";
+import { AutoApplyEngine } from "../autoapply/auto-apply-engine";
+import {
+  AlertFrequency,
+  AlertScope,
+  AutoApplyStatus,
+  DraftStatus,
+  type ApplicationDraft,
+  type AutoApplyItem,
+  type JobAlert,
+  type JobAlertRule,
+} from "../models";
+import { SubmissionKey } from "../submissions/submission-identity";
+import { SubmissionChannel } from "../submissions/submission-channel";
+import { SubmissionCapability } from "../submissions/submission-capability";
+import {
+  classifySubmission,
+  type OfficialSubmissionOutcome,
+} from "../submissions/submission-classifier";
+import {
+  SubmissionLifecycle,
+  submissionLifecycleOf as lifecycleOfDraft,
+} from "../submissions/submission-lifecycle";
+import { evaluateSubmissionPreflight } from "../submissions/submission-preflight";
 
 const CLOCK = fixture.meta.clockMillis;
 const DAY_MS = 86_400_000;
@@ -86,7 +152,12 @@ function buildProfile(): CandidateProfile {
     yearsOfExperience: p.yearsOfExperience,
     skills: [...p.skills],
     industries: [...p.industries],
-    education: [],
+    education: p.education.map((e) => ({
+      degree: e.degree,
+      institution: e.institution,
+      country: e.country,
+      year: e.year,
+    })),
     certifications: p.certifications.map((c) => ({ name: c.name, issuer: c.issuer, year: c.year })),
     languages: p.languages.map(
       (l): LanguageSkill => ({
@@ -674,9 +745,636 @@ describe("Kotlin parity — golden fixtures", () => {
       expect(intelligenceJson(empty)).toEqual(golden.empty);
     });
   });
+
+  describe("stage 62 cover letter generator", () => {
+    const generator = new CoverLetterGenerator({ clock: () => CLOCK, idFactory: () => "letter-fixed" });
+
+    it("picks the same language per country as LetterLanguage.forCountry", () => {
+      const expected = fixture.coverLetters.languageByCountry;
+      for (const [country, language] of Object.entries(expected)) {
+        expect(letterLanguageForCountry(country)).toBe(language as LetterLanguage);
+      }
+    });
+
+    it.each(fixture.coverLetters.letters.map((l) => [l.jobId, l] as const))(
+      "%s matches in every language",
+      (_id, entry) => {
+        const job = jobFromScenario(fixture.scenarios.find((s) => s.id === entry.jobId)!);
+        for (const { language, letter } of entry.languages) {
+          const produced = generator.generate(job, profile, language as LetterLanguage);
+          expect(coverLetterJson(produced)).toEqual(letter);
+        }
+      },
+    );
+  });
+
+  describe("stage 62 interview coach", () => {
+    const coach = new InterviewCoach({ clock: () => CLOCK });
+    const bank = new InterviewQuestionBank();
+
+    it.each(fixture.interview.map((i) => [i.id, i] as const))("%s matches", (_id, golden) => {
+      const job = jobFromScenario(fixture.scenarios.find((s) => s.id === golden.id)!);
+
+      expect(bank.focusAreas(job, profile)).toEqual(golden.focusAreas);
+
+      const prep = coach.prep(job, profile);
+      expect(prepJson(prep)).toEqual(golden.prep);
+
+      // Rebuild the same partial/full attempt sets the exporter used, then compare readiness.
+      const partial = prep.questions
+        .filter((_q, index) => index % 2 === 0)
+        .map((q, index) => ({
+          questionId: q.id,
+          confidence: index % 3 === 0 ? AnswerConfidence.CONFIDENT : AnswerConfidence.GETTING_THERE,
+          atEpochMillis: CLOCK,
+        }));
+      const full = prep.questions.map((q) => ({
+        questionId: q.id,
+        confidence: AnswerConfidence.CONFIDENT,
+        atEpochMillis: CLOCK,
+      }));
+
+      expect(readinessJson(coach.readiness(prep.questions, []))).toEqual(golden.readiness.none);
+      expect(readinessJson(coach.readiness(prep.questions, partial))).toEqual(golden.readiness.partial);
+      expect(readinessJson(coach.readiness(prep.questions, full))).toEqual(golden.readiness.full);
+
+      const firstQuestion = prep.questions[0];
+      for (const entry of golden.feedback) {
+        expect(feedbackJson(coach.feedback(firstQuestion, entry.answer))).toEqual(entry.feedback);
+      }
+    });
+  });
+
+  describe("stage 62 AI capability catalog", () => {
+    it("matches the Kotlin AiCapabilityCatalog exactly", () => {
+      expect(aiCapabilitiesJson()).toEqual(fixture.aiCapabilities);
+    });
+
+    it("labels every kind and location", () => {
+      for (const capability of AI_CAPABILITY_CATALOG.capabilities) {
+        expect(AI_CAPABILITY_KIND_META[capability.kind].label).toBeTruthy();
+        expect(AI_PROCESSING_LOCATION_META[capability.location].label).toBeTruthy();
+      }
+    });
+  });
+
+  // ----------------------------------------------------------------- stage 65: freshness & expatriate opportunity
+
+  describe("stage 65 job freshness engine", () => {
+    const engine = new JobFreshnessEngine();
+    const custom30 = new JobFreshnessEngine(30);
+    const base = jobFromScenario(fixture.scenarios[0]);
+
+    it.each(fixture.freshness.map((f) => [f.id, f] as const))("%s matches", (_id, c) => {
+      const job: Job = {
+        ...base,
+        postedAtEpochMillis: c.input.postedAtEpochMillis,
+        retrievedAtEpochMillis: c.input.retrievedAtEpochMillis,
+      };
+      const assessment = engine.assess(job, CLOCK);
+      expect({ freshness: assessment.freshness, label: assessment.label, detail: assessment.detail }).toEqual(c.output);
+      expect(custom30.assess(job, CLOCK).freshness).toBe(c.custom30);
+    });
+
+    it("never invents a date: a missing or future date is UNKNOWN", () => {
+      for (const id of ["null-date", "future-date", "epoch-zero"]) {
+        const c = fixture.freshness.find((f) => f.id === id)!;
+        expect(c.output.freshness).toBe("UNKNOWN");
+      }
+    });
+  });
+
+  describe("stage 65 expatriate opportunity engine", () => {
+    const engine = new ExpatOpportunityEngine({ clock: () => CLOCK });
+
+    function expatAssessment(scenario: Scenario) {
+      return assessExpatBenefits(jobFromScenario(scenario).benefitEvidence, preferences, scenario.output.salaryEurPerYear);
+    }
+
+    function fitFor(scenario: Scenario) {
+      return new InternationalFitEngine().assess(jobFromScenario(scenario), profile, expatAssessment(scenario));
+    }
+
+    function opportunityJson(o: ReturnType<ExpatOpportunityEngine["assess"]>) {
+      return {
+        score: o.score,
+        band: o.band,
+        confidence: o.confidence,
+        confidenceNote: o.confidenceNote,
+        hardStops: o.hardStops,
+        disqualified: o.disqualified,
+        labels: o.labels,
+        routeSummary: o.routeSummary,
+        explanation: o.explanation,
+        dimensions: o.dimensions.map((d) => ({
+          dimension: d.dimension,
+          points: d.points,
+          maxPoints: d.maxPoints,
+          summary: d.summary,
+          strength: d.strength,
+        })),
+        claims: o.claims.map((c) => ({
+          label: c.label,
+          finding: c.finding,
+          evidence: c.evidence,
+          sourceUrl: c.sourceUrl,
+          sourceType: c.sourceType,
+          explicit: c.explicit,
+          limitations: c.limitations,
+        })),
+        salary: o.salary
+          ? {
+              originalAmount: o.salary.originalAmount,
+              originalCurrency: o.salary.originalCurrency,
+              originalPeriod: o.salary.originalPeriod,
+              eurPerYear: o.salary.eurPerYear,
+              rateSource: o.salary.rateSource,
+              rateAsOfEpochMillis: o.salary.rateAsOfEpochMillis,
+              converted: o.salary.converted,
+              note: o.salary.note,
+            }
+          : null,
+      };
+    }
+
+    it.each(fixture.expatOpportunity.map((o) => [o.id, o] as const))("%s matches", (_id, expected) => {
+      const scenario = fixture.scenarios.find((s) => s.id === expected.id)!;
+      const job = jobFromScenario(scenario);
+      const fit = fitFor(scenario);
+
+      expect(opportunityJson(engine.assess(job, preferences, fit))).toEqual(expected.opportunity);
+      expect(opportunityJson(engine.assess(job, preferences, null))).toEqual(expected.noFit);
+      expect(opportunityJson(engine.assess({ ...job, scamRisk: ScamRisk.HIGH }, preferences, fit))).toEqual(
+        expected.highScamRisk,
+      );
+      expect(
+        opportunityJson(engine.assess({ ...job, eligibility: MadagascarEligibility.RESTRICTED }, preferences, fit)),
+      ).toEqual(expected.restrictedEligibility);
+      expect(
+        opportunityJson(
+          engine.assess({ ...job, verification: { ...job.verification, link: VerificationState.INACCESSIBLE } }, preferences, fit),
+        ),
+      ).toEqual(expected.expiredLink);
+    });
+
+    it("caps and disqualifies a posting with a hard stop", () => {
+      for (const o of fixture.expatOpportunity) {
+        expect(o.highScamRisk.disqualified).toBe(true);
+        expect(o.highScamRisk.score).toBeLessThanOrEqual(35);
+        expect(o.restrictedEligibility.disqualified).toBe(true);
+        expect(o.expiredLink.disqualified).toBe(true);
+      }
+    });
+
+    it("treats silence as UNKNOWN, never as a confirmed benefit", () => {
+      for (const o of fixture.expatOpportunity) {
+        for (const claim of o.opportunity.claims) {
+          if (claim.finding === BenefitFinding.CONFIRMED) {
+            expect(claim.evidence.length).toBeGreaterThan(0);
+          }
+        }
+      }
+    });
+  });
+
+  // --------------------------------------------- stage 66: search engine, query expansion, ranking
+
+  describe("stage 66 query expansion", () => {
+    it("exposes exactly the Kotlin taxonomy's known phrases", () => {
+      expect(Array.from(knownQueryPhrases()).sort()).toEqual(fixture.queryExpansion.knownPhrases);
+    });
+
+    it.each(fixture.queryExpansion.cases.map((c) => [JSON.stringify(c.query), c] as const))(
+      "%s matches",
+      (_id, c) => {
+        expect(expand(c.query)).toEqual(c.expanded);
+        expect(isTradeQuery(c.query)).toBe(c.isTrade);
+        for (const [haystack, expected] of Object.entries(c.matches)) {
+          expect(queryMatches(c.query, haystack)).toBe(expected);
+        }
+      },
+    );
+
+    it("never fires a complete term inside another word, but a partial term is a word prefix", () => {
+      expect(queryMatches("pump", "Pumpkin Farmer")).toBe(false);
+      expect(queryMatches("pumpkin", "Pumpkin Farmer")).toBe(true);
+      expect(queryMatches("rotat", "Rotating Equipment Maintenance Technician")).toBe(true);
+      // Three characters is the prefix floor; two is not.
+      expect(queryMatches("pum", "Pump Technician")).toBe(true);
+      expect(queryMatches("pu", "Pump Technician")).toBe(false);
+      expect(queryMatches("  ", "anything")).toBe(true);
+    });
+  });
+
+  describe("stage 66 search strategy", () => {
+    /** The Kotlin capability facts, keyed by provider id, that drive every plan. */
+    function capabilitiesFor(providerId: string): ProviderCapabilities {
+      switch (providerId) {
+        case "adzuna":
+          return defaultProviderCapabilities({ serverSideKeyword: true, countryFilter: true, pagination: true });
+        case "arbeitnow":
+        case "lever":
+          return defaultProviderCapabilities({ pagination: true });
+        case "eures":
+        case "smartrecruiters":
+        case "workday":
+          return defaultProviderCapabilities({ serverSideKeyword: true, pagination: true });
+        case "jooble":
+          return defaultProviderCapabilities({ serverSideKeyword: true, countryFilter: true, pagination: true });
+        default:
+          return defaultProviderCapabilities();
+      }
+    }
+
+    const providers: JobProvider[] = fixture.searchStrategy.plans.map((plan) => ({
+      id: plan.providerId,
+      name: plan.providerName,
+      homepage: "",
+      kind: ProviderKind.AGGREGATOR,
+      documentationUrl: "",
+      capabilities: capabilitiesFor(plan.providerId),
+      fetch: async () => [],
+    }));
+
+    it.each(fixture.searchStrategy.plans.map((p) => [p.providerId, p] as const))("%s plan matches", (_id, plan) => {
+      const provider = providers.find((p) => p.id === plan.providerId)!;
+      const produced = SearchStrategy.planFor(provider, fixture.searchStrategy.titles);
+      expect({
+        providerId: produced.providerId,
+        providerName: produced.providerName,
+        serverSideSearch: produced.serverSideSearch,
+        broadSample: !produced.serverSideSearch,
+        keywordSets: produced.keywordSets,
+      }).toEqual(plan);
+    });
+
+    it("builds the same coverage report as the Kotlin engine", () => {
+      const expected = fixture.searchStrategy.coverage;
+      const relevant = new Map(expected.sources.map((s) => [s.providerId, s.relevantCount]));
+      const totals = new Map(expected.sources.map((s) => [s.providerId, s.totalCount]));
+      const diagnostics: CoverageDiagnostic[] = expected.sources.map((s) => ({
+        providerId: s.providerId,
+        name: s.providerName,
+        serverSideSearch: s.targeted,
+        validJobCount: s.totalCount,
+      }));
+      const coverage = SearchStrategy.coverageFrom(diagnostics, relevant, totals);
+
+      expect(coverage.sources).toEqual(expected.sources);
+      expect({
+        totalRelevant: coverage.totalRelevant,
+        totalRetrieved: coverage.totalRetrieved,
+        targetedSourceCount: targetedSourceCount(coverage),
+        broadSampleSourceCount: broadSampleSourceCount(coverage),
+        hasTargetedSource: coverageHasTargetedSource(coverage),
+        hasRelevantResults: coverageHasRelevantResults(coverage),
+        relevantSharePercent: coverageRelevantSharePercent(coverage),
+        summary: coverageSummary(coverage),
+      }).toEqual({
+        totalRelevant: expected.totalRelevant,
+        totalRetrieved: expected.totalRetrieved,
+        targetedSourceCount: expected.targetedSourceCount,
+        broadSampleSourceCount: expected.broadSampleSourceCount,
+        hasTargetedSource: expected.hasTargetedSource,
+        hasRelevantResults: expected.hasRelevantResults,
+        relevantSharePercent: expected.relevantSharePercent,
+        summary: expected.summary,
+      });
+    });
+
+    it("describes an empty search honestly", () => {
+      const empty = SearchStrategy.coverageFrom([], new Map(), new Map());
+      expect({ totalRelevant: empty.totalRelevant, totalRetrieved: empty.totalRetrieved, summary: coverageSummary(empty) }).toEqual(
+        fixture.searchStrategy.emptyCoverage,
+      );
+    });
+
+    it("declares the same capabilities on the real web providers as the Kotlin ones", () => {
+      for (const provider of defaultProviders()) {
+        const plan = fixture.searchStrategy.plans.find((p) => p.providerId === provider.id);
+        if (!plan) continue;
+        const produced = SearchStrategy.planFor(provider, fixture.searchStrategy.titles);
+        expect(produced.serverSideSearch).toBe(plan.serverSideSearch);
+        expect(produced.keywordSets).toEqual(plan.keywordSets);
+      }
+    });
+  });
+
+  describe("stage 66 expat ranking engine", () => {
+    const engine = new ExpatRankingEngine({ clock: () => CLOCK });
+
+    function rankedJson(item: ExpatRankedJob) {
+      return {
+        jobId: item.job.id,
+        rank: item.rank,
+        finalScore: item.finalScore,
+        readinessScore: item.readinessScore,
+        readiness: item.readiness,
+        disqualified: item.opportunity.disqualified,
+        opportunityScore: item.opportunity.score,
+        opportunityBand: item.opportunity.band,
+        labels: item.labels,
+        reasons: item.reasons,
+      };
+    }
+
+    function rankingStateJson(state: ExpatRankingState) {
+      return {
+        isLoading: state.isLoading,
+        totalJobs: state.totalJobs,
+        actionableCount: expatRankingActionableCount(state),
+        disqualifiedCount: expatRankingDisqualifiedCount(state),
+        topOpportunityIds: expatRankingTopOpportunities(state).map((r) => r.job.id),
+        ranked: state.ranked.map(rankedJson),
+      };
+    }
+
+    const entries = fixture.scenarios.map((s) => shortlistEntry(s));
+
+    it("ranks the whole shortlist exactly as Kotlin does", () => {
+      const state = engine.rank(shortlistState(entries, entries.length), preferences);
+      expect(rankingStateJson(state)).toEqual(fixture.expatRanking.full);
+    });
+
+    it("is deterministic and independent of input order", () => {
+      const subset = entries.slice(0, 2).reverse();
+      const state = engine.rank(shortlistState(subset, subset.length), preferences);
+      expect(rankingStateJson(state)).toEqual(fixture.expatRanking.subset);
+    });
+
+    it("reports an empty, still-loading ranking without inventing a row", () => {
+      const state = engine.rank(
+        { isLoading: true, entries: [], totalJobs: 0, isLive: false, sourceNote: "", generatedAtEpochMillis: 0 },
+        preferences,
+      );
+      expect({
+        isLoading: state.isLoading,
+        totalJobs: state.totalJobs,
+        ranked: state.ranked,
+        generatedAtEpochMillis: state.generatedAtEpochMillis,
+      }).toEqual(fixture.expatRanking.empty);
+    });
+
+    it("caps a disqualified posting and never lets it sit above an actionable one", () => {
+      for (const state of [fixture.expatRanking.full, fixture.expatRanking.subset]) {
+        let sawDisqualified = false;
+        for (const row of state.ranked) {
+          if (row.disqualified) {
+            sawDisqualified = true;
+            expect(row.finalScore).toBeLessThanOrEqual(35);
+            expect(row.labels).toContain("NOT_OPEN_TO_YOU");
+          } else {
+            expect(sawDisqualified).toBe(false);
+          }
+        }
+      }
+    });
+  });
+
+  describe("stage 67 job alert engine", () => {
+    const engine = new JobAlertEngine();
+    const jobs = fixture.scenarios.map((s) => makeJob(s));
+
+    const rules: JobAlertRule[] = fixture.alertEngine.rules.map((r) => ({
+      id: r.id,
+      name: r.name,
+      keywords: [...r.keywords],
+      countries: [...r.countries],
+      frequency: r.frequency as AlertFrequency,
+      scope: r.scope as AlertScope,
+      minMatchScore: r.minMatchScore,
+      createdAtEpochMillis: CLOCK,
+      enabled: r.enabled,
+    }));
+
+    function alertJson(alert: JobAlert) {
+      return {
+        ruleId: alert.ruleId,
+        ruleName: alert.ruleName,
+        jobId: alert.jobId,
+        jobTitle: alert.jobTitle,
+        company: alert.company,
+        country: alert.country,
+        countryFlag: alert.countryFlag,
+        matchScore: alert.matchScore,
+        isVisaFriendly: alert.isVisaFriendly,
+        detectedAtEpochMillis: alert.detectedAtEpochMillis,
+        read: alert.read,
+      };
+    }
+
+    it("matches each rule against every posting exactly as Kotlin does", () => {
+      const matches: Record<string, Record<string, boolean>> = {};
+      for (const rule of rules) {
+        matches[rule.id] = {};
+        for (const job of jobs) matches[rule.id][job.id] = engine.matches(rule, job);
+      }
+      expect(matches).toEqual(fixture.alertEngine.matches);
+    });
+
+    it("produces the same alerts, and never fires a disabled rule", () => {
+      const alerts = engine.alertsFor(rules, jobs, CLOCK);
+      expect(alerts.map(alertJson)).toEqual(fixture.alertEngine.alerts);
+      expect(alerts.some((a) => a.ruleId === "disabled")).toBe(false);
+    });
+  });
+
+  describe("stage 67 auto-apply engine", () => {
+    const jobs = fixture.scenarios.map((s) => makeJob(s));
+    const engine = new AutoApplyEngine(70, () => CLOCK);
+
+    function itemJson(item: AutoApplyItem) {
+      return {
+        jobId: item.jobId,
+        jobTitle: item.jobTitle,
+        company: item.company,
+        country: item.country,
+        countryFlag: item.countryFlag,
+        matchScore: item.matchScore,
+        sourceUrl: item.sourceUrl,
+        status: item.status,
+        coverLetterId: item.coverLetterId,
+        reason: item.reason,
+        preparedAtEpochMillis: item.preparedAtEpochMillis,
+      };
+    }
+
+    it("decides each posting exactly as Kotlin does", () => {
+      const decisions: Record<string, unknown> = {};
+      for (const job of jobs) {
+        const decision = engine.decide(job);
+        decisions[job.id] = { status: decision.status, reason: decision.reason, eligible: decision.eligible };
+      }
+      expect(decisions).toEqual(fixture.autoApply.decisions);
+    });
+
+    it("builds the same queue, best match first, dropping skipped postings", () => {
+      const queue = engine.buildQueue(jobs, []);
+      expect(queue.map(itemJson)).toEqual(fixture.autoApply.baseQueue);
+      expect(queue.every((i) => i.status !== AutoApplyStatus.SKIPPED)).toBe(true);
+    });
+
+    it("preserves an approved or skipped entry across a refresh", () => {
+      const baseQueue = engine.buildQueue(jobs, []);
+      const existing: AutoApplyItem[] = [];
+      if (baseQueue[0]) existing.push({ ...baseQueue[0], status: AutoApplyStatus.APPROVED });
+      if (baseQueue[1]) existing.push({ ...baseQueue[1], status: AutoApplyStatus.SKIPPED });
+      const preserved = engine.buildQueue(jobs, existing);
+      expect(preserved.map(itemJson)).toEqual(fixture.autoApply.preservedQueue);
+    });
+  });
+
+  describe("stage 67 submission engines", () => {
+    const jobs = fixture.scenarios.map((s) => makeJob(s));
+
+    it("reports the same channel facts and capability", () => {
+      const channels = SubmissionChannel.values.map((channel) => ({
+        name: channel.key,
+        label: channel.label,
+        realSendSupported: channel.realSendSupported,
+        compatibilityNote: channel.compatibilityNote,
+        statement: SubmissionCapability.statement(channel),
+      }));
+      expect(channels).toEqual(fixture.submission.channels);
+      expect({
+        sendsNothing: SubmissionCapability.sendsNothing,
+        supportedChannelCount: SubmissionCapability.supportedChannelCount,
+      }).toEqual(fixture.submission.capability);
+    });
+
+    it("infers the application channel from the posting URL", () => {
+      const inference = fixture.submission.inference.map((entry) => ({
+        url: entry.url,
+        channel: SubmissionChannel.infer({ ...jobs[0], sourceUrl: entry.url }).key,
+      }));
+      expect(inference).toEqual(fixture.submission.inference);
+    });
+
+    it("derives the same application identity, including the blank-employer fallback", () => {
+      const identity = fixture.submission.identity.map((_entry, index) => {
+        const key = SubmissionKey.of(jobs[index]);
+        return {
+          jobId: jobs[index].id,
+          key: key.value,
+          normalizedCompany: key.normalizedCompany,
+          normalizedTitle: key.normalizedTitle,
+          normalizedCountry: key.normalizedCountry,
+        };
+      });
+      expect(identity).toEqual(fixture.submission.identity);
+      expect(SubmissionKey.of({ ...jobs[0], company: "", title: "Field Service Engineer" }).value).toEqual(
+        fixture.submission.blankEmployerKey,
+      );
+    });
+
+    it("classifies every submission response, and never turns ambiguity into success", () => {
+      const classified = fixture.submission.classifier.map((entry) => {
+        const outcome = classifySubmission(entry.httpStatus, entry.remoteApplicationId);
+        const detail =
+          outcome.kind === "CONFIRMED" ? outcome.remoteApplicationId : outcome.reason;
+        return {
+          httpStatus: entry.httpStatus,
+          remoteApplicationId: entry.remoteApplicationId,
+          kind: outcome.kind,
+          detail,
+          lifecycle: lifecycleOfOutcome(outcome),
+        };
+      });
+      expect(classified).toEqual(fixture.submission.classifier);
+    });
+
+    it("maps every draft status onto the same lifecycle state", () => {
+      const lifecycle = Object.values(DraftStatus).map((status) => {
+        const state = lifecycleOfDraft(status);
+        return {
+          draftStatus: status,
+          lifecycle: state,
+          isConfirmedSent: state === SubmissionLifecycle.SUBMITTED_CONFIRMED,
+          isNotSent:
+            state === SubmissionLifecycle.SIMULATED_NOT_SENT ||
+            state === SubmissionLifecycle.DRAFT ||
+            state === SubmissionLifecycle.PENDING_APPROVAL,
+        };
+      });
+      expect(lifecycle).toEqual(fixture.submission.lifecycle);
+    });
+
+    it("gates a real submission on every rule, in the same order", () => {
+      function draft(
+        status: DraftStatus,
+        contentHash: string,
+        approvedHash: string | null,
+        cvSummary = "Maintenance technician, 8 years.",
+        coverLetterText = "Dear team, I am applying.",
+      ): ApplicationDraft {
+        return {
+          id: "draft-1",
+          jobId: jobs[0].id,
+          jobTitle: jobs[0].title,
+          company: jobs[0].company,
+          country: jobs[0].country,
+          countryFlag: "🌍",
+          sourceUrl: jobs[0].sourceUrl,
+          channelKey: "EMPLOYER_PORTAL",
+          cvSummary,
+          coverLetterId: "cl-1",
+          coverLetterText,
+          answers: [{ question: "Notice period?", answer: "One month" }],
+          documents: ["cv.pdf"],
+          status,
+          contentHash,
+          approvedHash,
+          approvedAtEpochMillis: approvedHash != null ? CLOCK : null,
+          preparedAtEpochMillis: CLOCK,
+          updatedAtEpochMillis: CLOCK,
+          attempts: [],
+          consentGiven: false,
+          remoteApplicationId: null,
+          confirmedAtEpochMillis: null,
+          reason: "",
+        };
+      }
+
+      const notApproved = draft(DraftStatus.READY_FOR_REVIEW, "h1", null);
+      const approved = draft(DraftStatus.APPROVED, "h1", "h1");
+      const changed = draft(DraftStatus.APPROVED, "h2", "h1");
+      const missingContent = draft(DraftStatus.APPROVED, "h1", "h1", "", "");
+
+      const cases: Array<[string, ApplicationDraft, boolean, boolean, boolean]> = [
+        ["not-approved", notApproved, false, false, false],
+        ["approved-but-no-route", approved, false, true, false],
+        ["changed-content", changed, true, true, false],
+        ["missing-content", missingContent, true, true, false],
+        ["no-consent", approved, true, false, false],
+        ["already-applied", approved, true, true, true],
+        ["allowed", approved, true, true, false],
+      ];
+
+      const preflights: Record<string, unknown> = {};
+      for (const [label, d, realRoute, consent, alreadyApplied] of cases) {
+        const result = evaluateSubmissionPreflight(d, realRoute, consent, alreadyApplied);
+        preflights[label] = {
+          blockers: result.blockers,
+          allowed: result.allowed,
+          primaryBlocker: result.primaryBlocker,
+          explanation: result.explanation,
+        };
+      }
+      expect(preflights).toEqual(fixture.submission.preflights);
+    });
+  });
 });
 
-// ------------------------------------------------------------------ stage 62 helpers
+function lifecycleOfOutcome(outcome: OfficialSubmissionOutcome): string {
+  switch (outcome.kind) {
+    case "CONFIRMED":
+      return SubmissionLifecycle.SUBMITTED_CONFIRMED;
+    case "FAILED":
+      return SubmissionLifecycle.SUBMISSION_FAILED;
+    case "UNKNOWN":
+      return SubmissionLifecycle.SUBMISSION_UNKNOWN;
+  }
+}
 
 function JobBenefitTypesByKey(key: string): Job["benefitEvidence"][number]["type"] {
   const found = ALL_BENEFIT_TYPES.find((t) => t.key === key) ?? (key === JobBenefitTypes.MINIMUM_SALARY.key ? JobBenefitTypes.MINIMUM_SALARY : undefined);
@@ -785,5 +1483,86 @@ function intelligenceJson(intel: {
     recurringProfileGaps: intel.recurringProfileGaps.map((g) => ({ label: g.label, kind: g.kind, points: g.points })),
     topOpportunities: intel.topOpportunities.map((e) => e.job.id),
     summary: intel.summary,
+  };
+}
+
+function coverLetterJson(letter: CoverLetter) {
+  return {
+    id: letter.id,
+    jobId: letter.jobId,
+    language: letter.language,
+    subject: letter.subject,
+    salutation: letter.salutation,
+    paragraphs: letter.paragraphs,
+    closing: letter.closing,
+    signature: letter.signature,
+    usedFacts: letter.usedFacts,
+    missingFacts: letter.missingFacts,
+    generatedAtEpochMillis: letter.generatedAtEpochMillis,
+    edited: letter.edited,
+    plainText: coverLetterPlainText(letter),
+    wordCount: coverLetterWordCount(letter),
+  };
+}
+
+function questionJson(q: InterviewQuestion) {
+  return {
+    id: q.id,
+    category: q.category,
+    prompt: q.prompt,
+    whyItMatters: q.whyItMatters,
+    structure: q.structure,
+    grounding: q.grounding ?? [],
+    missingFacts: q.missingFacts ?? [],
+  };
+}
+
+function prepJson(prep: InterviewPrep) {
+  return {
+    jobId: prep.jobId,
+    jobTitle: prep.jobTitle,
+    company: prep.company,
+    country: prep.country,
+    countryFlag: prep.countryFlag,
+    generatedAtEpochMillis: prep.generatedAtEpochMillis,
+    questionCount: prep.questions.length,
+    questions: prep.questions.map(questionJson),
+  };
+}
+
+function readinessJson(r: InterviewReadiness) {
+  return {
+    attempted: r.attempted,
+    total: r.total,
+    confident: r.confident,
+    percent: r.percent,
+    isComplete: r.isComplete,
+    label: r.label,
+  };
+}
+
+function feedbackJson(f: AnswerFeedback) {
+  return {
+    score: f.score,
+    headline: f.headline,
+    strengths: f.strengths,
+    improvements: f.improvements,
+  };
+}
+
+function aiCapabilitiesJson() {
+  return {
+    hasOnDeviceModel: AI_CAPABILITY_CATALOG.HAS_ON_DEVICE_MODEL,
+    hasRemoteModel: AI_CAPABILITY_CATALOG.HAS_REMOTE_MODEL,
+    summary: AI_CAPABILITY_CATALOG.summary,
+    capabilities: AI_CAPABILITY_CATALOG.capabilities.map((c) => ({
+      name: c.name,
+      kind: c.kind,
+      kindLabel: AI_CAPABILITY_KIND_META[c.kind].label,
+      location: c.location,
+      locationLabel: AI_PROCESSING_LOCATION_META[c.location].label,
+      description: c.description,
+      note: c.note,
+    })),
   };
 }

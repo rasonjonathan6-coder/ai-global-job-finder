@@ -55,6 +55,11 @@ Development is organised in numbered **stages**, each recorded in `AGENTS.md` �
 living design log. It documents the scoring engines, the eligibility rules for Madagascar, the
 expat benefit model, the scam shield, and the parity guarantees between the two editions.
 
+- `docs/ARCHITECTURE.md` — the cross-platform reference: the three layers (shared core,
+  platform adapters, UI), the capability matrix, the parity contract, and the staged plan to a
+  single shared core across Android, Web/PWA and iOS.
+- `docs/web-parity.md` — how parity is proved, and which job sources a browser can reach.
+
 ## Notes
 
 - The Android app stores your CV locally and encrypts any API key with the Android Keystore.
