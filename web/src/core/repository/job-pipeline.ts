@@ -6,6 +6,7 @@ import { defaultProviders, providerFailureLine, type JobProvider } from "../jobs
 import type { RawJob } from "../jobs/provider/raw-job";
 import { SearchStrategy, type SearchCoverage } from "../jobs/search/search-strategy";
 import { classifyRole } from "../jobs/search/role-relevance";
+import { relevantJobs } from "../jobs/search/relevance-feed";
 import { HtmlText } from "../jobs/provider/text-parsing";
 
 /** One source's outcome for the diagnostics strip, in plain words. */
@@ -119,14 +120,21 @@ export class JobPipeline {
     // The per-source lists were deduplicated in isolation; collapse cross-source duplicates
     // once more so the same posting syndicated to two boards appears a single time.
     const { kept } = this.validation.deduplicate(raws, now);
-    const jobs = kept.map((raw) => this.mapper.toJob(raw, profile));
+    const scored = kept.map((raw) => this.mapper.toJob(raw, profile));
 
     // Rank by match score, then by how recent the posting is, so the freshest strong matches
     // lead the list. Ties keep a stable order.
-    jobs.sort((a, b) => {
+    scored.sort((a, b) => {
       if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
       return (b.postedAtEpochMillis ?? 0) - (a.postedAtEpochMillis ?? 0);
     });
+
+    // Stage 70: the key-free remote boards return a broad, newest-first global sample, so the
+    // ranked feed is narrowed to the postings whose role is actually the candidate's trade
+    // before it reaches any screen. The coverage report below still counts the whole sample,
+    // so the app can state how many unrelated postings were set aside rather than hiding the
+    // breadth of what the sources returned. Mirrors the Android `LiveJobRepository.jobs` flow.
+    const jobs = relevantJobs(scored);
 
     reports.sort((a, b) => a.providerName.localeCompare(b.providerName));
 

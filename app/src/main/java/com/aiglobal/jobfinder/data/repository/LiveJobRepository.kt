@@ -10,6 +10,7 @@ import com.aiglobal.jobfinder.data.jobs.provider.JobProviderException
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorCategory
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorClassifier
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
+import com.aiglobal.jobfinder.data.jobs.search.RelevanceFeed
 import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
 import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
 import com.aiglobal.jobfinder.data.jobs.search.SearchStrategy
@@ -92,8 +93,12 @@ class LiveJobRepository(
     private val seenLedger: com.aiglobal.jobfinder.data.discovery.JobSeenLedger? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val perProviderLimit: Int = 60,
-    /** Hard ceiling on a single source, so one slow feed cannot hold up the whole refresh. */
-    private val perProviderTimeoutMillis: Long = 20_000,
+    /**
+     * Hard ceiling on a single source, so one slow feed cannot hold up the whole refresh. It is
+     * generous enough for a provider that pages through a broad sample to widen the local
+     * relevance filter (Arbeitnow reads several pages), which costs more than a single request.
+     */
+    private val perProviderTimeoutMillis: Long = 30_000,
 ) : JobRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -191,7 +196,13 @@ class LiveJobRepository(
 
     override val jobs: Flow<List<Job>> =
         combine(scoredJobs, savedIds, demoMode, restoredGate) { jobList, saved, demo, _ ->
-            val base = if (demo) sampleJobs else jobList
+            // Stage 70: the key-free remote boards return a broad, newest-first global sample,
+            // so the ranked feed is narrowed to the postings whose role is actually the
+            // candidate's trade before it reaches any screen. The coverage report still counts
+            // the whole sample, so the app can state how many unrelated postings were set aside
+            // rather than hiding the breadth of what the sources returned. Demo mode keeps its
+            // curated sample, which is already on-trade.
+            val base = if (demo) sampleJobs else RelevanceFeed.relevant(jobList)
             base.map { if (saved.contains(it.id)) it.copy(isSaved = true) else it }
         }
 

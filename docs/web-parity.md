@@ -90,14 +90,32 @@ the page read a response without it.
 | Remotive | `Access-Control-Allow-Origin: *` | Works — key-free |
 | Arbeitnow | `Access-Control-Allow-Origin: *` | Works — key-free |
 | Jobicy | `Access-Control-Allow-Origin: *` | Works — key-free |
+| SmartRecruiters | `Access-Control-Allow-Origin: *` | Works — key-free (employer boards) |
 | Himalayas | no ACAO header | Blocked — needs the proxy |
 | Adzuna | key required | Needs the proxy (key must not ship) |
 | Jooble | key required | Needs the proxy (key must not ship) |
 
-So the deployed web app searches **Remotive, Arbeitnow and Jobicy**. `HimalayasProvider`
-exists and is tested, but is not in `defaultProviders()` because a browser fetch is refused.
-A blocked or failed source is named in the diagnostics strip with a plain-words reason, never
-silently dropped.
+So the deployed web app searches **Remotive, Arbeitnow, Jobicy and the SmartRecruiters employer
+boards**. `HimalayasProvider` exists and is tested, but is not in `defaultProviders()` because a
+browser fetch is refused. A blocked or failed source is named in the diagnostics strip with a
+plain-words reason, never silently dropped.
+
+## Stage 70 — the live sample is filtered to the candidate's trade
+
+The key-free boards return a broad, newest-first global sample that is dominated by software and
+office roles, so a raw feed is mostly irrelevant to a Madagascar-based industrial candidate. Stage
+70 adds a **live relevance filter** rather than widening the query: `RelevanceFeed` (Android) /
+`relevantJobs` + `unrelatedJobs` (web) keep only postings whose title reads as the candidate's
+trade, reusing the same `RoleClassifier`/`classifyRole` verdict the rest of the pipeline already
+uses. The **shortlist correction** applies the same verdict in `ShortlistEngine.build` /
+`shortlist-engine.ts`, so the actionable list holds only roles the candidate can actually act on.
+
+Two sample-widening changes support the filter. Arbeitnow now pools several pages (`?page=N`) so
+trade roles sitting past the first page are found instead of missed, and the web adds the key-free
+**SmartRecruiters** employer boards (SGS, Wabtec, Konecranes, Bosch), which publish maintenance,
+fitter and millwright roles in the Gulf and Africa. Both are pinned by the `relevance` fixture
+section (`meta.stage = 70`) and replayed field-for-field in `parity.test.ts`, so the Kotlin and
+TypeScript sides stay byte-identical.
 
 ## The optional proxy
 

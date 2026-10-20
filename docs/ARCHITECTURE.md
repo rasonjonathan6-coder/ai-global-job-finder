@@ -287,18 +287,28 @@ Each stage leaves both editions building and both suites green.
   `web/src/core/cv/` (`normalizer`, `lexicon`, `structure`, `analyzer`, `merger`, `warnings`,
   `limits`, `contract`) and pinned as the `cvAnalysis` fixture section (cases, normalise, fold,
   full lexicon), `meta.stage = 68`. Android 725 tests, web 400 tests, web build green.
-- **Stage 69 — web UI parity pass.** Port the remaining Android screens to web one tab at a
-  time (application detail, cover letter, interview, scam, alerts, auto-apply, expat guide,
-  ranking, diagnostics, refresh/submission history, CV import/adaptation). No redesign —
+- **Stage 69 — web UI parity pass.** ✅ **Done.** Port the remaining Android screens to web one
+  tab at a time (application detail, cover letter, interview, scam, alerts, auto-apply, expat
+  guide, ranking, diagnostics, refresh/submission history, CV import/adaptation). No redesign —
   port the Kotlin structure and wording.
-- **Stage 70 — KMP spike.** Compile `MatchingEngine` to Kotlin/JS; drive the parity fixture
+- **Stage 70 — live job relevance and shortlist correction.** ✅ **Done.** The live audit showed
+  the key-free boards returning a broad newest-first global sample with near-zero relevant
+  matches, and the actionable shortlist carrying postings that were not the candidate's trade.
+  Added a live relevance filter (`RelevanceFeed` / `relevance-feed.ts`) that keeps only the
+  candidate's trade via the existing `RoleClassifier` verdict, and corrected the shortlist
+  (`ShortlistEngine.build` / `shortlist-engine.ts`) to list only actionable, own-trade roles.
+  Widened the sample where it helps (Arbeitnow multi-page pooling) and added the key-free
+  **SmartRecruiters** employer boards web-side. The coverage summary now reports how many
+  unrelated postings were set aside. Pinned as the `relevance` fixture section, `meta.stage = 70`.
+  Android 732 tests, web 428 tests, web build green.
+- **Stage 71 — KMP spike.** Compile `MatchingEngine` to Kotlin/JS; drive the parity fixture
   through it from `web/`; measure bundle + build impact. Go/no-go on Option B.
-- **Stage 71 — remote AI parity (optional, web).** Decide whether the NVIDIA assistant appears
+- **Stage 72 — remote AI parity (optional, web).** Decide whether the NVIDIA assistant appears
   in the web edition at all. If yes, it must reuse the Kotlin *grounding* contract
   (candidate facts + posting text only; never the CV file, email, phone, address) and be
   consent-gated and off by default. If the web edition stays fully local, say so in the AI
   transparency card rather than implying parity.
-- **Stage 72 — iOS.** If Stage 70 is a go, stand up a SwiftUI shell over the KMP core
+- **Stage 73 — iOS.** If the KMP spike is a go, stand up a SwiftUI shell over the KMP core
   (Layer 2 adapters + Layer 3 UI only). The web PWA remains the zero-install option.
 
 ---

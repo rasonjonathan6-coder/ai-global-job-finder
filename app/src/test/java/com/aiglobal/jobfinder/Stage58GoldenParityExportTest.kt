@@ -38,6 +38,7 @@ import com.aiglobal.jobfinder.data.jobs.provider.SmartRecruitersProvider
 import com.aiglobal.jobfinder.data.jobs.provider.WorkdayProvider
 import com.aiglobal.jobfinder.data.jobs.search.QualificationMatcher
 import com.aiglobal.jobfinder.data.jobs.search.QueryExpansion
+import com.aiglobal.jobfinder.data.jobs.search.RelevanceFeed
 import com.aiglobal.jobfinder.data.jobs.search.RequirementAnalyzer
 import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
 import com.aiglobal.jobfinder.data.jobs.search.SearchStrategy
@@ -319,7 +320,7 @@ class Stage58GoldenParityExportTest {
         val scenarios = cases.map { scenarioJson(it, profile, preferences) }
         val root = linkedMapOf<String, Any?>(
             "meta" to linkedMapOf(
-                "stage" to 68,
+                "stage" to 70,
                 "generatedFrom" to "Kotlin production engines",
                 "clockMillis" to fixedNow,
                 "note" to "Inputs and expected outputs are both produced by the Kotlin engines.",
@@ -339,6 +340,7 @@ class Stage58GoldenParityExportTest {
             "expatOpportunity" to scenarios.map { expatOpportunityJson(it, profile, preferences) },
             "queryExpansion" to queryExpansionJson(),
             "searchStrategy" to searchStrategyJson(),
+            "relevance" to relevanceJson(),
             "expatRanking" to expatRankingJson(scenarios, profile, preferences),
             "alertEngine" to alertEngineJson(),
             "autoApply" to autoApplyJson(scenarios),
@@ -1194,6 +1196,56 @@ class Stage58GoldenParityExportTest {
                 "totalRelevant" to emptyCoverage.totalRelevant,
                 "totalRetrieved" to emptyCoverage.totalRetrieved,
                 "summary" to emptyCoverage.summary,
+            ),
+        )
+    }
+
+    /**
+     * Stage 70 — the live relevance filter and the shortlist correction, both driven by the
+     * real engines over the shared scenario titles so the web port can replay the same verdicts.
+     */
+    private fun relevanceJson(): Map<String, Any?> {
+        // Classify every scenario title (with its description head) and a few extra titles that
+        // pin the boundary cases: a genuine trade, a maintenance-family role, an unrelated role
+        // whose description merely mentions maintenance, and a title too thin to judge.
+        val extraTitles = listOf(
+            Triple("Maintenance Technician", "Preventive maintenance on pumps and hydraulics.", false),
+            Triple("Software Engineer, Maintenance Tooling", "Build tooling for the maintenance team.", false),
+            Triple("Lab Technician", "Industrial manufacturer. ISO 9001 quality control.", false),
+            Triple("Industrial Maintenance Technician", "Remote worldwide role.", false),
+            Triple("Millwright", "Install and align rotating equipment at a mine site.", false),
+        )
+        val titled = cases.map { Triple(it.title, it.description, true) } + extraTitles
+        val verdicts = titled.map { (title, description, fromScenario) ->
+            val head = description.take(400)
+            val relevance = RoleClassifier.classify(title, head)
+            linkedMapOf(
+                "title" to title,
+                "descriptionHead" to head,
+                "fromScenario" to fromScenario,
+                "family" to relevance.family.name,
+                "matchedTarget" to relevance.matchedTarget?.canonical,
+                "isMaintenanceRelevant" to relevance.isMaintenanceFamily,
+                "evidence" to relevance.evidence,
+            )
+        }
+
+        // Feed the ranked scenario jobs through the real filter and record exactly which
+        // survived, so the port's `relevantJobs`/`jobIsMaintenanceRelevant` must agree.
+        val scenarioJobs = cases.map { case -> jobForCase(case) }
+        val relevant = RelevanceFeed.relevant(scenarioJobs)
+        val unrelated = RelevanceFeed.unrelated(scenarioJobs)
+
+        return linkedMapOf(
+            "verdicts" to verdicts,
+            "feed" to linkedMapOf(
+                "total" to scenarioJobs.size,
+                "keptIds" to relevant.map { it.id },
+                "droppedIds" to unrelated.map { it.id },
+                "summary" to RelevanceFeed.summary(scenarioJobs.size, relevant.size),
+                "emptySummary" to RelevanceFeed.summary(0, 0),
+                "noneMatchedSummary" to RelevanceFeed.summary(3, 0),
+                "allMatchedSummary" to RelevanceFeed.summary(2, 2),
             ),
         )
     }

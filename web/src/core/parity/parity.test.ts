@@ -13,6 +13,7 @@ import {
   LetterLanguage,
   MadagascarEligibility,
   RelocationPreference,
+  RoleFamily,
   SalaryPeriod,
   ScamRisk,
   ScamSignalTone,
@@ -99,6 +100,7 @@ import { detectSkills } from "../jobs/engine/skill-lexicon";
 import { analyzeRequirements } from "../jobs/search/requirement-analyzer";
 import { qualificationGaps } from "../jobs/search/qualification-matcher";
 import { classifyRole } from "../jobs/search/role-relevance";
+import { relevanceSummary, relevantJobs, unrelatedJobs } from "../jobs/search/relevance-feed";
 import { extractBenefits } from "../expat/expat-benefit-extractor";
 import { assessExpatBenefits } from "../expat/expat-benefits-engine";
 import { toEurPerYear } from "../geo/currency-converter";
@@ -1074,6 +1076,45 @@ describe("Kotlin parity — golden fixtures", () => {
         expect(produced.serverSideSearch).toBe(plan.serverSideSearch);
         expect(produced.keywordSets).toEqual(plan.keywordSets);
       }
+    });
+  });
+
+  describe("stage 70 live relevance filter", () => {
+    it.each(fixture.relevance.verdicts.map((v) => [v.title, v] as const))(
+      "classifies %s the same as the Kotlin engine",
+      (_title, verdict) => {
+        const produced = classifyRole(verdict.title, verdict.descriptionHead);
+        expect({
+          family: produced.family,
+          matchedTarget: produced.matchedTarget?.canonical ?? null,
+          isMaintenanceRelevant:
+            produced.family === RoleFamily.TARGET || produced.family === RoleFamily.MAINTENANCE_FAMILY,
+          evidence: produced.evidence,
+        }).toEqual({
+          family: verdict.family,
+          matchedTarget: verdict.matchedTarget,
+          isMaintenanceRelevant: verdict.isMaintenanceRelevant,
+          evidence: verdict.evidence,
+        });
+      },
+    );
+
+    it("keeps and drops the same postings as the Kotlin RelevanceFeed", () => {
+      const feed = fixture.relevance.feed;
+      const jobs = fixture.scenarios.map((s) => jobFromScenario(s));
+      const kept = relevantJobs(jobs);
+      const dropped = unrelatedJobs(jobs);
+      expect(kept.map((j) => j.id)).toEqual(feed.keptIds);
+      expect(dropped.map((j) => j.id)).toEqual(feed.droppedIds);
+      expect(jobs.length).toBe(feed.total);
+    });
+
+    it("describes the filter result the same way as the Kotlin engine", () => {
+      const feed = fixture.relevance.feed;
+      expect(relevanceSummary(feed.total, feed.keptIds.length)).toBe(feed.summary);
+      expect(relevanceSummary(0, 0)).toBe(feed.emptySummary);
+      expect(relevanceSummary(3, 0)).toBe(feed.noneMatchedSummary);
+      expect(relevanceSummary(2, 2)).toBe(feed.allMatchedSummary);
     });
   });
 

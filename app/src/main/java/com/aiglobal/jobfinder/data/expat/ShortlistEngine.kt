@@ -54,7 +54,12 @@ class ShortlistEngine(
         limit: Int = DEFAULT_LIMIT,
     ): ShortlistState {
         val entries = jobs
-            .filter { it.eligibility != MadagascarEligibility.RESTRICTED }
+            // Only postings the candidate can actually act on: the employer has not restricted
+            // them to local applicants, and the role is the candidate's own trade rather than
+            // an unrelated profession the broad remote boards happened to return. A shortlist
+            // of "apply-ready" roles that are not the candidate's job is not actionable, so the
+            // same role verdict the feed uses is applied here too.
+            .filter { it.eligibility != MadagascarEligibility.RESTRICTED && it.isMaintenanceRelevant }
             .map { job ->
                 assess(
                     job = job,

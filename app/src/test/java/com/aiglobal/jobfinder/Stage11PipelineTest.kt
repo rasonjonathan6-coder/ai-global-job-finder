@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder
 
 import com.aiglobal.jobfinder.data.expat.ShortlistEngine
+import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
 import com.aiglobal.jobfinder.data.model.ApplicationReadiness
 import com.aiglobal.jobfinder.data.model.BenefitEvidence
 import com.aiglobal.jobfinder.data.model.BenefitStatus
@@ -104,6 +105,9 @@ class Stage11PipelineTest {
         eligibilityReasons = eligibilityReasons,
         benefitEvidence = benefitEvidence,
         isNew = isNew,
+        // The real mapper fills the role verdict from the title; these fixtures build Job by
+        // hand, so they classify it the same way the pipeline would rather than defaulting.
+        roleFamily = RoleClassifier.classify(title).family,
     )
 
     // ------------------------------------------------------------ scoring model

@@ -3023,6 +3023,67 @@ recherche enregistrée qui capture une vraie publication, approbation d'un broui
 **Reste à faire (Stage 70+).** Historique de soumission côté web, spike KMP, décision IA distante
 web, iOS.
 
+## Stage 70 — pertinence live des offres et correction de la shortlist
+
+**Objectif.** L'audit live a montré que les boards sans clé renvoient un large échantillon
+mondial trié du plus récent au plus ancien, quasi sans correspondance avec le métier du candidat,
+et que la shortlist « actionnable » listait des offres qui n'étaient même pas son métier. Ce
+stage ajoute (1) un **filtre de pertinence live** qui ne garde que le métier du candidat, et
+(2) une **correction de la shortlist** qui ne liste que des rôles réellement actionnables et du
+bon métier, en rapportant honnêtement combien d'offres sans rapport ont été écartées.
+
+**Livrables Android.**
+- `data/jobs/search/RelevanceFeed.kt` — transforme un flux classé en `kept`/`dropped` via le
+  verdict existant `RoleClassifier`/`RoleFamily` (`TARGET`/`MAINTENANCE_FAMILY` = pertinent,
+  `UNRELATED`/`UNKNOWN` = écarté). `summary(totalRetrieved, relevant)` produit la phrase de
+  couverture, y compris les cas vide / aucun / tous.
+- `data/repository/LiveJobRepository.kt` — le flux `jobs` passe par `RelevanceFeed.relevant(...)`
+  avant le classement ; `perProviderLimit = 60`, `perProviderTimeoutMillis = 20_000`.
+- `data/jobs/search/SearchCoverage.kt` — le résumé rapporte les offres sans rapport écartées.
+- `data/expat/ShortlistEngine.kt` — `build()` ne garde que `eligibility != RESTRICTED` **et**
+  `job.isMaintenanceRelevant`, le même verdict que le flux.
+- `data/jobs/provider/ArbeitnowProvider.kt` — lit plusieurs pages (`?page=N`, `maxPages = 8`) et
+  les met en commun : l'échantillon large est ce qui laisse le filtre local trouver les métiers
+  quelques pages plus bas. Une page qui échoue après une réussie n'est pas une panne de source :
+  les offres déjà lues sont renvoyées.
+
+**Livrables web (miroir).**
+- `web/src/core/jobs/search/relevance-feed.ts` — `relevantJobs`/`unrelatedJobs`/`relevanceSummary`,
+  miroir de `RelevanceFeed` ; `jobIsMaintenanceRelevant` vit dans `models.ts` comme les autres
+  prédicats de `Job`.
+- `web/src/core/repository/job-pipeline.ts` — le filtre de pertinence est câblé (la couverture
+  compte toujours l'échantillon complet).
+- `web/src/core/shortlist/engine/shortlist-engine.ts` — filtre `jobIsMaintenanceRelevant` ajouté.
+- `web/src/core/jobs/provider/providers.ts` — pagination Arbeitnow (pooling multi-pages), nouveau
+  fournisseur **SmartRecruiters** (`SmartRecruitersBoard`, lecture des 4 sections de description,
+  budget de détails concurrent `SMART_DETAILS_PER_BOARD`, titres de métier lus en premier) et
+  helper `isTradeTitle()`.
+- `web/src/core/parity/parity.test.ts` — rejoue la section `relevance` du fixture : chaque verdict
+  `classifyRole` (famille, cible, pertinence, preuves) et les `keptIds`/`droppedIds`/résumés.
+
+**Golden parity.** Le fixture `Stage58GoldenParityExportTest` gagne une section `relevance`
+(`verdicts` avec `descriptionHead` + `family`/`matchedTarget`/`isMaintenanceRelevant`/`evidence`,
+`feed` avec `total`/`keptIds`/`droppedIds`/`summary`/`emptySummary`/`noneMatchedSummary`/
+`allMatchedSummary`), `meta.stage = 70`. La sortie Kotlin et le port TS sont **identiques octet
+pour octet**.
+
+**Correctif de test.** Trois suites historiques (`Stage11PipelineTest`, `Stage21PipelineTest`,
+`Stage21ScreenTest`) construisaient `Job` à la main, laissant `roleFamily` à sa valeur par défaut
+`UNKNOWN` ; la correction de la shortlist les filtrait donc à tort. Leurs fixtures renseignent
+désormais `roleFamily = RoleClassifier.classify(title).family`, comme le fait le vrai mapper,
+sans changer l'intention des tests.
+
+**Vérifications.** Android : `:app:testDebugUnitTest` → **732 tests, 0 échec, 0 erreur, 3
+ignorés** (+7 : `Stage70RelevanceTest`). Web : `npm run typecheck` OK, `npm test` → **428 tests /
+9 fichiers, 0 échec** (+22 : `providers` 14→20, `parity` 288→304). Parité octet pour octet
+confirmée sur `relevance` + correction de shortlist.
+
+**Fichiers.** Ajoutés : `RelevanceFeed.kt`, `relevance-feed.ts`, `Stage70RelevanceTest.kt`.
+Modifiés : `LiveJobRepository.kt`, `SearchCoverage.kt`, `ShortlistEngine.kt`, `ArbeitnowProvider.kt`,
+`Stage58GoldenParityExportTest.kt`, `providers.ts`, `providers.test.ts`, `job-pipeline.ts`,
+`shortlist-engine.ts`, `parity.test.ts`, `kotlin-parity.json`, les trois fixtures de test
+ci-dessus.
+
 ## Conventions
 
 - Every screen composable reads spacing from `LocalSpacing.current` and applies

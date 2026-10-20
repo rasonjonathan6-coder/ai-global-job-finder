@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performScrollToNode
 import com.aiglobal.jobfinder.data.assistant.ApplicationPlanEngine
 import com.aiglobal.jobfinder.data.assistant.ExpatIntelligenceEngine
 import com.aiglobal.jobfinder.data.expat.ShortlistEngine
+import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
 import com.aiglobal.jobfinder.data.model.BenefitEvidence
 import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.CandidateProfile
@@ -100,6 +101,9 @@ class Stage21ScreenTest {
             BenefitEvidence(JobBenefitTypes.VISA_SPONSORSHIP, BenefitStatus.CONFIRMED, "Visa sponsorship provided."),
             BenefitEvidence(JobBenefitTypes.RELOCATION_SUPPORT, BenefitStatus.CONFIRMED, "Relocation support is included."),
         ),
+        // The real mapper fills the role verdict from the title; these fixtures build Job by
+        // hand, so they classify it the same way the pipeline would rather than defaulting.
+        roleFamily = RoleClassifier.classify(title).family,
     )
 
     private fun planState(): ApplicationPlanUiState {

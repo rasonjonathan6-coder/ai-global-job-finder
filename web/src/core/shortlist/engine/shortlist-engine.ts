@@ -7,6 +7,7 @@ import {
   VisaSupport,
   applicationReadinessFromScore,
   expatAssessmentHasEvidence,
+  jobIsMaintenanceRelevant,
   type CandidateProfile,
   type ExpatPreferences,
   type Job,
@@ -67,7 +68,10 @@ export class ShortlistEngine {
     limit: number = DEFAULT_LIMIT,
   ): ShortlistState {
     const entries = jobs
-      .filter((job) => job.eligibility !== MadagascarEligibility.RESTRICTED)
+      // Only postings the candidate can actually act on: the employer has not restricted them
+      // to local applicants, and the role is the candidate's own trade rather than an unrelated
+      // profession the broad remote boards happened to return. Mirrors the Kotlin ShortlistEngine.
+      .filter((job) => job.eligibility !== MadagascarEligibility.RESTRICTED && jobIsMaintenanceRelevant(job))
       .map((job) =>
         this.assess(job, profile, preferences, profileCompletenessPercent, salaryEurPerYear(job)),
       )
