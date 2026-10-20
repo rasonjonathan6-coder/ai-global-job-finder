@@ -320,7 +320,7 @@ class Stage58GoldenParityExportTest {
         val scenarios = cases.map { scenarioJson(it, profile, preferences) }
         val root = linkedMapOf<String, Any?>(
             "meta" to linkedMapOf(
-                "stage" to 70,
+                "stage" to 71,
                 "generatedFrom" to "Kotlin production engines",
                 "clockMillis" to fixedNow,
                 "note" to "Inputs and expected outputs are both produced by the Kotlin engines.",
@@ -1214,6 +1214,16 @@ class Stage58GoldenParityExportTest {
             Triple("Lab Technician", "Industrial manufacturer. ISO 9001 quality control.", false),
             Triple("Industrial Maintenance Technician", "Remote worldwide role.", false),
             Triple("Millwright", "Install and align rotating equipment at a mine site.", false),
+            // Stage 71 — the live European sample names the same trades in German, Dutch and
+            // Norwegian. These pin that a genuine trade title is kept regardless of language,
+            // and that a lone foreign "technician"/"electrician"/"painter" is still excluded.
+            Triple("Instandhaltungsmechaniker Rotating Equipment (w/m/d)", "Sulzer, Schkopau.", false),
+            Triple("Onderhoudstechnieker | 3 Ploegen", "Productiemachines onderhouden.", false),
+            Triple("Vedlikeholdstekniker", "Vedlikehold på roterende utstyr.", false),
+            Triple("Servicetechniker", "Service an Pumpen und Kompressoren.", false),
+            Triple("Monteur middenspanning", "Elektrische installaties.", false),
+            Triple("Elektricien spoorwegen Antwerpen", "Spoorweginfrastructuur.", false),
+            Triple("Schilder", "Schilderwerk binnenshuis.", false),
         )
         val titled = cases.map { Triple(it.title, it.description, true) } + extraTitles
         val verdicts = titled.map { (title, description, fromScenario) ->

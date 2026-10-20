@@ -93,19 +93,41 @@ object TargetSearch {
     /**
      * Title words that on their own mark a role as maintenance/trade family. "Maintenance
      * Technician", "Diesel Mechanic" and "Mechanical Fitter" all belong here.
+     *
+     * The list also carries the German, Dutch and Scandinavian equivalents of these trade
+     * words. The key-free boards return a genuinely European sample — an
+     * "Instandhaltungsmechaniker" at Sulzer or an "Onderhoudstechnieker" at a Belgian
+     * industrial employer is the candidate's own job, and a maintenance technician is not
+     * disqualified because the posting names the trade in its own language. Whole-word
+     * containment keeps these safe: "mechaniker" does not fire inside "Industriemechaniker".
      */
     val strongCoreTerms: List<String> = listOf(
         "maintenance", "mechanic", "mechanical", "fitter", "millwright", "mechatronics",
+        // German
+        "instandhaltung", "instandhaltungsmechaniker", "instandhalter",
+        "industriemechaniker", "anlagenmechaniker", "maschinenmechaniker",
+        "schlosser", "mechaniker", "servicetechniker",
+        // Dutch
+        "onderhoudstechnieker", "onderhoudstechnicus", "onderhoudselektricien",
+        "mechanieker", "mecanicien",
+        // Norwegian / Scandinavian
+        "vedlikehold", "vedlikeholdstekniker", "mekaniker", "reparatør",
     )
 
     /**
      * Title words that are only meaningful with a supporting equipment or industry word.
      * "Technician" alone could be a lab technician, so it is not treated as maintenance
-     * unless the posting also names plant machinery or an industrial setting.
+     * unless the posting also names plant machinery or an industrial setting. The German and
+     * Dutch words for a lone "technician"/"electrician" sit here too, matching how their
+     * English equivalents are treated.
      */
     val weakCoreTerms: List<String> = listOf(
         "technician", "electrician", "welder", "machinist", "artisan", "instrumentation",
         "repairer", "assembler",
+        // German
+        "monteur",
+        // Dutch
+        "technieker", "elektricien",
     )
 
     /**

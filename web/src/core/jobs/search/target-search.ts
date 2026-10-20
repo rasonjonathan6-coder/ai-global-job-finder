@@ -76,13 +76,31 @@ export const roles: TargetRole[] = [
   },
 ];
 
-/** Title words that on their own mark a role as maintenance/trade family. */
-export const strongCoreTerms: string[] = ["maintenance", "mechanic", "mechanical", "fitter", "millwright", "mechatronics"];
+/**
+ * Title words that on their own mark a role as maintenance/trade family. Also carries the
+ * German, Dutch and Scandinavian equivalents of these trade words, so a European posting
+ * that names the trade in its own language is not disqualified. Whole-word containment
+ * keeps these safe: "mechaniker" does not fire inside "Industriemechaniker".
+ */
+export const strongCoreTerms: string[] = [
+  "maintenance", "mechanic", "mechanical", "fitter", "millwright", "mechatronics",
+  // German
+  "instandhaltung", "instandhaltungsmechaniker", "instandhalter",
+  "industriemechaniker", "anlagenmechaniker", "maschinenmechaniker",
+  "schlosser", "mechaniker", "servicetechniker",
+  // Dutch
+  "onderhoudstechnieker", "onderhoudstechnicus", "onderhoudselektricien",
+  "mechanieker", "mecanicien",
+  // Norwegian / Scandinavian
+  "vedlikehold", "vedlikeholdstekniker", "mekaniker", "reparatør",
+];
 
 /**
  * Title words that are only meaningful with a supporting equipment or industry word.
  * "Technician" alone could be a lab technician, so it is not treated as maintenance unless
- * the posting also names plant machinery or an industrial setting.
+ * the posting also names plant machinery or an industrial setting. The German and Dutch
+ * words for a lone "technician"/"electrician" sit here too, matching their English
+ * equivalents.
  */
 export const weakCoreTerms: string[] = [
   "technician",
@@ -93,6 +111,11 @@ export const weakCoreTerms: string[] = [
   "instrumentation",
   "repairer",
   "assembler",
+  // German
+  "monteur",
+  // Dutch
+  "technieker",
+  "elektricien",
 ];
 
 /** Equipment/industry nouns that add relevance from a title or the description head. */

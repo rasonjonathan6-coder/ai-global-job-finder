@@ -301,14 +301,27 @@ Each stage leaves both editions building and both suites green.
   **SmartRecruiters** employer boards web-side. The coverage summary now reports how many
   unrelated postings were set aside. Pinned as the `relevance` fixture section, `meta.stage = 70`.
   Android 732 tests, web 428 tests, web build green.
-- **Stage 71 — KMP spike.** Compile `MatchingEngine` to Kotlin/JS; drive the parity fixture
+- **Stage 71 — live search quality validation.** ✅ **Done.** Ran the *real* search through the
+  production engines and measured per-source quality instead of guessing. 786 postings retrieved
+  → 432 after dedup (354 duplicates) → **110 trade-relevant** (322 set aside). The four
+  remote-first boards (Remotive, Jobicy, Himalayas) and Arbeitnow returned **zero** of the
+  candidate's trade; the yield comes from the targeted sources (Workday 42, SmartRecruiters 25,
+  EURES 19, Greenhouse 8, Lever 13). The run surfaced a real false-negative class: genuine trade
+  titles named in German/Dutch/Norwegian ("Instandhaltungsmechaniker", "Onderhoudstechnieker",
+  "Vedlikeholdstekniker") were dropped by an English-only taxonomy. Widened `strongCoreTerms`
+  (and the weak `monteur`/`technieker`/`elektricien`) with those equivalents, whole-word matched
+  so an isolated foreign technician/electrician/painter is still excluded — **86 → 110** relevant,
+  no false-positive regression. Pinned by `Stage71RelevanceTest`, the widened `relevance` fixture
+  (21 verdicts, `meta.stage = 71`), and the opt-in `Stage71LiveSearchHarness` (runs only with
+  `LIVE_SEARCH=1`). Android 739 tests, web 435 tests, web build green.
+- **Stage 72 — KMP spike.** Compile `MatchingEngine` to Kotlin/JS; drive the parity fixture
   through it from `web/`; measure bundle + build impact. Go/no-go on Option B.
-- **Stage 72 — remote AI parity (optional, web).** Decide whether the NVIDIA assistant appears
+- **Stage 73 — remote AI parity (optional, web).** Decide whether the NVIDIA assistant appears
   in the web edition at all. If yes, it must reuse the Kotlin *grounding* contract
   (candidate facts + posting text only; never the CV file, email, phone, address) and be
   consent-gated and off by default. If the web edition stays fully local, say so in the AI
   transparency card rather than implying parity.
-- **Stage 73 — iOS.** If the KMP spike is a go, stand up a SwiftUI shell over the KMP core
+- **Stage 74 — iOS.** If the KMP spike is a go, stand up a SwiftUI shell over the KMP core
   (Layer 2 adapters + Layer 3 UI only). The web PWA remains the zero-install option.
 
 ---
@@ -348,8 +361,8 @@ Each stage leaves both editions building and both suites green.
 
 - **Drift risk (Option A).** Managed only by the regenerate-and-retest discipline. The
   mitigation is Option B.
-- **KMP web bundle cost.** Kotlin/JS/Wasm adds weight to a PWA that is currently ~428 KiB
-  precached. The Stage 70 spike must measure this before committing.
+- **KMP web bundle cost.** Kotlin/JS/Wasm adds weight to a PWA that is currently ~471 KiB
+  precached. The Stage 72 spike must measure this before committing.
 - **Remote AI in the browser.** Adzuna/Jooble keys must never reach the browser; NVIDIA
   likewise. If the web edition ever offers the assistant, it needs a proxy that holds the key,
   exactly like the documented job-provider proxy. Until then the web edition is honestly

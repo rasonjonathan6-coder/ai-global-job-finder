@@ -135,3 +135,28 @@ No credential of ours is ever shipped to the browser (`web/vite.config.ts`). The
 runs entirely client-side; no CV and no key is uploaded anywhere. This is why the web edition
 has no remote AI assistant today — adding one would require the same proxy that holds the key
 server-side.
+
+## Stage 71 — the relevance filter is validated against the live feeds
+
+Stage 70 added the filter; Stage 71 measured whether it actually works on real data. A live probe
+(`Stage71LiveSearchHarness`, opt-in behind `LIVE_SEARCH=1`) drove the **real** key-free providers
+through the production pipeline and reported per-source counts. Over one run: 786 postings
+retrieved, 432 after deduplication (354 duplicates), **110 trade-relevant**, 322 set aside.
+
+The result is honest about where quality comes from. The remote-first boards return a
+software/office sample with **zero** of the candidate's trade — Arbeitnow, Remotive, Jobicy and
+Himalayas all contributed nothing relevant, and the filter correctly set their postings aside.
+The yield comes from the targeted and industrial sources: Workday career sites 42 relevant,
+SmartRecruiters boards 25, EURES 19, Lever 13, Greenhouse 8, Ashby 3.
+
+The probe also found a real false-negative class. The European feeds name the candidate's trade in
+German, Dutch and Norwegian — "Instandhaltungsmechaniker Rotating Equipment", "Onderhoudstechnieker",
+"Vedlikeholdstekniker" — and the English-only taxonomy dropped them. The fix widens
+`strongCoreTerms` in `target-search.ts` (mirroring the Kotlin `TargetSearch`) with those
+equivalents, and puts the weak words (`monteur`, `technieker`, `elektricien`) in `weakCoreTerms`.
+Whole-word matching keeps it conservative: "mechaniker" does not fire inside "Industriemechaniker",
+and a lone foreign technician, electrician or painter is still excluded. Measured effect on the
+same run: **86 → 110** relevant postings, with no false-positive regression. Both sides are pinned
+by the widened `relevance` fixture section (`meta.stage = 71`) and replayed field-for-field in
+`parity.test.ts`, so the Kotlin and TypeScript filters stay byte-identical.
+

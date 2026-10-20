@@ -3099,3 +3099,82 @@ ci-dessus.
   (`.agents/skills/frontend-design`), installed from `OpenHands/extensions`. Keep Kotlin +
   Compose + Material 3; apply its principles to typography, cards, motion and loading states.
 - No hardcoded user-visible strings worth extracting yet; copy lives inline in Stage 1.
+
+## Stage 71 — validation qualité de la recherche live
+
+**Objectif.** Lancer la **vraie** recherche live et rapporter honnêtement ce que chaque source
+renvoie, ce que le filtre de pertinence retient et ce qu'il écarte, puis évaluer la couverture
+pour les métiers cibles. Pas de chiffres inventés : le harnais lit le réseau réel et passe le
+résultat dans les **vrais** moteurs (`RecordValidationEngine`, `RoleClassifier`, `JobMapper`,
+`JobFreshnessEngine`).
+
+**Harnais live.** `app/src/test/java/com/aiglobal/jobfinder/Stage71LiveSearchHarness.kt` est
+**opt-in** : il ne s'exécute que si `LIVE_SEARCH=1` est défini (`Assume`), donc la suite et la CI
+restent hors-ligne et déterministes. Il construit la même liste de fournisseurs sans clé que
+l'app (`Arbeitnow, Remotive, Jobicy, Himalayas, EURES, Workday, Greenhouse, Ashby, Lever,
+SmartRecruiters`), exécute le même `SearchStrategy.planFor` + boucle de fetch, déduplique via
+`RecordValidationEngine`, classifie chaque titre via `RoleClassifier`, mappe via `JobMapper` et
+écrit un rapport console + `web/stage71-live-search.json` (comptes par source, titres retenus,
+quasi-manques, titres écartés, fraîcheur, éligibilité).
+
+**Résultat mesuré (run réel).** 786 offres récupérées → 432 après déduplication (354 doublons) →
+**110 pertinentes** (métier du candidat), 322 écartées. Par source :
+
+| Source | ciblée | renvoyées | gardées | pertinentes | écartées |
+| --- | --- | --- | --- | --- | --- |
+| Arbeitnow | non | 60 | 56 | 0 | 56 |
+| Remotive | non | 10 | 10 | 0 | 10 |
+| Jobicy | non | 50 | 50 | 0 | 50 |
+| Himalayas | non | 20 | 20 | 0 | 20 |
+| EURES | oui | 300 | 151 | 19 | 132 |
+| Employer career sites (Workday) | oui | 112 | 58 | 42 | 16 |
+| Industrial career sites (Greenhouse) | non | 18 | 10 | 8 | 2 |
+| Advanced manufacturing (Ashby) | non | 60 | 26 | 3 | 23 |
+| Industrial employer boards (Lever) | non | 60 | 23 | 13 | 10 |
+| Employer job boards (SmartRecruiters) | oui | 96 | 28 | 25 | 3 |
+
+Les quatre boards « remote-first » (Remotive, Jobicy, Himalayas) et Arbeitnow renvoient **zéro**
+métier du candidat : ce sont des feeds logiciels/office, et le filtre les écarte correctement. Le
+rendement vient des sources ciblées (Workday/SmartRecruiters) et des employeurs industriels.
+
+**Correctif de pertinence (langue).** Le run a montré des titres de métier **réels mais non
+anglais** — « Instandhaltungsmechaniker Rotating Equipment » (Sulzer), « Onderhoudstechnieker »
+(Belgique), « Vedlikeholdstekniker » (Norvège) — écartés par une taxonomie anglophone. Correctif :
+`TargetSearch.strongCoreTerms` gagne les équivalents allemands/néerlandais/scandinaves
+(`instandhaltung`, `instandhaltungsmechaniker`, `industriemechaniker`, `anlagenmechaniker`,
+`maschinenmechaniker`, `schlosser`, `mechaniker`, `servicetechniker`, `onderhoudstechnieker`,
+`onderhoudstechnicus`, `onderhoudselektricien`, `mechanieker`, `mecanicien`, `vedlikehold`,
+`vedlikeholdstekniker`, `mekaniker`, `reparatør`) et `weakCoreTerms` les mots faibles
+(`monteur`, `technieker`, `elektricien`). La correspondance par mot entier garde le correctif sûr
+(`mechaniker` ne matche pas dans `Industriemechaniker` ; un « Schilder »/« Bakker » reste écarté).
+Effet mesuré : **86 → 110** offres pertinentes (+24), sans rouvrir la porte aux faux positifs.
+Porté à l'identique côté web (`web/src/core/jobs/search/target-search.ts`).
+
+**Golden parity.** `Stage58GoldenParityExportTest` gagne 7 verdicts non anglais dans la section
+`relevance` (21 verdicts au total), `meta.stage = 71`. Les deux portées Kotlin/TS sont identiques
+octet pour octet.
+
+**Tests.** `Stage71RelevanceTest.kt` (6 cas, déterministe) verrouille les mots de métier étrangers
+(allemand/néerlandais/scandinave), l'exclusion d'un « technicien/électricien/peintre » isolé, la
+correspondance mot-entier, et l'invariant « un mot n'est pas à la fois fort et faible ».
+
+**Vérifications.** Android : `:app:testDebugUnitTest` → **739 tests, 0 échec, 0 erreur, 4
+ignorés** (dont `Stage71LiveSearchHarness` skippé par défaut). Web : `npm run typecheck` OK,
+`npm test` → **435 tests / 9 fichiers, 0 échec**, `npm run build` OK (PWA, precache 14 entrées).
+Parité octet confirmée.
+
+**Fichiers.** Ajoutés : `Stage71LiveSearchHarness.kt`, `Stage71RelevanceTest.kt`,
+`web/stage71-live-search.json` (rapport). Modifiés : `TargetSearch.kt`,
+`Stage58GoldenParityExportTest.kt`, `target-search.ts`, `kotlin-parity.json`.
+
+**Déploiement (constat, non bloquant pour Stage 71).** Le workflow
+`.github/workflows/deploy-pages.yml` publie `web/dist` sur **GitHub Pages**, mais **Pages n'est
+pas activé** sur le dépôt : la dernière exécution a un build `success` mais l'étape « Check
+whether Pages is enabled » sort `enabled=false` et le job `deploy` est `skipped`. Conséquence :
+`https://<owner>.github.io/ai-global-job-finder/` renvoie **404**. Aucune URL Netlify/Vercel
+n'est déclarée dans le dépôt (les fichiers `netlify.toml` / `vercel.json` sont des configurations
+prêtes mais non connectées). Il n'y a donc **aucune version publiée** à comparer au commit
+`1d94cf9` ; le bundle local (`npm run build`) est vert et installable (manifest + service worker,
+HTTPS requis). Action manuelle restante : Settings → Pages → Source = « GitHub Actions », puis
+relancer le workflow.
+
