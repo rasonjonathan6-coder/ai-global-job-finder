@@ -239,7 +239,7 @@ export function ShortlistScreen({ onNavigate }: ShortlistScreenProps) {
 /** Sticky header with the back and refresh actions, matching the other secondary screens. */
 function ShortlistHeader({ onBack, onRefresh }: { onBack: () => void; onRefresh: () => void }) {
   return (
-    <header className="sticky top-0 z-30 border-b border-card-stroke bg-background/80 backdrop-blur-xl">
+    <header className="safe-top sticky top-0 z-30 border-b border-card-stroke bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-screen-sm items-center gap-3 px-4 pb-3 pt-3">
         <button
           type="button"

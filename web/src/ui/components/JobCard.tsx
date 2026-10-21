@@ -101,16 +101,16 @@ export function JobCard({ job, index = 0, onView, onApply }: JobCardProps) {
             {job.company}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-tertiary">
-            <span className="inline-flex items-center gap-1">
-              <PinIcon width={13} height={13} />
+            <span className="inline-flex min-w-0 max-w-full items-center gap-1">
+              <PinIcon width={13} height={13} className="shrink-0" />
               <span className="truncate">
                 {job.countryFlag ? `${job.countryFlag} ` : ""}
                 {countryLine(job.country, job.city)}
               </span>
             </span>
-            <span className="inline-flex items-center gap-1">
-              <MoneyIcon width={13} height={13} />
-              <span className={salaryKnown ? "text-ink-secondary" : ""}>{salary}</span>
+            <span className="inline-flex min-w-0 items-center gap-1">
+              <MoneyIcon width={13} height={13} className="shrink-0" />
+              <span className={salaryKnown ? "truncate text-ink-secondary" : "truncate"}>{salary}</span>
             </span>
           </div>
         </div>

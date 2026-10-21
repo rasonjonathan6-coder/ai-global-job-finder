@@ -19,7 +19,7 @@ export function ScreenHeader({ title, subtitle, children, showThemeToggle = true
   const { isDark, toggle } = useTheme();
 
   return (
-    <header className="sticky top-0 z-30 border-b border-card-stroke bg-background/80 backdrop-blur-xl">
+    <header className="safe-top sticky top-0 z-30 border-b border-card-stroke bg-background/80 backdrop-blur-xl">
       <div className="mx-auto w-full max-w-screen-sm px-4 pb-3 pt-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

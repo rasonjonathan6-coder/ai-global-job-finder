@@ -189,15 +189,52 @@ plain-words reason rather than silently returning nothing.
 
 ## 6. Deployment status
 
-**Not deployed.** No hosting token (`VERCEL_TOKEN`, `NETLIFY_AUTH_TOKEN`,
-`CLOUDFLARE_API_TOKEN`, `FIREBASE_TOKEN`, `SURGE_TOKEN`) is present in this environment, the
-repository has no Git remote configured, and pushing to a remote is out of scope for this
-stage. There is therefore **no public URL**, and none is claimed here. Everything needed to
-deploy is in place: the verified build, `netlify.toml`, `vercel.json`, the release ZIP
-(section 10) and the steps above.
+**Deployed by the user, not by this environment.** The live site
+`https://aesthetic-rugelach-2dfa2a.netlify.app/` exists and currently answers **HTTP 401** with a
+Netlify *"Login Redirect"* page for `site_id=b93bce95-8bca-44a1-b023-4fb3215909d7`. That is
+Netlify **Edge Access / password protection**, not a build error: an unauthenticated request
+never reaches the deployed bundle. The same 401 is returned for `/index.html`, `/sw.js`,
+`/manifest.webmanifest` and the icon paths, which is what protection applied at the edge looks
+like.
 
-To go live, run one of the Option A–D commands; the host will print the real URL. Report that
-URL back to have it verified.
+This environment has **no hosting token** (`VERCEL_TOKEN`, `NETLIFY_AUTH_TOKEN`,
+`CLOUDFLARE_API_TOKEN`, `FIREBASE_TOKEN`, `SURGE_TOKEN`), **no `netlify-cli`**, and **no
+`.netlify` link state**, so it cannot log in, list the site's deploys, read the protection
+setting, or publish to it. Any claim that the site "has been updated" would be unverifiable
+from here. Instead this environment produces a **verified build** and a **preview** (section
+6a); the user performs the one Netlify-side action and reports the resulting URL back for
+verification.
+
+### How to make the hosted site show this build
+
+The fastest route, since the site is already connected to Netlify:
+
+1. Netlify UI -> **Site configuration -> Access & security -> Visitor access**. Remove the
+   password / Edge Access protection so the deploy is publicly reachable.
+2. Netlify UI -> **Site configuration -> Build & deploy -> Continuous deployment**. Confirm the
+   repository and branch (`main`) and that the build command and publish directory match the
+   root `netlify.toml` (`npm --prefix web ci && npm --prefix web run build`, publish
+   `web/dist`). Trigger **Deploy site** so the latest `main` commit is built from source. The
+   old interface is served because no deploy has been triggered since the web app was
+   rewritten.
+3. Alternatively, deploy the prebuilt archive manually: **Deploys -> drag and drop**
+   `web/release/ai-global-job-finder-web-v1.0.0.zip`. The ZIP's contents sit at its root, so
+   Netlify publishes it as-is, and `_redirects` is included for the SPA fallback.
+
+Either path serves the same verified `web/dist` this document audits.
+
+---
+
+## 6a. Preview build (verified in this environment)
+
+Because the environment cannot publish to Netlify, the built `web/dist` is served on the
+workspace preview host for inspection:
+
+- **Preview URL:** `https://work-1-fxikkagwuedqnwdg.prod-runtime.all-hands.dev/`
+
+The preview is the exact output of `npm run build` for the current `main` commit. Verify it
+with `/manifest.webmanifest`, `/sw.js` and `/icons/apple-touch-icon-180.png`, all of which
+return 200 on the preview.
 
 ---
 

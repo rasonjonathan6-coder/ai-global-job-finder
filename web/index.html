@@ -10,7 +10,18 @@
       content="Find real international jobs you can apply for from Madagascar, with matching, eligibility and expat evidence."
     />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <!--
+      iOS home-screen install. The touch icon must be opaque (iOS paints transparency
+      black) and exactly 180x180 for the current device range, so it is a dedicated
+      flattened PNG rather than the transparent app icon. The legacy precomposed flag
+      stops iOS from applying its own gloss over the artwork.
+    -->
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon-180.png" />
+    <link rel="apple-touch-icon-precomposed" sizes="180x180" href="./icons/apple-touch-icon-180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Job Finder" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>AI Global Job Finder</title>
   </head>
   <body class="h-full">

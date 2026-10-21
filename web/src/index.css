@@ -127,6 +127,31 @@
     @apply mx-auto w-full max-w-screen-sm px-4 pb-28 pt-3;
   }
 
+  /*
+   * Sticky top bars extend under the iOS status bar (the manifest asks for a
+   * translucent status bar), so they must pad themselves by the top inset. `env()`
+   * resolves to 0 everywhere the inset does not exist, so Android and desktop are
+   * unaffected.
+   */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /*
+   * iOS Safari auto-zooms the whole page when a focused field's font-size is below
+   * 16px. The design's 13.5-14px fields are correct visually, so only lift the size
+   * on coarse-pointer (touch) devices, where the zoom would actually happen. The
+   * `!important` is required because the per-field Tailwind `text-[..px]` utilities
+   * otherwise win on specificity.
+   */
+  @media (pointer: coarse) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
   /* The subtle AI gradient wash used behind the dashboard greeting only. */
   .ai-wash {
     background-image: radial-gradient(

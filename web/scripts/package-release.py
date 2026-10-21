@@ -31,6 +31,7 @@ REQUIRED = [
     "icons/icon-192.png",
     "icons/icon-512.png",
     "icons/icon-maskable-512.png",
+    "icons/apple-touch-icon-180.png",
 ]
 REQUIRED_GLOBS = ["assets/*.js", "assets/*.css", "workbox-*.js"]
 
