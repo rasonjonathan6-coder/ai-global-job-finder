@@ -401,3 +401,11 @@ https://work-2-fxikkagwuedqnwdg.prod-runtime.all-hands.dev/AI-Global-Job-Finder-
 These are convenience links only — the hostname changes when the sandbox is recreated. The
 `download.html` URL above is the durable one, because it lives in the deployed site.
 
+### Checking that a push deploys automatically
+
+A docs-only change like this one does not alter the built bundle, so a triggered deploy is
+confirmed from the host's deploy list (or a Netlify commit status on the pushed commit),
+not from the served files. To re-run the check, push any change to `main` and confirm a new
+production deploy references that commit.
+
+Deployment check marker: `stage73-push-trigger-check`.
