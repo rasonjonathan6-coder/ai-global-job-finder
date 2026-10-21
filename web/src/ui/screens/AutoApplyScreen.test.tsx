@@ -15,7 +15,7 @@ describe("AutoApplyScreen", () => {
     window.localStorage.clear();
     window.localStorage.setItem(
       "aigjf.store",
-      JSON.stringify({ version: 1, demoMode: true, autoApplyEnabled: true }),
+      JSON.stringify({ version: 2, demoMode: true, autoApplyEnabled: true }),
     );
   });
 
@@ -56,7 +56,7 @@ describe("AutoApplyScreen", () => {
   });
 
   it("explains that nothing happens while the mode is off", () => {
-    window.localStorage.setItem("aigjf.store", JSON.stringify({ version: 1, demoMode: true }));
+    window.localStorage.setItem("aigjf.store", JSON.stringify({ version: 2, demoMode: true }));
 
     render(
       <AppStoreProvider>

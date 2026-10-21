@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import { AppStoreProvider } from "../../state/app-store";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { AiScreen } from "./AiScreen";
 
@@ -11,11 +12,18 @@ import { AiScreen } from "./AiScreen";
  * reads), rather than to a hand-written list that could drift from the engines.
  */
 describe("AiScreen AI transparency", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("aigjf.store", JSON.stringify({ version: 2, demoMode: true }));
+  });
+
   it("summarises the catalogue and expands to the full, labelled breakdown", async () => {
     render(
-      <ThemeProvider>
-        <AiScreen onNavigate={() => {}} />
-      </ThemeProvider>,
+      <AppStoreProvider>
+        <ThemeProvider>
+          <AiScreen onNavigate={() => {}} />
+        </ThemeProvider>
+      </AppStoreProvider>,
     );
 
     expect(screen.getByText("How this app's AI works")).toBeInTheDocument();
@@ -36,9 +44,11 @@ describe("AiScreen AI transparency", () => {
 
   it("states that applications are prepared but never sent automatically", () => {
     render(
-      <ThemeProvider>
-        <AiScreen onNavigate={() => {}} />
-      </ThemeProvider>,
+      <AppStoreProvider>
+        <ThemeProvider>
+          <AiScreen onNavigate={() => {}} />
+        </ThemeProvider>
+      </AppStoreProvider>,
     );
 
     // The claim is driven by `SubmissionCapability`, not a hand-written sentence.

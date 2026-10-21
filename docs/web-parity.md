@@ -90,15 +90,20 @@ the page read a response without it.
 | Remotive | `Access-Control-Allow-Origin: *` | Works — key-free |
 | Arbeitnow | `Access-Control-Allow-Origin: *` | Works — key-free |
 | Jobicy | `Access-Control-Allow-Origin: *` | Works — key-free |
+| Greenhouse | `Access-Control-Allow-Origin: *` | Works — key-free (employer boards) |
+| Lever | `Access-Control-Allow-Origin: *` | Works — key-free (employer boards) |
+| Ashby | `Access-Control-Allow-Origin: *` | Works — key-free (employer boards) |
 | SmartRecruiters | `Access-Control-Allow-Origin: *` | Works — key-free (employer boards) |
 | Himalayas | no ACAO header | Blocked — needs the proxy |
+| Eures | unreachable from a browser | Blocked — needs the proxy |
+| Workday | no ACAO header | Blocked — needs the proxy |
 | Adzuna | key required | Needs the proxy (key must not ship) |
 | Jooble | key required | Needs the proxy (key must not ship) |
 
-So the deployed web app searches **Remotive, Arbeitnow, Jobicy and the SmartRecruiters employer
-boards**. `HimalayasProvider` exists and is tested, but is not in `defaultProviders()` because a
-browser fetch is refused. A blocked or failed source is named in the diagnostics strip with a
-plain-words reason, never silently dropped.
+So the deployed web app searches **Remotive, Arbeitnow, Jobicy, the Greenhouse / Lever / Ashby
+employer boards and the SmartRecruiters employer boards**. `HimalayasProvider` exists and is
+tested, but is not in `defaultProviders()` because a browser fetch is refused. A blocked or failed
+source is named in the diagnostics strip with a plain-words reason, never silently dropped.
 
 ## Stage 70 — the live sample is filtered to the candidate's trade
 
@@ -160,3 +165,29 @@ same run: **86 → 110** relevant postings, with no false-positive regression. B
 by the widened `relevance` fixture section (`meta.stage = 71`) and replayed field-for-field in
 `parity.test.ts`, so the Kotlin and TypeScript filters stay byte-identical.
 
+
+## Stage 73 — the job-scoped screens are wired to the ported engines
+
+Stage 69 brought the web UI to parity for the feed, alerts and auto-apply screens; three
+job-scoped tools still showed only an explainer. Stage 73 wires them to the engines the parity
+fixture already pins, so the PWA presents the same behaviour as Android:
+
+- `CoverLetterScreen` calls the ported `CoverLetterGenerator` through the store, renders the
+  language the generator infers from the destination country (`letterLanguageForCountry`), and
+  shows the letter's own `usedFacts` / `missingFacts` as a "built from your CV" card. It mirrors
+  the Android `CoverLetterViewModel.generate` guard: an empty profile produces the "import your
+  CV first" message instead of a padded letter.
+- `ScamShieldScreen` renders the ported `scanForScams` report — the verdict, the `scamSafetyScore`
+  and every `ScamSignal` quoted from the posting — grouped by tone, plus the auditable rule list.
+  The screen advises; it never blocks an application.
+- `InterviewScreen` drives the ported `InterviewQuestionBank` / `InterviewCoach`: the rehearsal
+  set, the graded `AnswerFeedback` and the readiness score all come from the engine, and attempts
+  are recorded per posting. A blank posting id means "coach me for my best current match", exactly
+  as the Android `InterviewViewModel` resolves it.
+
+The engines were already pinned by the `stage 62` parity sections (`coverLetters`, `interview`,
+`scam`, AI capability catalog), so these screens add presentation only. The suite proves the
+outputs stay byte-identical while the new UI tests prove each screen renders the engine's own
+result. `JobCard` gained an optional `onOpenTool` affordance so a posting can open its cover
+letter, scam check or interview coach directly, and `AiScreen` routes the same three tools to the
+best current match when opened without a posting.

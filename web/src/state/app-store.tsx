@@ -14,6 +14,7 @@ import {
   AlertScope,
   AutoApplyStatus,
   defaultExpatPreferences,
+  LetterLanguage,
   letterLanguageForCountry,
   shortlistSourceNote,
   type AutoApplyItem,
@@ -32,7 +33,11 @@ import { JobAlertEngine } from "../core/alerts/alert-engine";
 import { AutoApplyEngine } from "../core/autoapply/auto-apply-engine";
 import { CoverLetterGenerator } from "../core/coverletter/cover-letter-generator";
 import { profileCompleteness } from "../core/cv/completeness";
-import { demoCandidateProfile } from "./demo-profile";
+import { analyzeCvInto } from "../core/cv/contract";
+import { CandidateField, type AnswerConfidence, type AnswerFeedback, type InterviewAttempt, type InterviewPrep, type InterviewQuestion, type InterviewReadiness, type ScamReport } from "../core/models";
+import { InterviewCoach } from "../core/interview/interview-coach";
+import { scanForScams } from "../core/scam/scam-detector";
+import { demoCandidateProfile, profileHasCv, sampleCandidateProfile } from "./demo-profile";
 import { SAMPLE_JOBS } from "../ui/lib/sample-jobs";
 
 /** Mirrors the Android `ApplicationStatus`, minus the states the web tracker cannot reach yet. */
@@ -110,6 +115,8 @@ export interface RefreshState {
 interface PersistedState {
   version: number;
   profile: CandidateProfile | null;
+  profileIsImported: boolean;
+  cvFileName: string | null;
   expatPreferences: ExpatPreferences;
   applications: ApplicationRecord[];
   notifications: AppNotification[];
@@ -118,10 +125,14 @@ interface PersistedState {
   alertRules: JobAlertRule[];
   autoApplyItems: AutoApplyItem[];
   coverLetters: CoverLetter[];
+  interviewAttempts: StoredInterviewAttempt[];
 }
 
 const STORAGE_KEY = "aigjf.store";
-const STORAGE_VERSION = 1;
+// Bumped 1 -> 2: v1 could persist the seeded sample profile as if it were the user's own CV.
+// Returning visitors on v1 would otherwise keep seeing that stranger's data, so the key is
+// treated as unreadable and a clean, empty profile is served instead.
+const STORAGE_VERSION = 2;
 
 const EMPTY_REFRESH: RefreshState = {
   status: "idle",
@@ -131,10 +142,30 @@ const EMPTY_REFRESH: RefreshState = {
   coverage: { sources: [], totalRelevant: 0, totalRetrieved: 0 },
 };
 
+/**
+ * The honest outcome of a CV import, surfaced to the UI so it can report what was actually
+ * read rather than a generic success toast. Mirrors the Android `CvAnalysisResult` summary.
+ */
+export interface CvImportSummary {
+  /** 0-100: how much of the profile the analyser could fill from the document. */
+  confidence: number;
+  /** Notes about fields the document did not state, so nothing is silently invented. */
+  warnings: string[];
+  /** Whether the document yielded any usable field at all. */
+  extractedAnything: boolean;
+}
+
+/** An `InterviewAttempt` tagged with the posting it belongs to, so attempts persist per job. */
+export interface StoredInterviewAttempt extends InterviewAttempt {
+  jobId: string;
+}
+
 function emptyPersisted(): PersistedState {
   return {
     version: STORAGE_VERSION,
     profile: null,
+    profileIsImported: false,
+    cvFileName: null,
     expatPreferences: defaultExpatPreferences(),
     applications: [],
     notifications: [],
@@ -143,6 +174,7 @@ function emptyPersisted(): PersistedState {
     alertRules: [],
     autoApplyItems: [],
     coverLetters: [],
+    interviewAttempts: [],
   };
 }
 
@@ -167,6 +199,13 @@ interface AppStoreValue {
   profile: CandidateProfile;
   profileIsImported: boolean;
   updateProfile: (profile: CandidateProfile) => void;
+  /**
+   * Runs the on-device CV analyser over `text` and merges the result into the profile,
+   * preserving fields the user edited by hand. Mirrors the Android `CvRepository.analyse`.
+   */
+  importCv: (text: string, fileName: string) => CvImportSummary;
+  /** The imported CV's file name, or null when no CV has been imported. */
+  cvFileName: string | null;
   expatPreferences: ExpatPreferences;
   setExpatPreferences: (prefs: ExpatPreferences) => void;
 
@@ -219,6 +258,27 @@ interface AppStoreValue {
   prepareAutoApply: () => void;
   approveAutoApply: (jobId: string) => void;
   skipAutoApply: (jobId: string) => void;
+
+  /** Rehearsal set for one posting, built from that posting and the CV (never invented). */
+  interviewPrep: (jobId: string) => InterviewPrep | null;
+  /** Deterministic feedback on a written answer, graded against the question's structure. */
+  gradeInterviewAnswer: (question: InterviewQuestion, answer: string) => AnswerFeedback;
+  /** Records the user's own confidence in an attempt, which drives readiness. */
+  recordInterviewAttempt: (jobId: string, questionId: string, confidence: AnswerConfidence) => void;
+  /** Clears every saved attempt for one posting, so a rehearsal can start over. */
+  resetInterviewAttempts: (jobId: string) => void;
+  /** Rehearsal progress for one posting, derived from the saved attempts. */
+  interviewReadiness: (jobId: string) => InterviewReadiness;
+  /** Attempts saved for one posting, keyed by question id. */
+  interviewAttempts: (jobId: string) => InterviewAttempt[];
+
+  /** Scam scan for one posting: the warning signs found, each traceable to the posting. */
+  scamReport: (job: Job) => ScamReport;
+
+  /** Generates and stores a cover letter for one posting, in the chosen (or inferred) language. */
+  generateCoverLetter: (jobId: string, language?: LetterLanguage) => CoverLetter | null;
+  /** A previously generated cover letter for one posting, if any. */
+  coverLetterFor: (jobId: string) => CoverLetter | null;
 }
 
 const AppStoreContext = createContext<AppStoreValue | null>(null);
@@ -235,9 +295,15 @@ const AppStoreContext = createContext<AppStoreValue | null>(null);
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const persisted = useRef<PersistedState>(readPersisted());
 
-  const [profile, setProfile] = useState<CandidateProfile>(
-    () => persisted.current.profile ?? demoCandidateProfile(),
+  const [profile, setProfile] = useState<CandidateProfile>(() =>
+    persisted.current.profile ??
+    (persisted.current.demoMode ? sampleCandidateProfile() : demoCandidateProfile()),
   );
+  // Whether the profile is a real import or an empty/derived placeholder. Mirrors the
+  // Android `UserProfile.cvImported` gate: the "CV analysed" badge and completion ring only
+  // light up when this is true, so a fresh visitor is never told a CV was read.
+  const [profileIsImported, setProfileIsImported] = useState<boolean>(() => persisted.current.profileIsImported);
+  const [cvFileName, setCvFileName] = useState<string | null>(() => persisted.current.cvFileName);
   const [expatPreferences, setExpatPreferencesState] = useState<ExpatPreferences>(
     () => persisted.current.expatPreferences,
   );
@@ -262,6 +328,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [autoApplyPreparing, setAutoApplyPreparing] = useState(false);
   const [autoApplyThreshold, setAutoApplyThresholdState] = useState(AutoApplyEngine.DEFAULT_THRESHOLD);
   const [coverLetters, setCoverLetters] = useState<CoverLetter[]>(() => persisted.current.coverLetters);
+  const [interviewAttemptsState, setInterviewAttempts] = useState<StoredInterviewAttempt[]>(
+    () => persisted.current.interviewAttempts,
+  );
   const [shortlist, setShortlist] = useState<ShortlistState>(() => ({
     isLoading: true,
     entries: [],
@@ -275,13 +344,21 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const shortlistEngineRef = useRef<ShortlistEngine | null>(null);
   const alertEngineRef = useRef<JobAlertEngine | null>(null);
   const coverLetterGeneratorRef = useRef<CoverLetterGenerator | null>(null);
+  const interviewCoachRef = useRef<InterviewCoach | null>(null);
   const inFlight = useRef(false);
+  // Holds the user's own profile while demo mode is on, so toggling demo mode off restores
+  // exactly what they had imported rather than the curated sample.
+  const savedProfile = useRef<CandidateProfile | null>(null);
+  const savedImported = useRef(false);
+  const savedCvFileName = useRef<string | null>(null);
 
   // Persist on every meaningful change. A single effect keeps the write path in one place.
   useEffect(() => {
     const payload: PersistedState = {
       version: STORAGE_VERSION,
       profile,
+      profileIsImported,
+      cvFileName,
       expatPreferences,
       applications,
       notifications,
@@ -290,6 +367,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       alertRules,
       autoApplyItems,
       coverLetters,
+      interviewAttempts: interviewAttemptsState,
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -298,6 +376,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [
     profile,
+    profileIsImported,
+    cvFileName,
     expatPreferences,
     applications,
     notifications,
@@ -306,6 +386,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     alertRules,
     autoApplyItems,
     coverLetters,
+    interviewAttemptsState,
   ]);
 
   const pipeline = useMemo(() => {
@@ -326,6 +407,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const coverLetterGenerator = useMemo(() => {
     coverLetterGeneratorRef.current ??= new CoverLetterGenerator();
     return coverLetterGeneratorRef.current;
+  }, []);
+
+  const interviewCoach = useMemo(() => {
+    interviewCoachRef.current ??= new InterviewCoach();
+    return interviewCoachRef.current;
   }, []);
 
   /**
@@ -625,6 +711,107 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setProfile(next);
     persisted.current = { ...persisted.current, profile: next };
   }, []);
+
+  /**
+   * Imports a CV: runs the on-device analyser, merges the extraction into the current profile
+   * (hand-edited fields win, mirroring `CvProfileMerger`) and records the source file name.
+   * The imported flag only flips when the document actually yielded a usable field, so a CV
+   * the analyser could not read never shows a false "CV analysed" badge.
+   */
+  const importCv = useCallback(
+    (text: string, fileName: string): CvImportSummary => {
+      const result = analyzeCvInto(text, profile, new Set<CandidateField>());
+      const next = result.profile;
+      const extractedAnything = profileHasCv(next);
+      setProfile(next);
+      if (extractedAnything) {
+        setProfileIsImported(true);
+        setCvFileName(fileName);
+      }
+      persisted.current = {
+        ...persisted.current,
+        profile: next,
+        profileIsImported: extractedAnything || persisted.current.profileIsImported,
+        cvFileName: extractedAnything ? fileName : persisted.current.cvFileName,
+      };
+      return {
+        confidence: result.confidence,
+        warnings: result.warnings,
+        extractedAnything,
+      };
+    },
+    [profile],
+  );
+
+  // ------------------------------------------------------------------------------------ AI
+  // The assistant workspace used to describe these features as "Soon"; they are ported engines,
+  // so the screens now call them directly and report exactly what the engine returned.
+
+  const interviewPrep = useCallback(
+    (jobId: string): InterviewPrep | null => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job) return null;
+      return interviewCoach.prep(job, profile);
+    },
+    [jobs, profile, interviewCoach],
+  );
+
+  const gradeInterviewAnswer = useCallback(
+    (question: InterviewQuestion, answer: string): AnswerFeedback => interviewCoach.feedback(question, answer),
+    [interviewCoach],
+  );
+
+  const recordInterviewAttempt = useCallback(
+    (jobId: string, questionId: string, confidence: AnswerConfidence) => {
+      setInterviewAttempts((current) => {
+        const others = current.filter((a) => !(a.jobId === jobId && a.questionId === questionId));
+        return [...others, { jobId, questionId, confidence, atEpochMillis: Date.now() }];
+      });
+    },
+    [],
+  );
+
+  const interviewAttempts = useCallback(
+    (jobId: string): InterviewAttempt[] => interviewAttemptsState.filter((a) => a.jobId === jobId),
+    [interviewAttemptsState],
+  );
+
+  const resetInterviewAttempts = useCallback((jobId: string) => {
+    setInterviewAttempts((current) => current.filter((a) => a.jobId !== jobId));
+  }, []);
+
+  const interviewReadiness = useCallback(
+    (jobId: string): InterviewReadiness => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job) return interviewCoach.readiness([], []);
+      const questions = interviewCoach.prep(job, profile).questions;
+      return interviewCoach.readiness(questions, interviewAttemptsState.filter((a) => a.jobId === jobId));
+    },
+    [jobs, profile, interviewCoach, interviewAttemptsState],
+  );
+
+  const scamReport = useCallback((job: Job): ScamReport => scanForScams(job), []);
+
+  const generateCoverLetter = useCallback(
+    (jobId: string, language?: LetterLanguage): CoverLetter | null => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job) return null;
+      const letter = coverLetterGenerator.generate(
+        job,
+        profile,
+        language ?? letterLanguageForCountry(job.country),
+      );
+      setCoverLetters((current) => [letter, ...current.filter((l) => l.jobId !== jobId)].slice(0, 50));
+      return letter;
+    },
+    [jobs, profile, coverLetterGenerator],
+  );
+
+  const coverLetterFor = useCallback(
+    (jobId: string): CoverLetter | null => coverLetters.find((l) => l.jobId === jobId) ?? null,
+    [coverLetters],
+  );
+
   const setAutoApplyEnabled = useCallback(
     (enabled: boolean) => {
       setAutoApplyState(enabled);
@@ -638,6 +825,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const setDemoMode = useCallback(
     (enabled: boolean) => {
       setDemoModeState(enabled);
+      // Mirror the Android `LiveJobRepository.profile`: demo mode serves the curated sample
+      // profile, and turning it off returns the user's own imported CV (or the empty profile).
+      // The profile the user imported is kept aside so demo mode can never overwrite it.
+      if (enabled) {
+        savedProfile.current = profile;
+        setProfile(sampleCandidateProfile());
+        setProfileIsImported(true);
+        setCvFileName("Jonathan Rakoto — sample CV");
+      } else if (savedProfile.current) {
+        setProfile(savedProfile.current);
+        setProfileIsImported(savedImported.current);
+        setCvFileName(savedCvFileName.current);
+      }
       // Mirror the Android `JobAlertsCenter`: demo mode seeds two curated example searches
       // so the alerts screen has something honest to show. Never seeds on the user's behalf
       // outside demo mode — the alert list is their own.
@@ -645,7 +845,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         setAlertRules((current) => (current.length > 0 ? current : demoAlertRules()));
       }
     },
-    [],
+    [profile],
   );
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
@@ -658,8 +858,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppStoreValue>(
     () => ({
       profile,
-      profileIsImported: persisted.current.profile != null,
+      profileIsImported,
       updateProfile,
+      importCv,
+      cvFileName,
       expatPreferences,
       setExpatPreferences,
       jobs,
@@ -699,10 +901,22 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       prepareAutoApply,
       approveAutoApply,
       skipAutoApply,
+      interviewPrep,
+      gradeInterviewAnswer,
+      recordInterviewAttempt,
+      resetInterviewAttempts,
+      interviewReadiness,
+      interviewAttempts,
+      scamReport,
+      generateCoverLetter,
+      coverLetterFor,
     }),
     [
       profile,
+      profileIsImported,
       updateProfile,
+      importCv,
+      cvFileName,
       expatPreferences,
       setExpatPreferences,
       jobs,
@@ -742,6 +956,15 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       prepareAutoApply,
       approveAutoApply,
       skipAutoApply,
+      interviewPrep,
+      gradeInterviewAnswer,
+      recordInterviewAttempt,
+      resetInterviewAttempts,
+      interviewReadiness,
+      interviewAttempts,
+      scamReport,
+      generateCoverLetter,
+      coverLetterFor,
     ],
   );
 

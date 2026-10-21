@@ -15,7 +15,7 @@ describe("ShortlistScreen source footnote", () => {
     window.localStorage.clear();
     window.localStorage.setItem(
       "aigjf.store",
-      JSON.stringify({ version: 1, demoMode: true }),
+      JSON.stringify({ version: 2, demoMode: true }),
     );
   });
 

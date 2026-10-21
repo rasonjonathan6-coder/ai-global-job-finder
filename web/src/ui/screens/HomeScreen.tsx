@@ -49,6 +49,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
     window.open(job.sourceUrl, "_blank", "noopener,noreferrer");
     onNavigate("applications");
   };
+  const openTool = (tool: "coverletter" | "scam" | "interview", job: Job) => onNavigate(`${tool}/${job.id}`);
 
   return (
     <>
@@ -144,7 +145,7 @@ export function HomeScreen({ onNavigate }: HomeScreenProps) {
           ) : (
             <div className="space-y-3">
               {best.map((job, i) => (
-                <JobCard key={job.id} job={job} index={i} onView={open} onApply={apply} />
+                <JobCard key={job.id} job={job} index={i} onView={open} onApply={apply} onOpenTool={openTool} />
               ))}
             </div>
           )}

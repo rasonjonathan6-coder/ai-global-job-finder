@@ -17,7 +17,7 @@ describe("JobAlertsScreen", () => {
     window.localStorage.setItem(
       "aigjf.store",
       JSON.stringify({
-        version: 1,
+        version: 2,
         demoMode: true,
         alertRules: [
           {
@@ -69,7 +69,7 @@ describe("JobAlertsScreen", () => {
   });
 
   it("shows the empty state when there are no saved searches", async () => {
-    window.localStorage.setItem("aigjf.store", JSON.stringify({ version: 1, demoMode: true }));
+    window.localStorage.setItem("aigjf.store", JSON.stringify({ version: 2, demoMode: true }));
 
     render(
       <AppStoreProvider>

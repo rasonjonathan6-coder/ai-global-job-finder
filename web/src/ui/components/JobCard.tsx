@@ -13,14 +13,30 @@ import {
   CheckIcon,
   ClockIcon,
   ExternalLinkIcon,
+  FileTextIcon,
   GlobeIcon,
   InfoIcon,
   MoneyIcon,
   PinIcon,
   ShieldIcon,
+  SparkIcon,
 } from "./icons";
 
 export type EligibilityTone = BadgeTone;
+
+/** A small ghost chip that opens a job-scoped AI tool from the card. */
+function ToolChip({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-full border border-card-stroke bg-surface px-2.5 py-1 text-[11px] font-semibold text-ink-secondary transition-colors hover:border-accent-500/40 hover:text-accent-ink active:scale-95"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
 
 /** Maps the model's eligibility verdict to a badge label + tone, shared by card and detail. */
 export function eligibilityBadge(job: Job): { label: string; tone: EligibilityTone } {
@@ -59,6 +75,8 @@ interface JobCardProps {
   index?: number;
   onView?: (job: Job) => void;
   onApply?: (job: Job) => void;
+  /** Opens a job-scoped AI tool (cover letter, scam shield, interview coach) for this posting. */
+  onOpenTool?: (tool: "coverletter" | "scam" | "interview", job: Job) => void;
 }
 
 /**
@@ -66,7 +84,7 @@ interface JobCardProps {
  * facts a Madagascar-based applicant needs before deciding to spend time — eligibility,
  * location, pay and visa posture. Nothing is colour-only; every signal carries a label.
  */
-export function JobCard({ job, index = 0, onView, onApply }: JobCardProps) {
+export function JobCard({ job, index = 0, onView, onApply, onOpenTool }: JobCardProps) {
   const eligibility = eligibilityBadge(job);
   const visa = visaBadge(job);
   const salary = formatSalaryRange(
@@ -138,6 +156,14 @@ export function JobCard({ job, index = 0, onView, onApply }: JobCardProps) {
           <InfoIcon width={14} height={14} className="mt-0.5 shrink-0 text-accent-ink" />
           <span className="line-clamp-2">{job.aiInsight}</span>
         </p>
+      )}
+
+      {onOpenTool && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <ToolChip label="Cover letter" icon={<FileTextIcon width={12} height={12} />} onClick={() => onOpenTool("coverletter", job)} />
+          <ToolChip label="Scam check" icon={<ShieldIcon width={12} height={12} />} onClick={() => onOpenTool("scam", job)} />
+          <ToolChip label="Interview" icon={<SparkIcon width={12} height={12} />} onClick={() => onOpenTool("interview", job)} />
+        </div>
       )}
 
       <div className="mt-3.5 flex items-center justify-between gap-3">

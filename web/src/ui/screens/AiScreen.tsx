@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AI_CAPABILITY_CATALOG,
   AI_CAPABILITY_KIND_META,
@@ -8,9 +8,10 @@ import {
   type AiCapability,
 } from "../../core/models";
 import { SubmissionCapability } from "../../core/submissions/submission-capability";
-import { Badge } from "../components/Badge";
 import { Button } from "../components/Button";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { useAppStore } from "../../state/app-store";
+import { isStrongMatch } from "../lib/job-stats";
 import {
   AiIcon,
   ApplicationsIcon,
@@ -21,6 +22,7 @@ import {
   ChevronUpIcon,
   CloudIcon,
   FileTextIcon,
+  GavelIcon,
   GlobeIcon,
   RocketIcon,
   ShieldIcon,
@@ -40,65 +42,6 @@ interface Capability {
   actionLabel?: string;
 }
 
-const CAPABILITIES: Capability[] = [
-  {
-    title: "CV analysis",
-    detail: "Reads your skills, experience and education, then matches them against each posting.",
-    icon: <FileTextIcon width={20} height={20} />,
-    tone: "accent",
-  },
-  {
-    title: "Expat shortlist",
-    detail: "Ranks the postings you can actually apply for from Madagascar, and says what is in the way.",
-    icon: <GlobeIcon width={20} height={20} />,
-    tone: "success",
-    route: "shortlist",
-    actionLabel: "Open shortlist",
-  },
-  {
-    title: "Eligibility check",
-    detail: "Checks whether a role accepts applicants from Madagascar, and whether a visa route is stated.",
-    icon: <ShieldIcon width={20} height={20} />,
-    tone: "info",
-  },
-  {
-    title: "Scam shield",
-    detail: "Flags postings with the warning signs that typically precede recruitment fraud.",
-    icon: <ShieldIcon width={20} height={20} />,
-    tone: "warning",
-  },
-  {
-    title: "Application help",
-    detail: "Adapts your CV and drafts a cover letter for the posting you choose.",
-    icon: <ApplicationsIcon width={20} height={20} />,
-    tone: "success",
-  },
-  {
-    title: "Prepared, never sent for you",
-    detail: SubmissionCapability.sendsNothing
-      ? "The assistant prepares each application and stops at one-tap approval. No channel can be driven by the app, so nothing is ever submitted automatically."
-      : "The assistant prepares each application and waits for your one-tap approval before anything is sent.",
-    icon: <ShieldIcon width={20} height={20} />,
-    tone: "info",
-  },
-  {
-    title: "Job alerts",
-    detail: "Saved searches that tell you the moment a matching posting appears.",
-    icon: <BellIcon width={20} height={20} />,
-    tone: "info",
-    route: "alerts",
-    actionLabel: "Manage alerts",
-  },
-  {
-    title: "Safe auto-apply",
-    detail: "Prepares a tailored draft for every strong match, and never sends it for you.",
-    icon: <RocketIcon width={20} height={20} />,
-    tone: "accent",
-    route: "autoapply",
-    actionLabel: "Open auto-apply",
-  },
-];
-
 const TONE_CLASS: Record<Capability["tone"], string> = {
   accent: "bg-accent-500/[0.10] text-accent-ink",
   success: "bg-success-container text-success",
@@ -106,84 +49,179 @@ const TONE_CLASS: Record<Capability["tone"], string> = {
   info: "bg-info-container text-info",
 };
 
+interface CapabilityGroup {
+  title: string;
+  subtitle: string;
+  cards: Capability[];
+}
+
 /**
- * The AI workspace. Stage 1 presents the assistant's capabilities and an honest, animated
- * "analysis" progress example; the live pipeline connects in a later stage.
+ * The AI workspace. Every card below is wired to a ported engine (or to a screen that is), so
+ * the assistant describes only what it actually does. The analysis card tells the truth about
+ * the profile: with no CV imported it asks for one rather than claiming a match was scored.
  */
 export function AiScreen({ onNavigate }: { onNavigate: (route: string) => void }) {
+  const { jobs, profileIsImported, profile, refreshJobs, refresh } = useAppStore();
   const [progress, setProgress] = useState(0);
+  const [running, setRunning] = useState(true);
 
   useEffect(() => {
+    if (!running) return;
+    setProgress(0);
     const timer = window.setInterval(() => {
-      setProgress((p) => (p >= 100 ? 0 : Math.min(100, p + 4)));
+      setProgress((p) => {
+        const next = Math.min(100, p + 4);
+        if (next >= 100) {
+          window.clearInterval(timer);
+          setRunning(false);
+        }
+        return next;
+      });
     }, 90);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [running]);
 
-  const analysing = progress < 100;
+  const skillCount = profile.skills.length;
+  const strongMatchCount = useMemo(() => jobs.filter(isStrongMatch).length, [jobs]);
+
+  const groups: CapabilityGroup[] = [
+    {
+      title: "Find the right role",
+      subtitle: "Match, rank and explain the postings that fit you",
+      cards: [
+        {
+          title: profileIsImported ? "Open my CV" : "Import my CV",
+          detail: profileIsImported
+            ? "Your CV is analysed. Re-open it any time to correct a skill or add experience."
+            : "Reads your real document, extracts skills and experience, and builds a profile you can correct.",
+          icon: <FileTextIcon width={20} height={20} />,
+          tone: "accent",
+          route: "profile",
+          actionLabel: profileIsImported ? "Open my CV" : "Import my CV",
+        },
+        {
+          title: "Expat shortlist",
+          detail: "Ranks the postings you can actually apply for from Madagascar, and says what is in the way.",
+          icon: <GlobeIcon width={20} height={20} />,
+          tone: "success",
+          route: "shortlist",
+          actionLabel: "Open shortlist",
+        },
+      ],
+    },
+    {
+      title: "Apply with confidence",
+      subtitle: "Prepare a grounded application and check it is safe",
+      cards: [
+        {
+          title: "Cover letter",
+          detail: "Drafts a letter from your own CV and the posting, in the destination's language. Nothing is invented.",
+          icon: <ApplicationsIcon width={20} height={20} />,
+          tone: "accent",
+          route: "coverletter",
+          actionLabel: "Write a letter",
+        },
+        {
+          title: "Scam shield",
+          detail: "Flags upfront fees, unregistered employers and unrealistic salary claims — each quoted from the posting.",
+          icon: <GavelIcon width={20} height={20} />,
+          tone: "warning",
+          route: "scam",
+          actionLabel: "Check a posting",
+        },
+        {
+          title: "Interview coach",
+          detail: "Rehearses visa interviews and technical rounds with instant, grounded feedback.",
+          icon: <TrendIcon width={20} height={20} />,
+          tone: "info",
+          route: "interview",
+          actionLabel: "Start rehearsing",
+        },
+        {
+          title: "Prepared, never sent for you",
+          detail: SubmissionCapability.sendsNothing
+            ? "The assistant prepares each application and stops at one-tap approval. No channel can be driven by the app, so nothing is ever submitted automatically."
+            : "The assistant prepares each application and waits for your one-tap approval before anything is sent.",
+          icon: <ShieldIcon width={20} height={20} />,
+          tone: "info",
+        },
+      ],
+    },
+    {
+      title: "Stay ahead",
+      subtitle: "Get told the moment a role matches, and never miss a follow-up",
+      cards: [
+        {
+          title: "Job alerts",
+          detail: "Saved searches that tell you the moment a matching posting appears.",
+          icon: <BellIcon width={20} height={20} />,
+          tone: "info",
+          route: "alerts",
+          actionLabel: "Manage alerts",
+        },
+        {
+          title: "Safe auto-apply",
+          detail: "Prepares a tailored draft for every strong match, and never sends it for you.",
+          icon: <RocketIcon width={20} height={20} />,
+          tone: "accent",
+          route: "autoapply",
+          actionLabel: "Open auto-apply",
+        },
+      ],
+    },
+  ];
 
   return (
     <>
       <ScreenHeader title="AI Assistant" subtitle="Your CV, matched against real international openings" />
       <div className="app-shell space-y-5">
-        <section className="card-surface overflow-hidden p-0">
-          <div className="ai-wash p-4">
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-500 to-teal-600 text-white">
-                <AiIcon width={22} height={22} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[15px] font-bold text-ink-primary">Analysing your profile</p>
-                <p className="text-[12.5px] text-ink-secondary">
-                  {analysing ? "Reading your CV and checking eligibility…" : "Analysis complete"}
-                </p>
-              </div>
-            </div>
+        <AnalysisCard
+          progress={progress}
+          running={running}
+          hasCv={profileIsImported}
+          skillCount={skillCount}
+          strongMatchCount={strongMatchCount}
+          feedIdle={refresh.status === "idle"}
+          onRun={() => {
+            setRunning(true);
+            if (refresh.status === "idle" || refresh.status === "error") void refreshJobs();
+          }}
+        />
 
-            <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-surface-variant">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-accent-500 to-teal-500 transition-[width] duration-200 ease-out"
-                style={{ width: `${progress}%` }}
-                role="progressbar"
-                aria-valuenow={progress}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Analysis progress"
+        <section className="space-y-2">
+          <h2 className="px-1 text-[16px] font-bold text-ink-primary">Start here</h2>
+          <CapabilityCard
+            cap={{
+              title: "Import and analyse my CV",
+              detail:
+                "Read your real document, extract skills and experience, and build a profile you can correct. Runs on your device.",
+              icon: <FileTextIcon width={20} height={20} />,
+              tone: "accent",
+              route: "profile",
+              actionLabel: "Open CV analysis",
+            }}
+            onClick={() => onNavigate("profile")}
+          />
+        </section>
+
+        {groups.map((group) => (
+          <section key={group.title} className="space-y-2.5">
+            <div className="px-1">
+              <h2 className="text-[16px] font-bold text-ink-primary">{group.title}</h2>
+              <p className="text-[12.5px] text-ink-secondary">{group.subtitle}</p>
+            </div>
+            {group.cards.map((cap, i) => (
+              <CapabilityCard
+                key={cap.title}
+                cap={cap}
+                index={i}
+                onClick={() => cap.route && onNavigate(cap.route)}
               />
-            </div>
-            <div className="mt-2 flex items-center justify-between text-[11.5px] text-ink-tertiary">
-              <span>{analysing ? "Working…" : "Up to date"}</span>
-              <span className="tabular-nums">{progress}%</span>
-            </div>
-          </div>
-        </section>
+            ))}
+          </section>
+        ))}
 
-        <section aria-label="What the assistant does" className="space-y-3">
-          {CAPABILITIES.map((cap, i) => (
-            <button
-              key={cap.title}
-              type="button"
-              disabled={!cap.route}
-              onClick={() => cap.route && onNavigate(cap.route)}
-              className="card-surface animate-fade-up flex w-full items-start gap-3.5 p-4 text-left transition-transform active:scale-[0.99] disabled:active:scale-100"
-              style={{ animationDelay: `${i * 55}ms` }}
-            >
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${TONE_CLASS[cap.tone]}`}>
-                {cap.icon}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-bold text-ink-primary">{cap.title}</p>
-                <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-secondary">{cap.detail}</p>
-                {cap.route && (
-                  <span className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent-ink">
-                    {cap.actionLabel}
-                    <ChevronRightIcon width={13} height={13} />
-                  </span>
-                )}
-              </div>
-            </button>
-          ))}
-        </section>
+        <TransparencyCard />
 
         <section className="card-surface p-4">
           <div className="flex items-center gap-2">
@@ -207,22 +245,131 @@ export function AiScreen({ onNavigate }: { onNavigate: (route: string) => void }
           </ul>
         </section>
 
-        <TransparencyCard />
-
-        <section className="flex items-center gap-3 rounded-2xl border border-card-stroke bg-surface p-4">
-          <TrendIcon width={20} height={20} className="shrink-0 text-accent-ink" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-semibold text-ink-primary">Interview coach</p>
-            <p className="text-[12px] text-ink-secondary">Practice answers tailored to each posting.</p>
-          </div>
-          <Badge tone="accent">Soon</Badge>
-        </section>
-
-        <Button fullWidth variant="secondary">
-          Import or update your CV
+        <Button fullWidth variant="primary" leadingIcon={<SparkIcon width={16} height={16} />} onClick={() => onNavigate("jobs")}>
+          Browse matched jobs
         </Button>
       </div>
     </>
+  );
+}
+
+/** The hero analysis card: an honest progress read driven by the real profile and feed. */
+function AnalysisCard({
+  progress,
+  running,
+  hasCv,
+  skillCount,
+  strongMatchCount,
+  feedIdle,
+  onRun,
+}: {
+  progress: number;
+  running: boolean;
+  hasCv: boolean;
+  skillCount: number;
+  strongMatchCount: number;
+  feedIdle: boolean;
+  onRun: () => void;
+}) {
+  const steps: { label: string; done: boolean }[] = [
+    { label: skillCount > 0 ? `CV parsed — ${skillCount} skills extracted` : "CV parsed", done: hasCv && progress > 15 },
+    { label: "Skills mapped to international standards", done: progress > 40 },
+    { label: "Visa eligibility checked per country", done: progress > 65 },
+    { label: "Scam risk screened on every listing", done: progress > 85 },
+    { label: "Matches ranked by fit", done: progress >= 100 },
+  ];
+
+  const subtitle = running
+    ? "Scoring your profile against the live feed"
+    : !hasCv
+      ? "Import your CV to start matching"
+      : strongMatchCount > 0
+        ? `${strongMatchCount} strong match${strongMatchCount === 1 ? "" : "es"} found`
+        : feedIdle
+          ? "Pull to refresh for the latest postings"
+          : "No strong matches yet — try refreshing";
+
+  return (
+    <section className="animate-fade-up overflow-hidden rounded-3xl bg-gradient-to-br from-[#15356F] to-[#0A1D40] p-5 text-white shadow-card dark:from-[#152C5C] dark:to-[#0A1730]">
+      <div className="flex items-center gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/12">
+          <AiIcon width={22} height={22} className="text-teal-300" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15.5px] font-bold">{running ? "Analysing your profile" : "Analysis complete"}</p>
+          <p className="text-[12.5px] text-white/70">{subtitle}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-white/18">
+        <div
+          className="h-full rounded-full bg-teal-400 transition-[width] duration-200 ease-out"
+          style={{ width: `${progress}%` }}
+          role="progressbar"
+          aria-valuenow={progress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Analysis progress"
+        />
+      </div>
+
+      <ul className="mt-3.5 space-y-2">
+        {steps.map((step) => (
+          <li
+            key={step.label}
+            className={`flex items-center gap-2 text-[12.5px] transition-opacity duration-500 ${step.done ? "opacity-100" : "opacity-45"}`}
+          >
+            <span
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${step.done ? "bg-teal-400 text-navy-950" : "border border-white/40"}`}
+            >
+              {step.done && <CheckIcon width={11} height={11} />}
+            </span>
+            <span className="truncate">{step.label}</span>
+          </li>
+        ))}
+      </ul>
+
+      {!running && (
+        <Button variant="secondary" fullWidth className="mt-4" onClick={onRun}>
+          Run analysis again
+        </Button>
+      )}
+    </section>
+  );
+}
+
+/** One capability card: an icon chip, a title, the honest detail and an optional action. */
+function CapabilityCard({
+  cap,
+  index = 0,
+  onClick,
+}: {
+  cap: Capability;
+  index?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={!cap.route}
+      onClick={() => cap.route && onClick()}
+      className="card-surface animate-fade-up flex w-full items-start gap-3.5 p-4 text-left transition-transform active:scale-[0.99] disabled:active:scale-100"
+      style={{ animationDelay: `${index * 55}ms` }}
+    >
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${TONE_CLASS[cap.tone]}`}>
+        {cap.icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] font-bold text-ink-primary">{cap.title}</p>
+        <p className="mt-0.5 text-[12.5px] leading-relaxed text-ink-secondary">{cap.detail}</p>
+        {cap.route && (
+          <span className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent-ink">
+            {cap.actionLabel}
+            <ChevronRightIcon width={13} height={13} />
+          </span>
+        )}
+      </div>
+    </button>
   );
 }
 

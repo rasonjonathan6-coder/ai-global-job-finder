@@ -6,13 +6,25 @@ import {
 } from "../core/models";
 
 /**
- * The candidate the app starts with before a CV is imported. It mirrors the Android
- * `SampleData.profile` for Jonathan Rakoto — an industrial maintenance technician in
- * Antananarivo — so the web edition opens with the same realistic, useful matches rather
- * than an empty screen. Importing a CV replaces every field here; nothing is invented at
- * match time, this is simply the starting profile.
+ * The profile the app starts with before a CV is imported: empty.
+ *
+ * This mirrors the Android `LiveJobRepository.profile` contract — "The display profile is
+ * derived from the imported CV, never invented. A fresh install therefore has an empty
+ * profile and the Profile screen shows its empty state." An earlier revision seeded the
+ * curated `SampleData.profile` (Jonathan Rakoto) as the *starting* profile, so a fresh
+ * visitor read a stranger's name, e-mail, phone number and skills — and a "CV analysed"
+ * badge — as if they were their own. That was the fake information the site displayed.
+ * The fixtures now live behind demo mode only, exactly like Android.
  */
 export function demoCandidateProfile(): CandidateProfile {
+  return emptyCandidateProfile();
+}
+
+/**
+ * The curated Android `SampleData.profile`, served only when the user turns demo fixtures
+ * on. Kept verbatim so the demo showcase and the Kotlin golden fixtures stay identical.
+ */
+export function sampleCandidateProfile(): CandidateProfile {
   return {
     ...emptyCandidateProfile(),
     fullName: "Jonathan Rakoto",

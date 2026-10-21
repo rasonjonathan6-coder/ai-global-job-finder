@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import { SalaryPeriod } from "../../models";
 import {
   ArbeitnowProvider,
+  AshbyProvider,
+  GreenhouseProvider,
   HimalayasProvider,
   JobicyProvider,
+  LeverProvider,
   RemotiveProvider,
   SmartRecruitersProvider,
   providerFailureLine,
@@ -358,6 +361,171 @@ describe("HimalayasProvider", () => {
     });
     const [job] = await new HimalayasProvider(open).fetch();
     expect(job.location).toBe("Worldwide");
+  });
+});
+
+describe("GreenhouseProvider", () => {
+  const board = { token: "redwoodmaterials", label: "Redwood Materials" };
+
+  it("reads the list, then the detail, and maps country and trade title", async () => {
+    const feed: JsonFeed = {
+      async objectAt(url) {
+        if (url.endsWith("/jobs")) {
+          return { jobs: [{ id: 7, title: "Maintenance Technician" }] };
+        }
+        return {
+          id: 7,
+          title: "Maintenance Technician",
+          content: "<p>Fix the line</p>",
+          location: { name: "Reno, NV, USA" },
+          company_name: "Redwood Materials",
+          absolute_url: "https://boards.greenhouse.io/redwoodmaterials/jobs/7",
+          first_published: "2025-01-02T03:04:05Z",
+        };
+      },
+      async arrayAt() {
+        return [];
+      },
+    };
+    const jobs = await new GreenhouseProvider(feed, [board]).fetch([], 10);
+    expect(jobs).toHaveLength(1);
+    const [job] = jobs;
+    expect(job.externalId).toBe("redwoodmaterials-7");
+    expect(job.title).toBe("Maintenance Technician");
+    expect(job.location).toBe("Reno, NV, USA");
+    expect(job.company).toBe("Redwood Materials");
+    expect(job.postedAtEpochMillis).toBe(Date.parse("2025-01-02T03:04:05Z"));
+    expect(job.isRemote).toBe(false);
+  });
+
+  it("reads trade-titled rows before others within the detail budget", async () => {
+    const asked: string[] = [];
+    const feed: JsonFeed = {
+      async objectAt(url) {
+        if (url.endsWith("/jobs")) {
+          return {
+            jobs: [
+              { id: 1, title: "Lab Technician" },
+              { id: 2, title: "Maintenance Technician" },
+              { id: 3, title: "Design Engineer" },
+            ],
+          };
+        }
+        const id = url.split("/jobs/")[1];
+        asked.push(id);
+        return { id, title: "Maintenance Technician", content: "x", location: { name: "USA" }, absolute_url: "u" };
+      },
+      async arrayAt() {
+        return [];
+      },
+    };
+    await new GreenhouseProvider(feed, [board]).fetch([], 10);
+    expect(asked[0]).toBe("2");
+  });
+
+  it("drops a posting that is missing its location rather than inventing one", async () => {
+    const feed: JsonFeed = {
+      async objectAt(url) {
+        if (url.endsWith("/jobs")) return { jobs: [{ id: 9, title: "Fitter" }] };
+        return { id: 9, title: "Fitter", content: "x", absolute_url: "u" };
+      },
+      async arrayAt() {
+        return [];
+      },
+    };
+    expect(await new GreenhouseProvider(feed, [board]).fetch([], 10)).toEqual([]);
+  });
+});
+
+describe("LeverProvider", () => {
+  const board = { token: "shieldai", label: "Shield AI" };
+
+  it("keeps only target-titled rows and joins secondary locations", async () => {
+    const feed: JsonFeed = {
+      async objectAt() {
+        return {};
+      },
+      async arrayAt(url) {
+        if (!url.includes("/postings/shieldai")) return [];
+        return [
+          {
+            id: "a",
+            text: "Maintenance Technician",
+            descriptionPlain: "Fix things",
+            categories: { location: "San Diego", allLocations: ["San Diego", "Remote"], commitment: "Full-time", team: "Ops" },
+            hostedUrl: "https://jobs.lever.co/shieldai/a",
+            createdAt: 1_700_000_000_000,
+            isListed: true,
+          },
+          { id: "b", text: "Recruiter", descriptionPlain: "Hire", categories: { location: "NYC" } },
+        ];
+      },
+    };
+    const jobs = await new LeverProvider(feed, [board]).fetch([], 10);
+    expect(jobs.map((j) => j.externalId)).toEqual(["shieldai-a"]);
+    expect(jobs[0].location).toBe("San Diego; Remote");
+    expect(jobs[0].isRemote).toBe(true);
+    expect(jobs[0].employmentType).toBe("Full-time");
+  });
+
+  it("never surfaces an unlisted posting", async () => {
+    const feed: JsonFeed = {
+      async objectAt() {
+        return {};
+      },
+      async arrayAt() {
+        return [{ id: "x", text: "Maintenance Technician", descriptionPlain: "d", categories: { location: "L" }, isListed: false }];
+      },
+    };
+    expect(await new LeverProvider(feed, [board]).fetch([], 10)).toEqual([]);
+  });
+});
+
+describe("AshbyProvider", () => {
+  const board = { board: "formenergy", label: "Form Energy" };
+
+  it("reads the inline description and joins secondary locations", async () => {
+    const feed = stubFeed({
+      "job-board/formenergy": {
+        jobs: [
+          {
+            id: "1",
+            title: "Maintenance Technician",
+            descriptionPlain: "Keep the line running",
+            location: "Weirton, WV",
+            secondaryLocations: [{ location: "Remote" }],
+            employmentType: "FullTime",
+            department: "Manufacturing",
+            team: "Maintenance",
+            jobUrl: "https://jobs.ashbyhq.com/formenergy/1",
+            publishedAt: "2025-03-04T05:06:07Z",
+            isListed: true,
+          },
+        ],
+      },
+    });
+    const jobs = await new AshbyProvider(feed, [board]).fetch([], 10);
+    expect(jobs).toHaveLength(1);
+    const [job] = jobs;
+    expect(job.externalId).toBe("formenergy-1");
+    expect(job.location).toBe("Weirton, WV; Remote");
+    expect(job.company).toBe("Form Energy");
+    expect(job.tags).toEqual(["Manufacturing", "Maintenance"]);
+    expect(job.postedAtEpochMillis).toBe(Date.parse("2025-03-04T05:06:07Z"));
+  });
+
+  it("skips the 'no department' placeholder tag and unlisted rows", async () => {
+    const feed = stubFeed({
+      "job-board/formenergy": {
+        jobs: [
+          { id: "2", title: "Fitter", descriptionPlain: "d", location: "L", department: "No Department", isListed: true },
+          { id: "3", title: "Welder", descriptionPlain: "d", location: "L", isListed: false },
+        ],
+      },
+    });
+    const jobs = await new AshbyProvider(feed, [board]).fetch([], 10);
+    expect(jobs.map((j) => j.externalId)).toEqual(["formenergy-2"]);
+    expect(jobs[0].tags).toEqual([]);
   });
 });
 

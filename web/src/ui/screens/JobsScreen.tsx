@@ -60,6 +60,8 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
     window.open(job.sourceUrl, "_blank", "noopener,noreferrer");
     onNavigate("applications");
   };
+  const handleTool = (tool: "coverletter" | "scam" | "interview", job: Job) =>
+    onNavigate(`${tool}/${job.id}`);
 
   return (
     <>
@@ -142,7 +144,7 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
         ) : (
           <div className="space-y-3">
             {results.map((job, i) => (
-              <JobCard key={job.id} job={job} index={i} onView={handleView} onApply={handleApply} />
+              <JobCard key={job.id} job={job} index={i} onView={handleView} onApply={handleApply} onOpenTool={handleTool} />
             ))}
           </div>
         )}

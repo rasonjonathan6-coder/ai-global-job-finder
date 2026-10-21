@@ -3228,3 +3228,59 @@ Parité octet confirmée.
 ne prouve **pas** l'éligibilité Madagascar : les deux sont enregistrés séparément. Un lien
 injoignable serait noté *non vérifié*, jamais *cassé*.
 
+
+## Stage 73 — écrans web liés aux moteurs portés + PWA iOS publiable
+
+**Objectif.** Après Stage 69 (parité des écrans flux/alertes/auto-apply), trois outils adossés à
+un poste n'avaient côté web qu'un simple texte explicatif. Stage 73 les relie aux moteurs que le
+fixture de parité épingle déjà, pour que la PWA se comporte comme Android. En parallèle, la tâche
+de tête « Publishable iOS PWA » rend l'édition web installable sur iPhone.
+
+**Livrables (web).**
+- `web/src/state/app-store.tsx` — l'état persisté passe en **version 2** (une v1 pouvait graver le
+  profil d'exemple comme s'il était celui de l'utilisateur). Nouvelles actions : `importCv`
+  (analyseur CV embarqué, miroir de `CvRepository.analyse`), `interviewPrep`,
+  `gradeInterviewAnswer`, `recordInterviewAttempt`, `resetInterviewAttempts`, `interviewReadiness`,
+  `interviewAttempts`, `scamReport`, `generateCoverLetter`, `coverLetterFor`. Les tentatives
+  d'entretien sont persistées par poste (`StoredInterviewAttempt`).
+- `web/src/ui/screens/CoverLetterScreen.tsx` — appelle `CoverLetterGenerator` via le store, rend la
+  langue déduite du pays (`letterLanguageForCountry`) et la carte « Built from your CV »
+  (`usedFacts` / `missingFacts`). Reproduit la garde Android : un profil vide donne le message
+  « importez votre CV d'abord », jamais une lettre gonflée.
+- `web/src/ui/screens/ScamShieldScreen.tsx` — rend le rapport `scanForScams` (verdict, score,
+  chaque `ScamSignal` cité du poste) groupé par tonalité, plus la liste de règles auditable.
+- `web/src/ui/screens/InterviewScreen.tsx` — pilote `InterviewQuestionBank` / `InterviewCoach` :
+  jeu de questions, `AnswerFeedback` noté et score de préparation viennent du moteur ; les
+  tentatives sont enregistrées par poste. Un id vide = « coachez-moi pour ma meilleure
+  correspondance », comme `InterviewViewModel` Android.
+- `web/src/ui/components/JobCard.tsx` — affordance optionnelle `onOpenTool` : une carte de poste
+  ouvre directement sa lettre, son contrôle anti-arnaque ou son coach d'entretien.
+- `web/src/ui/App.tsx` — routes secondaires `coverletter/{jobId}`, `scam/{jobId}`,
+  `interview/{jobId}` (sans barre d'onglets) ; `AiScreen` route les trois outils vers la meilleure
+  correspondance quand on les ouvre sans poste.
+
+**PWA iOS (tâche de tête).** `index.html` gagne `viewport-fit=cover`, un `apple-touch-icon` 180×180
+**opaque** (iOS peint la transparence en noir) + `apple-touch-icon-precomposed`, et les balises
+`apple-mobile-web-app-*` (`capable`, `status-bar-style=black-translucent`, `title`). `index.css`
+ajoute `.safe-top` (`env(safe-area-inset-top)`) pour les barres collantes et lève à 16 px la taille
+des champs sur pointeur grossier (Safari iOS zoome sinon la page). Le manifeste PWA porte icônes
+`any`/`maskable`, `display: standalone`, `orientation: portrait-primary`.
+
+**Golden parity.** Les moteurs étaient déjà épinglés par les sections `stage 62` (`coverLetters`,
+`interview`, `scam`, catalogue de capacités IA) ; ces écrans n'ajoutent que de la présentation, et
+les tests d'écran prouvent que chacun rend bien le résultat du moteur.
+
+**Vérifications.** Web : `npm run typecheck` OK ; `npm test` → **456 tests / 12 fichiers, 0 échec**
+(dont **319 tests de parité octet**) ; `npm run build` OK (PWA v0.20.5, 110 modules, ~440 kB JS,
+precache 15 entrées). Contrôle visuel navigateur (viewports mobile, clair + sombre) : `#/coverletter`
+(lettre générée depuis le CV), `#/scam`, `#/interview` se rendent depuis les moteurs ; `#/jobs`
+affiche les puces d'outils sur chaque carte.
+
+**Correction de cohérence.** `CoverLetterScreen` acceptait un `jobId` vide comme « aucun poste »
+et affichait « Posting unavailable », alors que l'onglet IA ouvre justement la lettre sans poste
+choisi. Il résout maintenant un id vide vers la meilleure correspondance courante, comme
+`InterviewScreen` et `ScamShieldScreen`.
+
+**Honnêteté.** Rien n'est envoyé : l'assistant prépare et s'arrête à l'approbation. Une lettre ne
+peut pas être rédigée depuis un CV vide, et un signal d'arnaque est toujours cité du poste, jamais
+deviné.
