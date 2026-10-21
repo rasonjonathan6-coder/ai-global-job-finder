@@ -7,6 +7,7 @@ import {
   AI_PROCESSING_LOCATION_META,
   ALL_BENEFIT_TYPES,
   AnswerConfidence,
+  ApplicationDestination,
   EmploymentType,
   JobBenefitTypes,
   LanguageLevel,
@@ -553,6 +554,27 @@ describe("Kotlin parity — golden fixtures", () => {
         }).toEqual(testCase.output);
       },
     );
+
+    it("reads an applicant-tracking host as the employer's own site, not an unknown host", () => {
+      const inspector = new ApplicationUrlInspector();
+      const atsHosts = [
+        "https://sulzer.wd502.myworkdayjobs.com/en-US/External/job/Mannheim/Maintenance-Mechanic_R1",
+        "https://firstquantum.wd3.myworkdaysite.com/en-US/recruiting/fqml/External/job/Panama",
+        "https://boards.greenhouse.io/lucidmotors/jobs/5231094007",
+        "https://jobs.lever.co/sila/eaebee13-fd57-4187-a16e-a39c033afd24",
+        "https://jobs.ashbyhq.com/formenergy/a5c18c3f-da88-4743-9d11-58a5205d2883",
+        "https://jobs.smartrecruiters.com/Wabtec/3743990016234090-assembler-2-compressor-technician",
+      ];
+      for (const url of atsHosts) {
+        expect(inspector.inspect(url, "Employer career sites").destination).toBe(
+          ApplicationDestination.EMPLOYER_SITE,
+        );
+      }
+      // The suffix rule must not turn an unrelated look-alike into an employer site.
+      expect(
+        inspector.inspect("https://careers.example.com/lever.co/job", "Workday").destination,
+      ).toBe(ApplicationDestination.UNKNOWN_HOST);
+    });
   });
 
   describe("deduplication", () => {

@@ -320,7 +320,7 @@ class Stage58GoldenParityExportTest {
         val scenarios = cases.map { scenarioJson(it, profile, preferences) }
         val root = linkedMapOf<String, Any?>(
             "meta" to linkedMapOf(
-                "stage" to 71,
+                "stage" to 72,
                 "generatedFrom" to "Kotlin production engines",
                 "clockMillis" to fixedNow,
                 "note" to "Inputs and expected outputs are both produced by the Kotlin engines.",
@@ -1948,6 +1948,16 @@ class Stage58GoldenParityExportTest {
             "http://192.168.0.1/apply" to "Workday",
             "https://unknown-employer-xyz.com/apply" to "Workday",
             "https://remoteok.workday.com/jobs/9" to "Workday",
+            // Applicant-tracking hosts the app's own sources link to. These are the employer's
+            // own posting pages, so they must read as the employer's site, not an unknown host.
+            "https://sulzer.wd502.myworkdayjobs.com/en-US/External/job/Mannheim/Maintenance-Mechanic_R1" to "Employer career sites",
+            "https://firstquantum.wd3.myworkdaysite.com/en-US/recruiting/fqml/External/job/Panama" to "Employer career sites",
+            "https://boards.greenhouse.io/lucidmotors/jobs/5231094007" to "Industrial career sites",
+            "https://jobs.lever.co/sila/eaebee13-fd57-4187-a16e-a39c033afd24" to "Industrial employer boards",
+            "https://jobs.ashbyhq.com/formenergy/a5c18c3f-da88-4743-9d11-58a5205d2883" to "Advanced manufacturing sites",
+            "https://jobs.smartrecruiters.com/Wabtec/3743990016234090-assembler-2-compressor-technician" to "Employer job boards",
+            // The same suffix rule must not turn an unrelated look-alike into an employer site.
+            "https://careers.example.com/lever.co/job" to "Workday",
         )
         return cases.map { (url, source) ->
             val inspection = inspector.inspect(url, source)

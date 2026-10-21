@@ -134,6 +134,13 @@ class ApplicationUrlInspector {
         if (JOB_BOARD_HOSTS.any { host == it || host.endsWith(".$it") }) {
             return ApplicationDestination.JOB_BOARD
         }
+        // An applicant-tracking host serves the employer's own posting, so the link is the
+        // employer's own application page — not an unverifiable host. Most real vacancies are
+        // reached through these (Workday, Greenhouse, Lever, Ashby, SmartRecruiters), so
+        // calling them unverified would mislabel the majority of genuine employer links.
+        if (EMPLOYER_HOST_SUFFIXES.any { host == it || host.endsWith(".$it") }) {
+            return ApplicationDestination.EMPLOYER_SITE
+        }
         // A posting whose host matches the source name is the board that published it.
         val sourceSlug = sourceName.lowercase().replace(Regex("[^a-z0-9]"), "")
         if (sourceSlug.length >= 4 && host.replace(Regex("[^a-z0-9]"), "").contains(sourceSlug)) {
@@ -152,6 +159,17 @@ class ApplicationUrlInspector {
         val JOB_BOARD_HOSTS = listOf(
             "adzuna.com", "jooble.org", "himalayas.app", "remotive.com", "jobicy.com",
             "arbeitnow.com", "linkedin.com", "indeed.com", "bayt.com", "naukrigulf.com",
+        )
+
+        /**
+         * Applicant-tracking systems the app's own sources link to. A posting on one of these
+         * is the employer's own application page: the employer runs their careers site there,
+         * so the candidate applies through the employer rather than to a third party. Matched
+         * as a suffix so a Workday tenant host (`sulzer.wd502.myworkdayjobs.com`) is covered.
+         */
+        val EMPLOYER_HOST_SUFFIXES = listOf(
+            "myworkdayjobs.com", "myworkdaysite.com", "workday.com",
+            "greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com",
         )
     }
 }

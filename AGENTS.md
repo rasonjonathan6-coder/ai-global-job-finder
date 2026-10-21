@@ -3178,3 +3178,53 @@ prêtes mais non connectées). Il n'y a donc **aucune version publiée** à comp
 HTTPS requis). Action manuelle restante : Settings → Pages → Source = « GitHub Actions », puis
 relancer le workflow.
 
+## Stage 72 — éligibilité, liens de candidature et validation de release
+
+**Objectif.** Après Stage 71 (combien d'offres pertinentes les sources renvoient), valider chaque
+offre retenue comme le ferait un candidat avant d'y consacrer du temps : employeur réel, titre
+réel, lieu réel, date de publication, et un **vrai** contrôle HTTP du lien de candidature — puis
+estimer si un candidat **actuellement à Madagascar** peut raisonnablement postuler.
+
+**Harnais live.** `app/src/test/java/com/aiglobal/jobfinder/Stage72LiveValidationHarness.kt` est
+**opt-in** (`LIVE_SEARCH=1`, `Assume`), donc la suite reste hors-ligne et déterministe. Il réutilise
+la même liste de fournisseurs sans clé, le même `SearchStrategy.planFor` + boucle de fetch, puis
+`RecordValidationEngine` (dédup), `RoleClassifier` (pertinence), `JobMapper` (moteurs réels),
+`ApplicationUrlInspector` et `JobFreshnessEngine`. Il ouvre **chaque** lien de candidature une fois
+(GET, 8 en parallèle, redirections suivies) et écrit `web/stage72-job-validation.json`.
+
+**Résultat mesuré (run réel).** 786 récupérées → 375 gardées après dédup → **101 pertinentes**
+(274 écartées). Les 101 liens répondent tous **2xx** (101/101 joignables). Couverture : 0 employeur
+inconnu, 0 titre vide, 0 lieu vide, 0 date manquante ; âge moyen 33 j (max 120 j, aucun futur).
+Éligibilité : 10 `ELIGIBLE`, 1 `VISA_SPONSORED`, 90 `UNCLEAR`. Les classes *restreinte*,
+*faible qualité* et *cassée* sont **vides** — aucun défaut de qualité ou de fraude détecté dans
+l'échantillon.
+
+**Correctif (classement des liens).** Le run a révélé un vrai défaut : **94 des 101** liens
+pointent vers des hôtes ATS (tenants Workday `*.myworkdayjobs.com`/`*.myworkdaysite.com`,
+Greenhouse `boards.greenhouse.io`, Lever `jobs.lever.co`, Ashby `jobs.ashbyhq.com`,
+SmartRecruiters `jobs.smartrecruiters.com`) que l'inspecteur classait `UNKNOWN_HOST` (« hôte non
+vérifié »). La feuille Apply avertissait donc le candidat sur **exactement** les pages
+d'employeurs authentiques. `ApplicationUrlInspector.classify` gagne `EMPLOYER_HOST_SUFFIXES` et
+renvoie `EMPLOYER_SITE` pour ces suffixes — match par **suffixe** de domaine, si bien qu'un
+chemin trompeur (`https://careers.example.com/lever.co/job`) reste `UNKNOWN_HOST`. Effet mesuré :
+`UNKNOWN_HOST` 94 → 0 sur l'échantillon réel. Porté à l'identique dans
+`web/src/core/apply/application-url-inspector.ts`.
+
+**Golden parity.** `Stage58GoldenParityExportTest.urlInspectionsJson` gagne 7 cas ATS réels
+(13 → 20 cas), dont un cas leurre ; `meta.stage = 72`. Les deux portées Kotlin/TS sont identiques
+octet pour octet. Le test web `parity.test.ts` gagne une assertion explicite sur les 6 hôtes ATS
+et le cas leurre.
+
+**Vérifications.** Android : `:app:testDebugUnitTest` → **740 tests, 0 échec, 0 erreur, 5
+ignorés** (dont le harnais Stage 72 skippé par défaut). Web : `npm run typecheck` OK, `npm test`
+→ **443 tests / 9 fichiers, 0 échec**, `npm run build` OK (PWA, precache 14 entrées, ~471 KiB).
+Parité octet confirmée.
+
+**Fichiers.** Ajoutés : `Stage72LiveValidationHarness.kt`, `web/stage72-job-validation.json`
+(rapport). Modifiés : `ApplicationUrlInspector.kt`, `Stage58GoldenParityExportTest.kt`,
+`application-url-inspector.ts`, `parity.test.ts`, `kotlin-parity.json`, `docs/ARCHITECTURE.md`.
+
+**Honnêteté.** Un statut HTTP 2xx ne prouve **pas** qu'un poste est ouvert, et une URL qui répond
+ne prouve **pas** l'éligibilité Madagascar : les deux sont enregistrés séparément. Un lien
+injoignable serait noté *non vérifié*, jamais *cassé*.
+

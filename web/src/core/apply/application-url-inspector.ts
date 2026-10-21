@@ -28,6 +28,17 @@ const JOB_BOARD_HOSTS = [
   "arbeitnow.com", "linkedin.com", "indeed.com", "bayt.com", "naukrigulf.com",
 ];
 
+/**
+ * Applicant-tracking systems the app's own sources link to. A posting on one of these is the
+ * employer's own application page: the employer runs their careers site there, so the
+ * candidate applies through the employer rather than to a third party. Matched as a suffix so
+ * a Workday tenant host (`sulzer.wd502.myworkdayjobs.com`) is covered.
+ */
+const EMPLOYER_HOST_SUFFIXES = [
+  "myworkdayjobs.com", "myworkdaysite.com", "workday.com",
+  "greenhouse.io", "lever.co", "ashbyhq.com", "smartrecruiters.com",
+];
+
 const FREE_DOMAIN_SUFFIXES = [".tk", ".ml", ".ga", ".cf", ".gq"];
 
 export class ApplicationUrlInspector {
@@ -121,6 +132,13 @@ function classify(host: string, sourceName: string): ApplicationDestination {
   }
   if (JOB_BOARD_HOSTS.some((it) => host === it || host.endsWith(`.${it}`))) {
     return ApplicationDestination.JOB_BOARD;
+  }
+  // An applicant-tracking host serves the employer's own posting, so the link is the
+  // employer's own application page — not an unverifiable host. Most real vacancies are
+  // reached through these (Workday, Greenhouse, Lever, Ashby, SmartRecruiters), so calling
+  // them unverified would mislabel the majority of genuine employer links.
+  if (EMPLOYER_HOST_SUFFIXES.some((it) => host === it || host.endsWith(`.${it}`))) {
+    return ApplicationDestination.EMPLOYER_SITE;
   }
   // A posting whose host matches the source name is the board that published it.
   const sourceSlug = sourceName.toLowerCase().replace(/[^a-z0-9]/g, "");
