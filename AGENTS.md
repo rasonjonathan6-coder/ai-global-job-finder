@@ -3691,3 +3691,41 @@ après arrêt du serveur ou nettoyage d'inactivité du runtime.
   `Stage98AiAssistantScreenTest` (panel names the posting + language, every task reachable and
   tappable on `w411dp-h891dp`). `ScreenshotTest.aiAssistantReady` captures the full task list.
 
+
+## Stage 98 — Release build, publication, commit
+
+**Commit/push.** Tout le travail accumulé (Stages 70–98, 108 fichiers) est commité en `1cbe265`
+et poussé sur `origin/main` (`dfad6ae..1cbe265`). Vérifications avant commit : aucun `.jks`,
+`.keystore`, `.p12`, fichier de mots de passe ni `.aigjf-cred` dans l'index ; aucun artefact de
+build (`build/`, `*.apk`) ; `.gitignore` couvre désormais `*.jks`, `*.keystore`, `*.p12`, `*.pfx`,
+`keystore.properties`, `signing.properties`.
+
+**Build release signé.** La clé release et ses identifiants vivent **hors du dépôt** :
+`/workspace/AndroidSigning/AI-Global-Job-Finder/aigjf-release.jks` (sha256 `06d2087a…7285`) et
+`/workspace/AndroidSigning/.aigjf-cred` (variables `STORE_PASS`, `KEY_PASS`, `ZIP_PASS`). Ce
+keystore PKCS12 utilise **le mot de passe du store pour la clé** : `RELEASE_KEY_PASSWORD` doit
+valoir `STORE_PASS`, pas `KEY_PASS`. Recette exacte :
+
+```
+cd /workspace/project && export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 ANDROID_HOME=/home/openhands/android-sdk
+set -a; . /workspace/AndroidSigning/.aigjf-cred; set +a
+export RELEASE_KEYSTORE_PATH=/workspace/AndroidSigning/AI-Global-Job-Finder/aigjf-release.jks \
+       RELEASE_KEYSTORE_PASSWORD="$STORE_PASS" RELEASE_KEY_ALIAS=aigjf-release \
+       RELEASE_KEY_PASSWORD="$STORE_PASS"
+./gradlew :app:assembleRelease --offline
+```
+
+**Vérifications APK (réelles).** `apksigner verify` → v1 false, **v2 true, v3 true** ; certificat
+SHA-256 `f2997d1b…efe3` = empreinte attendue. `aapt2 dump badging` → paquet
+`com.aiglobal.jobfinder`, versionCode 1, versionName 1.0.0, minSdk 26, targetSdk 34. Taille
+**8 596 657 octets**, sha256 `fd54b3d4…0b9f`.
+
+**Publication.** Copié vers `/workspace/apk-download/AI-Global-Job-Finder-release.apk` (chmod 644 ;
+ancien contenu sauvegardé dans `/workspace/served-backups/`). `HEAD` public → **200**,
+`Content-Type: application/octet-stream`. `GET` complet → **200**, `size_download=8596657`, sha256
+`fd54b3d4…0b9f` **identique** à l'APK construit (`cmp`).
+Lien (temporaire, session en cours) :
+`https://work-1-fxikkagwuedqnwdg.prod-runtime.all-hands.dev/AI-Global-Job-Finder-release.apk`
+
+**Tests.** `:app:testDebugUnitTest --rerun-tasks` → **919 tests, 0 échec, 0 erreur, 5 ignorés**.
+
