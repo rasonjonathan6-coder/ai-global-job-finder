@@ -10,6 +10,12 @@ import { cx } from "../lib/cx";
 import { FilterIcon, GlobeIcon, SearchIcon } from "../components/icons";
 import { coverageHasTargetedSource, coverageSummary } from "../../core/jobs/search/search-strategy";
 import { queryMatches } from "../../core/jobs/search/query-expansion";
+import {
+  DEFAULT_FRESHNESS_WINDOW,
+  FreshnessWindow,
+  freshnessWindowDays,
+  withinFreshnessWindow,
+} from "../../core/jobs/freshness/freshness-window";
 
 type FilterKey = "all" | "eligible" | "sponsored" | "remote" | "strong";
 
@@ -21,6 +27,12 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "strong", label: "Strong match" },
 ];
 
+const WINDOWS: { key: FreshnessWindow; label: string }[] = [
+  { key: FreshnessWindow.SEVEN_DAYS, label: "7 derniers jours" },
+  { key: FreshnessWindow.FOURTEEN_DAYS, label: "14 derniers jours" },
+  { key: FreshnessWindow.THIRTY_DAYS, label: "30 derniers jours" },
+];
+
 /**
  * The jobs list: a search field, eligibility filters and the full ranked catalogue built
  * from the live key-free sources. The skeleton and error states reflect the real refresh.
@@ -29,6 +41,8 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
   const { jobs, refresh, refreshJobs, markApplied } = useAppStore();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [freshnessWindow, setFreshnessWindow] = useState<FreshnessWindow>(DEFAULT_FRESHNESS_WINDOW);
+  const [includeUndatedAndStale, setIncludeUndatedAndStale] = useState(false);
 
   useEffect(() => {
     if (refresh.status === "idle") void refreshJobs();
@@ -37,9 +51,37 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
 
   const loading = refresh.status === "loading" || refresh.status === "idle";
 
+  // The window is measured against one instant for the whole render, so the visible list and
+  // the counts below can never disagree.
+  const now = Date.now();
+
+  const windowCounts = useMemo(() => {
+    let within = 0;
+    let undated = 0;
+    let stale = 0;
+    for (const job of jobs) {
+      const posted = job.postedAtEpochMillis;
+      if (posted == null || posted < 1 || posted > now) {
+        undated += 1;
+      } else if (withinFreshnessWindow(posted, now, freshnessWindow)) {
+        within += 1;
+      } else {
+        stale += 1;
+      }
+    }
+    return { within, undated, stale };
+  }, [jobs, now, freshnessWindow]);
+
+  const hiddenByWindow =
+    !includeUndatedAndStale && windowCounts.within === 0 && windowCounts.undated + windowCounts.stale > 0;
+
   const results = useMemo(() => {
     const needle = query.trim();
     return jobs.filter((job) => {
+      // Recent-and-dated first: unless the user opts into the wider view, a posting must carry
+      // a real publication date inside the selected window. An undated or stale posting is
+      // never counted as recent and is offered separately rather than silently dropped.
+      if (!includeUndatedAndStale && !withinFreshnessWindow(job.postedAtEpochMillis, now, freshnessWindow)) return false;
       if (filter === "eligible" && job.eligibility === MadagascarEligibility.RESTRICTED) return false;
       if (filter === "sponsored" && job.eligibility !== MadagascarEligibility.VISA_SPONSORED) return false;
       if (filter === "remote" && job.workMode !== WorkMode.REMOTE) return false;
@@ -52,7 +94,7 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
       const haystack = [job.title, job.company, job.country, job.city, job.summary].join(" ");
       return queryMatches(needle, haystack);
     });
-  }, [jobs, query, filter]);
+  }, [jobs, query, filter, includeUndatedAndStale, now, freshnessWindow]);
 
   const handleView = (job: Job) => window.open(job.sourceUrl, "_blank", "noopener,noreferrer");
   const handleApply = (job: Job) => {
@@ -110,6 +152,43 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
           })}
         </div>
 
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {WINDOWS.map((w) => {
+            const active = w.key === freshnessWindow;
+            return (
+              <button
+                key={w.key}
+                type="button"
+                onClick={() => setFreshnessWindow(w.key)}
+                aria-pressed={active}
+                className={cx(
+                  "shrink-0 rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors",
+                  active
+                    ? "border-transparent bg-accent-500 text-white"
+                    : "border-card-stroke bg-surface text-ink-secondary hover:bg-surface-variant",
+                )}
+              >
+                {w.label}
+              </button>
+            );
+          })}
+          {windowCounts.undated + windowCounts.stale > 0 && (
+            <button
+              type="button"
+              onClick={() => setIncludeUndatedAndStale((v) => !v)}
+              aria-pressed={includeUndatedAndStale}
+              className={cx(
+                "shrink-0 rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors",
+                includeUndatedAndStale
+                  ? "border-transparent bg-accent-500 text-white"
+                  : "border-card-stroke bg-surface text-ink-secondary hover:bg-surface-variant",
+              )}
+            >
+              Undated/older ({windowCounts.undated + windowCounts.stale})
+            </button>
+          )}
+        </div>
+
         {!loading && refresh.coverage.totalRetrieved > 0 && (
           <div className="flex items-start gap-1.5">
             {coverageHasTargetedSource(refresh.coverage) ? (
@@ -132,15 +211,26 @@ export function JobsScreen({ onNavigate }: { onNavigate: (route: string) => void
             onAction={() => void refreshJobs()}
           />
         ) : results.length === 0 ? (
-          <EmptyState
-            title="No jobs match those filters"
-            message="Try a different search term or clear the filters to see every opportunity."
-            actionLabel="Clear filters"
-            onAction={() => {
-              setQuery("");
-              setFilter("all");
-            }}
-          />
+          hiddenByWindow ? (
+            <EmptyState
+              title="No recently published jobs"
+              message={`None of the loaded postings state a publication date inside the ${freshnessWindowDays(
+                freshnessWindow,
+              )}-day window. This app never invents a date, so undated or older postings stay hidden until you ask for them.`}
+              actionLabel={`Show undated/older (${windowCounts.undated + windowCounts.stale})`}
+              onAction={() => setIncludeUndatedAndStale(true)}
+            />
+          ) : (
+            <EmptyState
+              title="No jobs match those filters"
+              message="Try a different search term or clear the filters to see every opportunity."
+              actionLabel="Clear filters"
+              onAction={() => {
+                setQuery("");
+                setFilter("all");
+              }}
+            />
+          )
         ) : (
           <div className="space-y-3">
             {results.map((job, i) => (

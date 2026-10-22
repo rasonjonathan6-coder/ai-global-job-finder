@@ -33,6 +33,11 @@ import org.junit.Test
  */
 class Stage52ReliabilityTest {
 
+    private companion object {
+        const val DAY = 86_400_000L
+        const val NOW = 1_760_000_000_000L
+    }
+
     // ---- 1. Trade search by synonym ----------------------------------------
 
     @Test
@@ -78,17 +83,17 @@ class Stage52ReliabilityTest {
             job(id = "1", title = "Rotating Equipment Maintenance Technician"),
             job(id = "2", title = "Frontend Developer"),
         )
-        val filtered = JobsUiState(jobs = jobs, query = "Mechanical Seal Technician").visibleJobs
+        val filtered = JobsUiState(nowMillis = NOW, jobs = jobs, query = "Mechanical Seal Technician").visibleJobs
         assertEquals(listOf("1"), filtered.map { it.id })
 
-        val cleared = JobsUiState(jobs = jobs, query = "").visibleJobs
+        val cleared = JobsUiState(nowMillis = NOW, jobs = jobs, query = "").visibleJobs
         assertEquals(listOf("1", "2"), cleared.map { it.id })
     }
 
     @Test
     fun queryIsTrimmedSoStrayWhitespaceDoesNotHideResults() {
         val jobs = listOf(job(id = "1", title = "Pump Technician"))
-        val filtered = JobsUiState(jobs = jobs, query = "  pump  ").visibleJobs
+        val filtered = JobsUiState(nowMillis = NOW, jobs = jobs, query = "  pump  ").visibleJobs
         assertEquals(listOf("1"), filtered.map { it.id })
     }
 
@@ -149,7 +154,7 @@ class Stage52ReliabilityTest {
             job(id = "3", eligibility = MadagascarEligibility.UNCLEAR),
             job(id = "4", eligibility = MadagascarEligibility.RESTRICTED),
         )
-        assertEquals(2, JobsUiState(jobs = jobs).eligibleCount)
+        assertEquals(2, JobsUiState(nowMillis = NOW, jobs = jobs).eligibleCount)
     }
 
     @Test
@@ -199,8 +204,8 @@ class Stage52ReliabilityTest {
             job(id = "1", matchScore = 95, eligibility = MadagascarEligibility.UNCLEAR),
             job(id = "2", matchScore = 20, eligibility = MadagascarEligibility.ELIGIBLE),
         )
-        assertEquals(1, JobsUiState(jobs = jobs).eligibleCount)
-        assertEquals(2, JobsUiState(jobs = jobs).jobs.size)
+        assertEquals(1, JobsUiState(nowMillis = NOW, jobs = jobs).eligibleCount)
+        assertEquals(2, JobsUiState(nowMillis = NOW, jobs = jobs).jobs.size)
     }
 
     // ---- fixtures -----------------------------------------------------------
@@ -213,7 +218,7 @@ class Stage52ReliabilityTest {
         matchScore: Int = 70,
         eligibility: MadagascarEligibility = MadagascarEligibility.ELIGIBLE,
         visaSupport: VisaSupport = VisaSupport.NOT_MENTIONED,
-        postedAt: Long? = 1_000L,
+        postedAt: Long? = NOW - 5 * DAY,
         salaryMin: Int = 50_000,
         currency: String = "CAD",
         period: SalaryPeriod = SalaryPeriod.YEAR,

@@ -31,6 +31,11 @@ import org.junit.Test
  */
 class Stage7PipelineTest {
 
+    private companion object {
+        const val DAY = 86_400_000L
+        const val NOW = 1_760_000_000_000L
+    }
+
     private val extractor = ExpatBenefitExtractor()
     private val engine = ExpatBenefitsEngine()
 
@@ -286,7 +291,7 @@ class Stage7PipelineTest {
         eligibility = com.aiglobal.jobfinder.data.model.MadagascarEligibility.VISA_SPONSORED,
         visaSupport = com.aiglobal.jobfinder.data.model.VisaSupport.FULL_SPONSORSHIP,
         scamRisk = com.aiglobal.jobfinder.data.model.ScamRisk.LOW,
-        postedAtEpochMillis = 1_000L,
+        postedAtEpochMillis = NOW - 5 * DAY,
         source = "Remotive",
         sourceUrl = "https://example.com/$id",
         workMode = com.aiglobal.jobfinder.data.model.WorkMode.ONSITE,
@@ -314,7 +319,7 @@ class Stage7PipelineTest {
             "a" to engine.assess(documented, prefs(), salaryEurPerYear = null),
             "b" to engine.assess(silent, prefs(), salaryEurPerYear = null),
         )
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(a, b),
             expatAssessments = assessments,
             minExpatScore = 60,
@@ -329,7 +334,7 @@ class Stage7PipelineTest {
         val confirmed = evidenceFor("We provide visa sponsorship for this role.")
         val unstated = evidenceFor("Maintain machinery across two shifts.")
 
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(job("a", confirmed), job("b", unstated)),
             visaDocumentedOnly = true,
         )

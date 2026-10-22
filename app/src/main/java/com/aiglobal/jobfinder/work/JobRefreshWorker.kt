@@ -5,6 +5,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.aiglobal.jobfinder.AiJobFinderApp
 import com.aiglobal.jobfinder.AppContainer
+import com.aiglobal.jobfinder.data.jobs.provider.runCatchingCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -45,7 +46,7 @@ class JobRefreshWorker(
             pendingDrafts = container.applicationDraftCenter.awaitingApproval,
         )
 
-        runCatching { runner.run() }.getOrElse { error ->
+        runCatchingCancellable { runner.run() }.getOrElse { error ->
             val transient = error is java.io.IOException || error is java.util.concurrent.TimeoutException
             return@withContext finish(
                 store = store,
@@ -74,7 +75,7 @@ class JobRefreshWorker(
 
     /** The repository's last-attempt timestamp, or null when it has none yet. */
     private suspend fun attemptStamp(container: AppContainer): Long? =
-        runCatching { container.jobRepository.diagnostics.first().lastAttemptAtEpochMillis }.getOrNull()
+        runCatchingCancellable { container.jobRepository.diagnostics.first().lastAttemptAtEpochMillis }.getOrNull()
 
     /**
      * Records one finished scheduled run in the shared history, so the manual and automatic
@@ -87,11 +88,11 @@ class JobRefreshWorker(
         now: Long,
         attempted: Boolean,
     ) {
-        val diagnostics = runCatching { container.jobRepository.diagnostics.first() }.getOrNull()
+        val diagnostics = runCatchingCancellable { container.jobRepository.diagnostics.first() }.getOrNull()
             ?: return
-        val delta = runCatching { container.jobRepository.discovery.first() }
+        val delta = runCatchingCancellable { container.jobRepository.discovery.first() }
             .getOrDefault(com.aiglobal.jobfinder.data.discovery.DiscoveryDelta())
-        runCatching {
+        runCatchingCancellable {
             container.refreshHistoryStore.record(
                 refreshRunRecord(
                     trigger = com.aiglobal.jobfinder.data.discovery.RefreshTrigger.SCHEDULED,

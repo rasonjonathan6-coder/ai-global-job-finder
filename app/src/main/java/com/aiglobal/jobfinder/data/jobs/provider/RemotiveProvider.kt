@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Remotive — a curated remote-jobs board. Its published terms require linking back to
@@ -39,6 +40,7 @@ class RemotiveProvider(
         val json = try {
             feed.objectAt(url)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             throw JobProviderException(
                 providerId = id,
                 message = "Remotive did not respond",

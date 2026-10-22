@@ -85,6 +85,12 @@ class JobFreshnessEngine(
 
     companion object {
         private const val DAY_MS = 86_400_000L
-        const val DEFAULT_STALE_AFTER_DAYS = 120
+        /**
+         * The window beyond which a dated posting is [Freshness.STALE]. Set to 30 days: the
+         * product rule is to favour postings published in the last month and treat anything
+         * older as likely filled. The engine still takes an explicit window, so a caller that
+         * needs a different horizon (a test, a future setting) can pass one.
+         */
+        const val DEFAULT_STALE_AFTER_DAYS = 30
     }
 }

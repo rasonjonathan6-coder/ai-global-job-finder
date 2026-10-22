@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.data.jobs.provider
 
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * EURES — the official European Employment Services job portal run by the European
@@ -57,6 +58,7 @@ class EuresProvider(
             val json = try {
                 feed.objectPost(BASE_URL, bodyFor(query, perQuery), HEADERS)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 lastError = t
                 continue
             }

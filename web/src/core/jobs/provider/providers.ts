@@ -373,7 +373,14 @@ export class SmartRecruitersProvider implements JobProvider {
   readonly homepage = "https://jobs.smartrecruiters.com";
   readonly kind = ProviderKind.EMPLOYER_BOARD;
   readonly documentationUrl = "https://developers.smartrecruiters.com/docs/job-postings-api";
-  readonly capabilities = defaultProviderCapabilities({ serverSideKeyword: true, pagination: true });
+  readonly capabilities = defaultProviderCapabilities({
+    serverSideKeyword: true,
+    pagination: true,
+    // The feed reads only the first keyword but each call sweeps every configured country for
+    // every board, so a six-role plan would multiply that country sweep by six. Two sets add a
+    // second angle at bounded cost without re-sweeping six times. Mirrors the Kotlin provider.
+    keywordSweepBudget: 2,
+  });
 
   constructor(
     private readonly feed: JsonFeed = HttpJsonFeed,

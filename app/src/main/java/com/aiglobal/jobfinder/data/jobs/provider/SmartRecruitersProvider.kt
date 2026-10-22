@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -12,10 +13,20 @@ data class SmartRecruitersBoard(
     val identifier: String,
     /** Employer name shown on the card. */
     val label: String,
+    /**
+     * The Gulf, Southern- and East-African markets this employer actually publishes in, as
+     * ISO-3166 alpha-2 codes. Empty means the employer has no measured presence in those
+     * markets and the board is read with its unfiltered keyword feed only, so no request is
+     * spent on a country the employer does not recruit in.
+     */
+    val countries: List<String> = emptyList(),
 ) {
-    fun postingsUrl(query: String): String =
-        "https://api.smartrecruiters.com/v1/companies/$identifier/postings" +
-            "?q=${java.net.URLEncoder.encode(query, "UTF-8")}&limit=$PAGE_LIMIT"
+    fun postingsUrl(query: String, country: String? = null): String = buildString {
+        append("https://api.smartrecruiters.com/v1/companies/$identifier/postings")
+        append("?q=").append(java.net.URLEncoder.encode(query, "UTF-8"))
+        append("&limit=").append(PAGE_LIMIT)
+        if (!country.isNullOrBlank()) append("&country=").append(country)
+    }
 
     fun detailUrl(postingId: String): String =
         "https://api.smartrecruiters.com/v1/companies/$identifier/postings/$postingId"
@@ -61,11 +72,18 @@ class SmartRecruitersProvider(
     override val documentationUrl: String = "https://developers.smartrecruiters.com/docs/job-postings-api"
     override val capabilities: ProviderCapabilities = ProviderCapabilities(
         serverSideKeyword = true,
-        countryFilter = false,
+        // The public API narrows by `country=` (ISO-3166 alpha-2), which is what surfaces the
+        // Gulf and Southern/East-African vacancies an unfiltered page buries.
+        countryFilter = true,
         pagination = true,
         employmentTypeFilter = false,
         applicationLinks = true,
         submissionEndpoint = false,
+        // The feed reads only the first keyword but each call sweeps every configured country
+        // for every board. A second set therefore re-runs the identical country sweep for the
+        // identical keyword: it adds no coverage, only duplicate requests. One set keeps the
+        // whole country sweep exactly once.
+        keywordSweepBudget = 1,
     )
 
     override suspend fun fetch(keywords: List<String>, limit: Int): List<RawJob> {
@@ -74,16 +92,20 @@ class SmartRecruitersProvider(
         var lastError: Throwable? = null
         var anyAnswered = false
 
-        for (board in boards) {
-            val rows = try {
-                search(board, keyword)
-            } catch (t: Throwable) {
-                lastError = t
-                continue
+        // Boards are visited with bounded concurrency: the country sweep multiplies the request
+        // count, so walking the boards one after another would not finish inside the pipeline
+        // timeout. Each board's own detail calls already run concurrently.
+        for (chunk in boards.chunked(BOARD_CONCURRENCY)) {
+            val results = coroutineScope {
+                chunk.map { board ->
+                    async { board to runCatchingCancellable { fetchBoard(board, keyword) } }
+                }.awaitAll()
             }
-            anyAnswered = true
-            for (job in detailsFor(board, pickDetailIds(rows))) {
-                collected.putIfAbsent(job.externalId, job)
+            for ((_, outcome) in results) {
+                outcome.onSuccess { jobs ->
+                    anyAnswered = true
+                    for (job in jobs) collected.putIfAbsent(job.externalId, job)
+                }.onFailure { lastError = it }
             }
             if (collected.size >= limit) break
         }
@@ -97,6 +119,31 @@ class SmartRecruitersProvider(
             )
         }
         return collected.values.take(limit)
+    }
+
+    /**
+     * Reads one employer. The unfiltered keyword feed is read first, then one country-filtered
+     * feed per market the employer actually publishes in, so an applicable Gulf or
+     * Southern/East-African vacancy buried past the first page of the unfiltered feed is still
+     * surfaced — SGS alone carries maintenance roles in South Africa, Mozambique, the UAE and
+     * Saudi Arabia that a top-100 unfiltered page never reaches. A country the employer does not
+     * recruit in returns nothing and is simply skipped, and a single country feed that fails is
+     * ignored rather than losing the rows already collected. Rows are deduplicated by posting id,
+     * and the trade-first detail budget is shared across all of them so the number of expensive
+     * detail calls stays bounded.
+     */
+    private suspend fun fetchBoard(board: SmartRecruitersBoard, keyword: String): List<RawJob> {
+        val rows = LinkedHashMap<String, JSONObject>()
+        for (row in search(board, keyword, country = null)) {
+            rows.putIfAbsent(row.optString("id"), row)
+        }
+        for (country in board.countries) {
+            val countryRows = runCatchingCancellable { search(board, keyword, country) }.getOrDefault(emptyList())
+            for (row in countryRows) {
+                rows.putIfAbsent(row.optString("id"), row)
+            }
+        }
+        return detailsFor(board, pickDetailIds(rows.values.toList()))
     }
 
     /**
@@ -117,8 +164,8 @@ class SmartRecruitersProvider(
         return (relevant + rest).map { it.first }.take(DETAILS_PER_BOARD)
     }
 
-    private suspend fun search(board: SmartRecruitersBoard, keyword: String): List<JSONObject> {
-        val json = feed.objectAt(board.postingsUrl(keyword), HEADERS)
+    private suspend fun search(board: SmartRecruitersBoard, keyword: String, country: String?): List<JSONObject> {
+        val json = feed.objectAt(board.postingsUrl(keyword, country), HEADERS)
         val content = json.optJSONArray("content") ?: return emptyList()
         return (0 until content.length()).mapNotNull { content.optJSONObject(it) }
     }
@@ -128,7 +175,7 @@ class SmartRecruitersProvider(
     private suspend fun detailsFor(board: SmartRecruitersBoard, ids: List<String>): List<RawJob> = coroutineScope {
         ids.map { id ->
             async {
-                runCatching { feed.objectAt(board.detailUrl(id), HEADERS) }
+                runCatchingCancellable { feed.objectAt(board.detailUrl(id), HEADERS) }
                     .getOrNull()
                     ?.let { detail -> detail.toRawJob(board) }
             }
@@ -188,7 +235,12 @@ class SmartRecruitersProvider(
     }
 
     private companion object {
-        const val DETAILS_PER_BOARD = 4
+        /** Detail rows read per employer — the trade titles first, then the rest. */
+        const val DETAILS_PER_BOARD = 8
+
+        /** Employers read at once. Sized so the country sweep finishes inside the pipeline timeout. */
+        const val BOARD_CONCURRENCY = 4
+
         const val DEFAULT_KEYWORD = "maintenance"
 
         val SECTION_KEYS = listOf("jobDescription", "qualifications", "additionalInformation", "companyDescription")
@@ -199,15 +251,31 @@ class SmartRecruitersProvider(
 
 /**
  * Curated SmartRecruiters employers, each verified to answer the keyless public posting API.
- * The set is deliberately trade-led: inspection/testing and industrial-equipment employers
- * publish the maintenance, fitter, millwright and pump roles the candidate targets, and the
- * large ones reach Africa and the Gulf, not only North America and Europe.
+ * The set is deliberately trade-led: inspection/testing, industrial-equipment, engineering and
+ * mining employers publish the maintenance, fitter, millwright and pump roles the candidate
+ * targets, and the large ones reach Africa and the Gulf, not only North America and Europe.
+ *
+ * [SmartRecruitersBoard.countries] lists only the Gulf and African markets each employer was
+ * measured to publish in, so the country sweep spends requests where applicable vacancies
+ * actually exist rather than probing markets the employer does not recruit in.
  */
 internal object SmartRecruitersBoards {
     val BOARDS: List<SmartRecruitersBoard> = listOf(
-        SmartRecruitersBoard("SGS", "SGS"),
-        SmartRecruitersBoard("Wabtec", "Wabtec"),
-        SmartRecruitersBoard("Konecranes", "Konecranes"),
+        SmartRecruitersBoard(
+            "SGS", "SGS",
+            countries = listOf("ae", "sa", "qa", "om", "za", "mz", "na", "ke"),
+        ),
+        SmartRecruitersBoard("Wabtec", "Wabtec", countries = listOf("za")),
+        SmartRecruitersBoard("Konecranes", "Konecranes", countries = listOf("za")),
         SmartRecruitersBoard("BoschGroup", "Bosch"),
+        SmartRecruitersBoard(
+            "EgisGroup", "Egis",
+            countries = listOf("ae", "sa", "qa", "kw", "zm"),
+        ),
+        SmartRecruitersBoard("ValterraPlatinum1", "Valterra Platinum", countries = listOf("za")),
+        SmartRecruitersBoard("prosidianconsulting", "ProSidian", countries = listOf("za")),
+        SmartRecruitersBoard("IOTAGROUP", "IOTA"),
+        SmartRecruitersBoard("ContinentalGroupSectorContiTech", "Continental ContiTech"),
+        SmartRecruitersBoard("PlantsAndGoodwinInc", "Plants & Goodwin"),
     )
 }

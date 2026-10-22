@@ -84,9 +84,19 @@ import { assessEligibility } from "../jobs/engine/eligibility-engine";
 import { MatchingEngine } from "../jobs/engine/matching-engine";
 import { InternationalFitEngine } from "../jobs/engine/international-fit-engine";
 import { JobFreshnessEngine } from "../jobs/freshness/job-freshness-engine";
+import { FreshnessWindow, withinFreshnessWindow } from "../jobs/freshness/freshness-window";
 import { ExpatOpportunityEngine } from "../expat/expat-opportunity-engine";
 import { BenefitFinding } from "../expat/opportunity";
 import { OfferVerificationEngine } from "../jobs/engine/offer-verification-engine";
+import { OfferAvailabilityEngine } from "../jobs/availability/offer-availability-engine";
+import {
+  AvailabilityCache,
+  AvailabilityStatus,
+  AvailabilitySignalType,
+  UNKNOWN_AVAILABILITY,
+  availabilityDecisiveSignal,
+} from "../models";
+import { AvailabilityVerifier, LinkProbeClassifier } from "../jobs/availability/availability-verifier";
 import { ApplicationUrlInspector } from "../apply/application-url-inspector";
 import { buildEvidence } from "../jobs/engine/job-evidence-engine";
 import {
@@ -302,6 +312,7 @@ function makeJob(scenario: Scenario): Job {
     evidence: [],
     openToApplicants: null,
     verification: UNKNOWN_VERIFICATION,
+    availability: UNKNOWN_AVAILABILITY,
     isSaved: false,
     isNew: false,
   };
@@ -674,6 +685,7 @@ describe("Kotlin parity — golden fixtures", () => {
       evidence: [],
       openToApplicants: j.openToApplicants,
       verification: UNKNOWN_VERIFICATION,
+      availability: UNKNOWN_AVAILABILITY,
       isSaved: j.isSaved,
       isNew: j.isNew,
     };
@@ -882,6 +894,170 @@ describe("Kotlin parity — golden fixtures", () => {
         const c = fixture.freshness.find((f) => f.id === id)!;
         expect(c.output.freshness).toBe("UNKNOWN");
       }
+    });
+  });
+
+  describe("stage A freshness window", () => {
+    it.each(fixture.freshnessWindow.map((w) => [w.id, w] as const))("%s matches", (_id, w) => {
+      const posted = w.postedAtEpochMillis;
+      expect(withinFreshnessWindow(posted, CLOCK, FreshnessWindow.SEVEN_DAYS)).toBe(w.sevenDays);
+      expect(withinFreshnessWindow(posted, CLOCK, FreshnessWindow.FOURTEEN_DAYS)).toBe(w.fourteenDays);
+      expect(withinFreshnessWindow(posted, CLOCK, FreshnessWindow.THIRTY_DAYS)).toBe(w.thirtyDays);
+    });
+
+    it("never counts an undated, zero or future date as recent", () => {
+      for (const id of ["null", "zero", "future"]) {
+        const w = fixture.freshnessWindow.find((c) => c.id === id)!;
+        expect(withinFreshnessWindow(w.postedAtEpochMillis, CLOCK, FreshnessWindow.THIRTY_DAYS)).toBe(false);
+      }
+    });
+  });
+
+  // ----------------------------------------------------------------- stage B: offer availability
+
+  describe("stage B offer availability", () => {
+    const engine = new OfferAvailabilityEngine();
+
+    type AvailabilityFixtureRow = {
+      id: string;
+      openToApplicants: boolean | null;
+      expiresAtEpochMillis: number | null;
+      output: {
+        status: string;
+        decisiveSignal: string;
+        lastCheckedAtEpochMillis: number | null;
+        evidence: { type: string; detail: string; sourceUrl: string }[];
+      };
+    };
+
+    function fixtureJob(row: AvailabilityFixtureRow): Job {
+      return {
+        ...jobFromScenario(fixture.scenarios[0]),
+        sourceUrl: "https://www.jobbank.gc.ca/job/1",
+        openToApplicants: row.openToApplicants,
+        expiresAtEpochMillis: row.expiresAtEpochMillis,
+      };
+    }
+
+    function blankFixtureRow(overrides: Partial<AvailabilityFixtureRow>): AvailabilityFixtureRow {
+      return {
+        id: "adhoc",
+        openToApplicants: null,
+        expiresAtEpochMillis: null,
+        output: { status: "UNCONFIRMED", decisiveSignal: "NONE", lastCheckedAtEpochMillis: CLOCK, evidence: [] },
+        ...overrides,
+      };
+    }
+
+    it.each(fixture.availabilityFixture.map((r) => [r.id, r] as const))(
+      "engine output for %s matches Kotlin",
+      (_id, row) => {
+        const result = engine.assess(fixtureJob(row), CLOCK);
+        expect({
+          status: result.status,
+          decisiveSignal: availabilityDecisiveSignal(result),
+          lastCheckedAtEpochMillis: result.lastCheckedAtEpochMillis,
+          evidence: result.evidence.map((e) => ({ type: e.type, detail: e.detail, sourceUrl: e.sourceUrl })),
+        }).toEqual(row.output);
+      },
+    );
+
+    it("a source flag settles the verdict with no request", async () => {
+      let calls = 0;
+      const verifier = new AvailabilityVerifier({
+        clock: () => CLOCK,
+        probe: async () => {
+          calls++;
+          return { kind: "open", detail: "apply" };
+        },
+      });
+      const open = await verifier.verify(fixtureJob(blankFixtureRow({ openToApplicants: true })));
+      expect(open.status).toBe(AvailabilityStatus.OPEN);
+      expect(calls).toBe(0);
+    });
+
+    it("a network failure leaves the posting unconfirmed, never expired", async () => {
+      const verifier = new AvailabilityVerifier({
+        clock: () => CLOCK,
+        probe: async () => ({ kind: "unknown", detail: "timeout" }),
+      });
+      const result = await verifier.verify(fixtureJob(blankFixtureRow({})));
+      expect(result.status).toBe(AvailabilityStatus.UNCONFIRMED);
+    });
+
+    it("a plain 200 is not open; only a positive marker is", () => {
+      expect(LinkProbeClassifier.classify(200, "<html>Careers</html>").kind).toBe("unknown");
+      expect(LinkProbeClassifier.classify(200, "<button>Apply now</button>").kind).toBe("open");
+      expect(LinkProbeClassifier.classify(200, "This position has been filled").kind).toBe("closed");
+      expect(LinkProbeClassifier.classify(200, "<button>Apply now</button>This job has been filled").kind).toBe("closed");
+      expect(LinkProbeClassifier.classify(404, "").kind).toBe("closed");
+      expect(LinkProbeClassifier.classify(403, "").kind).toBe("unknown");
+    });
+
+    it("a settled verdict is cached and the link is not reached twice", async () => {
+      let calls = 0;
+      const cache = new AvailabilityCache({ clock: () => CLOCK });
+      const verifier = new AvailabilityVerifier({
+        cache,
+        clock: () => CLOCK,
+        probe: async () => {
+          calls++;
+          return { kind: "open", detail: "apply" };
+        },
+      });
+      const job = fixtureJob(blankFixtureRow({}));
+      await verifier.verify(job);
+      await verifier.verify(job);
+      expect(calls).toBe(1);
+    });
+
+    it("an unconfirmed result is never cached, so the next attempt retries", async () => {
+      let calls = 0;
+      const cache = new AvailabilityCache({ clock: () => CLOCK });
+      const verifier = new AvailabilityVerifier({
+        cache,
+        clock: () => CLOCK,
+        probe: async () => {
+          calls++;
+          return { kind: "unknown", detail: "timeout" };
+        },
+      });
+      const job = fixtureJob(blankFixtureRow({}));
+      await verifier.verify(job);
+      await verifier.verify(job);
+      expect(calls).toBe(2);
+      expect(cache.size()).toBe(0);
+    });
+
+    it("the cache expires after 24 hours and re-checks", async () => {
+      let clockValue = CLOCK;
+      let calls = 0;
+      const cache = new AvailabilityCache({ clock: () => clockValue });
+      const verifier = new AvailabilityVerifier({
+        cache,
+        clock: () => clockValue,
+        probe: async () => {
+          calls++;
+          return { kind: "open", detail: "apply" };
+        },
+      });
+      const job = fixtureJob(blankFixtureRow({}));
+      await verifier.verify(job);
+      clockValue = CLOCK + 23 * 60 * 60 * 1000;
+      await verifier.verify(job);
+      expect(calls).toBe(1);
+      clockValue = CLOCK + 25 * 60 * 60 * 1000;
+      await verifier.verify(job);
+      expect(calls).toBe(2);
+    });
+
+    it("the honest empty read claims nothing", () => {
+      expect(UNKNOWN_AVAILABILITY).toEqual({
+        status: AvailabilityStatus.UNCONFIRMED,
+        evidence: [],
+        lastCheckedAtEpochMillis: null,
+      });
+      expect(availabilityDecisiveSignal(UNKNOWN_AVAILABILITY)).toBe(AvailabilitySignalType.NONE);
     });
   });
 

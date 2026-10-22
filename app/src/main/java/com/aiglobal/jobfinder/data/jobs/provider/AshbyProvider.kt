@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import org.json.JSONObject
+import kotlin.coroutines.cancellation.CancellationException
 
 /** One employer careers site hosted on Ashby, addressed by its board name. */
 data class AshbyBoard(
@@ -48,6 +49,7 @@ class AshbyProvider(
             val jobs = try {
                 list(board)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 lastError = t
                 continue
             }
@@ -133,6 +135,9 @@ class AshbyProvider(
 internal object AshbyBoards {
     val BOARDS: List<AshbyBoard> = listOf(
         AshbyBoard("formenergy", "Form Energy"),
+        // Critical-minerals developer (Moab/Houston): process, piping and electrical trades
+        // (project electrician, mechatronics engineer, maintenance).
+        AshbyBoard("marianaminerals", "Mariana Minerals"),
         AshbyBoard("twelve", "Twelve"),
     )
 }

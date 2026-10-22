@@ -2,6 +2,7 @@ package com.aiglobal.jobfinder.data.ai
 
 import com.aiglobal.jobfinder.data.model.NvidiaResult
 import com.aiglobal.jobfinder.data.model.NvidiaStatus
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -114,6 +115,7 @@ class NvidiaAiClient(
         val response = try {
             transport.chatCompletions(apiKey, body, timeoutMillis)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             return classifyThrowable(t)
         }
         return interpret(response)
@@ -143,6 +145,7 @@ class NvidiaAiClient(
         val response = try {
             transport.chatCompletions(apiKey, body, timeoutMillis)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             return classifyThrowable(t)
         }
         if (response.statusCode !in 200..299) return interpretError(response)
@@ -171,6 +174,7 @@ class NvidiaAiClient(
         val response = try {
             transport.listModels(apiKey, timeoutMillis)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             return classifyThrowable(t)
         }
         return when {
@@ -204,6 +208,7 @@ class NvidiaAiClient(
         val response = try {
             transport.listModels(apiKey, timeoutMillis)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             return classifyThrowable(t)
         }
         if (response.statusCode !in 200..299) return interpretError(response)

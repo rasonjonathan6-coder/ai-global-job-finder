@@ -31,12 +31,17 @@ import com.aiglobal.jobfinder.data.jobs.provider.HttpJsonFeed
 import com.aiglobal.jobfinder.data.jobs.provider.JoobleProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JobicyProvider
 import com.aiglobal.jobfinder.data.jobs.provider.JobProvider
+import com.aiglobal.jobfinder.data.jobs.provider.JobTechDevProvider
+import com.aiglobal.jobfinder.data.jobs.provider.LandingJobsProvider
 import com.aiglobal.jobfinder.data.jobs.provider.LeverProvider
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderAudit
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderAuditRegistry
+import com.aiglobal.jobfinder.data.jobs.provider.RemoteOkProvider
 import com.aiglobal.jobfinder.data.jobs.provider.RemotiveProvider
 import com.aiglobal.jobfinder.data.jobs.provider.SmartRecruitersProvider
+import com.aiglobal.jobfinder.data.jobs.provider.TheMuseProvider
 import com.aiglobal.jobfinder.data.jobs.provider.WorkdayProvider
+import com.aiglobal.jobfinder.data.jobs.provider.WorkingNomadsProvider
 import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.ProviderSettings
 import com.aiglobal.jobfinder.data.net.NetworkMonitor
@@ -158,6 +163,26 @@ open class AppContainer(application: Application) {
         savedIdsFlow = preferencesRepository.savedJobIds,
         savedIdsSetter = { ids -> preferencesRepository.setSavedJobIds(ids) },
         seenLedger = jobSeenLedger,
+        // Availability: the source's own flag and deadline settle most postings without a
+        // request; the remaining links are reached at most once a day, cached across restarts.
+        availabilityVerifier = com.aiglobal.jobfinder.data.jobs.availability.AvailabilityVerifier(
+            cache = com.aiglobal.jobfinder.data.jobs.availability.AvailabilityCache(
+                store = com.aiglobal.jobfinder.data.jobs.availability.AvailabilityCacheStore(
+                    File(application.filesDir, "availability"),
+                ),
+            ),
+            probe = com.aiglobal.jobfinder.data.jobs.availability.HttpAvailabilityLinkProbe(),
+            // Only a link that passes the same inspector the Apply button uses is probed, so
+            // the app never reaches an unusable or unvetted URL.
+            linkIsUsable = { job ->
+                com.aiglobal.jobfinder.data.apply.ApplicationUrlInspector().inspect(job).canOpen
+            },
+        ),
+        // Persist the daily probe-budget window beside the availability cache, so the cap is
+        // held across refreshes *and* across restarts rather than reset by each launch.
+        availabilityBudgetStore = com.aiglobal.jobfinder.data.jobs.availability.AvailabilityBudgetStore(
+            File(application.filesDir, "availability"),
+        ),
     )
 
     /**
@@ -192,6 +217,15 @@ open class AppContainer(application: Application) {
                 feed = HttpJsonFeed,
             ),
         )
+        // Key-free public boards added to widen coverage beyond the aggregators above.
+        // The Muse is swept per country so the feed is narrowed rather than a global sample;
+        // JobTech Dev (the Swedish public employment service) is the one source here with a
+        // real server-side keyword search, so the candidate's own trade is asked for directly.
+        add(TheMuseProvider(feed = HttpJsonFeed))
+        add(RemoteOkProvider(feed = HttpJsonFeed))
+        add(WorkingNomadsProvider(feed = HttpJsonFeed))
+        add(LandingJobsProvider(feed = HttpJsonFeed))
+        add(JobTechDevProvider(feed = HttpJsonFeed))
     }
 
     /**

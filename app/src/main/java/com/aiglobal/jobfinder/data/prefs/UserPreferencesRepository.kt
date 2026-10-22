@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCountries
+import com.aiglobal.jobfinder.data.model.AiLanguage
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
 import com.aiglobal.jobfinder.data.model.JobBenefitTypes
 import com.aiglobal.jobfinder.data.model.NvidiaConfig
@@ -58,6 +59,7 @@ class UserPreferencesRepository(
     private val nvidiaApiKeyKey = stringPreferencesKey("nvidia_api_key")
     private val nvidiaModelKey = stringPreferencesKey("nvidia_model_id")
     private val nvidiaConsentKey = booleanPreferencesKey("nvidia_consent_granted")
+    private val nvidiaLanguageKey = stringPreferencesKey("nvidia_language")
     private val disabledSourcesKey = stringSetPreferencesKey("disabled_source_ids")
 
     private val expatPrioritiesKey = stringSetPreferencesKey("expat_priorities")
@@ -237,13 +239,23 @@ class UserPreferencesRepository(
         dataStore.edit { it[nvidiaConsentKey] = granted }
     }
 
-    /** The full NVIDIA configuration, assembled from the three stored values. */
+    /** The language drafts are written in. Defaults to French, resolved from a stored key. */
+    val nvidiaLanguage: Flow<AiLanguage> = dataStore.data.map { prefs ->
+        AiLanguage.fromKey(prefs[nvidiaLanguageKey])
+    }
+
+    suspend fun setNvidiaLanguage(language: AiLanguage) {
+        dataStore.edit { it[nvidiaLanguageKey] = language.name }
+    }
+
+    /** The full NVIDIA configuration, assembled from the stored values. */
     val nvidiaConfig: Flow<NvidiaConfig> = dataStore.data.map { prefs ->
         NvidiaConfig(
             apiKey = secretCipher.decrypt(prefs[nvidiaApiKeyKey].orEmpty()),
             modelId = prefs[nvidiaModelKey]?.takeIf { NvidiaModels.isSelectable(it) }
                 ?: NvidiaModels.defaultModelId,
             consentGranted = prefs[nvidiaConsentKey] ?: false,
+            language = AiLanguage.fromKey(prefs[nvidiaLanguageKey]),
         )
     }
 

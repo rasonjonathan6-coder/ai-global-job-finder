@@ -9,6 +9,29 @@ import { classifyRole } from "../jobs/search/role-relevance";
 import { relevantJobs } from "../jobs/search/relevance-feed";
 import { HtmlText } from "../jobs/provider/text-parsing";
 
+/**
+ * Resolves with `promise`, or rejects with `new Error(message)` if it has not settled within
+ * `timeoutMillis`. A non-positive timeout rejects immediately, so a spent provider budget stops
+ * the next keyword fetch rather than starting one with no time left. Mirrors the Kotlin
+ * `withTimeoutOrNull` + `ProviderTimeoutException` pair in `LiveJobRepository`.
+ */
+function withDeadline<T>(promise: Promise<T>, timeoutMillis: number, message: string): Promise<T> {
+  if (timeoutMillis <= 0) return Promise.reject(new Error(message));
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMillis);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** One source's outcome for the diagnostics strip, in plain words. */
 export interface ProviderReport {
   providerId: string;
@@ -36,6 +59,13 @@ export interface PipelineOptions {
   validation?: RecordValidationEngine;
   clock?: () => number;
   limitPerProvider?: number;
+  /**
+   * Hard ceiling on a source across all of its keyword fetches in one refresh, in ms. The
+   * per-request bound alone lets a keyword-capable source pay its budget once per target role,
+   * so a six-role plan could hold the whole refresh for minutes even though every provider runs
+   * concurrently. Mirrors the Kotlin `LiveJobRepository.perProviderTotalTimeoutMillis`.
+   */
+  perProviderTotalTimeoutMillis?: number;
 }
 
 /**
@@ -52,6 +82,7 @@ export class JobPipeline {
   private readonly validation: RecordValidationEngine;
   private readonly clock: () => number;
   private readonly limit: number;
+  private readonly perProviderTotalTimeoutMillis: number;
 
   constructor(options?: PipelineOptions) {
     this.providers = options?.providers ?? defaultProviders();
@@ -59,6 +90,17 @@ export class JobPipeline {
     this.mapper = options?.mapper ?? new JobMapper({ clock: this.clock });
     this.validation = options?.validation ?? new RecordValidationEngine();
     this.limit = options?.limitPerProvider ?? 60;
+    this.perProviderTotalTimeoutMillis = options?.perProviderTotalTimeoutMillis ?? 60_000;
+  }
+
+  /** Wall-clock now, so a fake clock can drive the provider budget deterministically. */
+  private now(): number {
+    return this.clock();
+  }
+
+  /** Milliseconds left on a provider's budget, floored at zero. */
+  private remainingBudget(deadline: number): number {
+    return Math.max(0, deadline - this.now());
   }
 
   /**
@@ -83,15 +125,31 @@ export class JobPipeline {
       this.providers.map(async (provider) => {
         // The plan is derived from the provider's real capabilities: a source that can filter
         // server-side is asked for each target role in turn and the results pooled; one that
-        // cannot is fetched once with no keywords and filtered locally afterwards. This mirrors
-        // the Android `LiveJobRepository` fetch loop.
+        // cannot is fetched once with no keywords and filtered locally afterwards. A provider
+        // whose feed reads only the first keyword and re-walks its whole site list on every call
+        // declares a small sweep budget, so the plan cannot multiply its request volume. This
+        // mirrors the Android `LiveJobRepository` fetch loop.
         const plan = SearchStrategy.planFor(provider, titles);
-        try {
-          const fetched: RawJob[] = [];
-          for (const keywordSet of plan.keywordSets) {
-            const batch = await provider.fetch(keywordSet, this.limit);
+        const keywordSets = plan.keywordSets.slice(0, provider.capabilities.keywordSweepBudget);
+        const deadline = this.now() + this.perProviderTotalTimeoutMillis;
+        const fetched: RawJob[] = [];
+        let failure: unknown = null;
+        for (const keywordSet of keywordSets) {
+          try {
+            const batch = await withDeadline(
+              provider.fetch(keywordSet, this.limit),
+              this.remainingBudget(deadline),
+              `The source ${provider.name} did not answer in time`,
+            );
             fetched.push(...batch);
+          } catch (error) {
+            failure = failure ?? error;
+            // The provider-wide budget is spent; stop asking it for more keyword sets. The rows
+            // already returned are kept, exactly as the Android repository keeps them.
+            if (this.remainingBudget(deadline) <= 0) break;
           }
+        }
+        if (fetched.length > 0 || failure === null) {
           const { kept } = this.validation.deduplicate(fetched, now);
           raws.push(...kept);
           reports.push({
@@ -103,14 +161,14 @@ export class JobPipeline {
             message: null,
             serverSideSearch: plan.serverSideSearch,
           });
-        } catch (error) {
+        } else {
           reports.push({
             providerId: provider.id,
             providerName: provider.name,
             ok: false,
             fetched: 0,
             accepted: 0,
-            message: providerFailureLine(provider.name, error),
+            message: providerFailureLine(provider.name, failure),
             serverSideSearch: plan.serverSideSearch,
           });
         }

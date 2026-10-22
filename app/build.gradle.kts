@@ -5,9 +5,36 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Release signing — credentials are read from environment variables only, never committed.
+// Debug builds and unit tests work without these variables.
+val releaseStoreFilePath: String? = System.getenv("RELEASE_KEYSTORE_PATH")
+val releaseStorePasswordValue: String? = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+val releaseKeyAliasValue: String? = System.getenv("RELEASE_KEY_ALIAS")
+val releaseKeyPasswordValue: String? = System.getenv("RELEASE_KEY_PASSWORD")
+val hasReleaseSigning: Boolean =
+    !releaseStoreFilePath.isNullOrBlank() &&
+        !releaseStorePasswordValue.isNullOrBlank() &&
+        !releaseKeyAliasValue.isNullOrBlank() &&
+        !releaseKeyPasswordValue.isNullOrBlank() &&
+        file(releaseStoreFilePath!!).exists()
+
 android {
     namespace = "com.aiglobal.jobfinder"
     compileSdk = 34
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFilePath!!)
+                storePassword = releaseStorePasswordValue
+                keyAlias = releaseKeyAliasValue
+                keyPassword = releaseKeyPasswordValue
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.aiglobal.jobfinder"
@@ -25,6 +52,9 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -95,4 +125,18 @@ dependencies {
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.test.manifest)
+}
+
+// Fail clearly when a release artifact task is requested without signing credentials.
+// Debug builds, unit tests and lint tasks are unaffected.
+gradle.taskGraph.whenReady {
+    val releaseArtifactTask = Regex("^(assemble|bundle|package|install)Release$")
+    val wantsSignedRelease = allTasks.any { releaseArtifactTask.matches(it.name) }
+    if (wantsSignedRelease && !hasReleaseSigning) {
+        throw GradleException(
+            "Release signing is not configured: set RELEASE_KEYSTORE_PATH, " +
+                "RELEASE_KEYSTORE_PASSWORD, RELEASE_KEY_ALIAS and RELEASE_KEY_PASSWORD " +
+                "(the keystore file must exist) before running a release build."
+        )
+    }
 }

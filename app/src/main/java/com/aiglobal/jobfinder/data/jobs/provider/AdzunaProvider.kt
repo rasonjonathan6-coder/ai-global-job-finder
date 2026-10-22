@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Adzuna — a commercial aggregator covering national job markets. It is the only
@@ -64,7 +65,7 @@ class AdzunaProvider(
                     append("&content-type=application/json")
                     if (what != null) append("&what=${java.net.URLEncoder.encode(what, "UTF-8")}")
                 }
-                val outcome = runCatching { feed.objectAt(url) }
+                val outcome = runCatchingCancellable { feed.objectAt(url) }
                 outcome.onSuccess { json -> collected += json.toRawJobs(country) }
                     .onFailure { lastError = it }
                 // Stop paging a market as soon as a page fails or comes back short; asking
@@ -147,6 +148,7 @@ class AdzunaProvider(
                 },
             )
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             classifyCheck(t, country)
         }
     }

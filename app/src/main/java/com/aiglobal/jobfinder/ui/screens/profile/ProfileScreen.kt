@@ -90,6 +90,7 @@ import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckStatus
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCountries
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
+import com.aiglobal.jobfinder.data.model.AiLanguage
 import com.aiglobal.jobfinder.data.model.BenefitPriority
 import com.aiglobal.jobfinder.data.model.BenefitType
 import com.aiglobal.jobfinder.data.model.ExpatPreferences
@@ -385,6 +386,7 @@ fun ProfileScreen(
                 onSaveKey = appViewModel::saveNvidiaApiKey,
                 onSelectModel = appViewModel::saveNvidiaModelId,
                 onConsentChange = appViewModel::setNvidiaConsent,
+                onSelectLanguage = appViewModel::saveNvidiaLanguage,
                 onTestKey = appViewModel::testNvidiaKey,
                 onDiscoverModels = appViewModel::discoverNvidiaModels,
                 onTestModel = appViewModel::testSelectedNvidiaModel,
@@ -1583,6 +1585,7 @@ internal fun AiAssistantCard(
     onSaveKey: (String) -> Unit,
     onSelectModel: (String) -> Unit,
     onConsentChange: (Boolean) -> Unit,
+    onSelectLanguage: (AiLanguage) -> Unit = {},
     onTestKey: suspend (String) -> NvidiaResult,
     onDiscoverModels: suspend (String) -> List<String> = { emptyList() },
     onTestModel: suspend () -> NvidiaResult = { NvidiaResult(NvidiaStatus.OK) },
@@ -1892,8 +1895,67 @@ internal fun AiAssistantCard(
                         ),
                     )
                 }
+
+                // Language is a drafting preference, not a gate: it changes what the model
+                // writes, so a Madagascar candidate can read every draft natively in French.
+                Text(
+                    text = "Draft language",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "The assistant writes its cover letters and explanations in this language.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
+                    AiLanguage.entries.forEach { option ->
+                        LanguageChip(
+                            label = option.label,
+                            selected = option == config.language,
+                            onClick = { onSelectLanguage(option) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun LanguageChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else extendedColors.cardStroke, shape)
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (selected) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 

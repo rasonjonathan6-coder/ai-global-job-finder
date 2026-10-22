@@ -220,6 +220,12 @@ fun JobCard(
                     if (!job.verification.isEntirelyUnknown) {
                         OfferVerificationBadge(verification = job.verification)
                     }
+                    // Only shown once a verdict is settled: an unconfirmed read adds no signal
+                    // to the card and would clutter it, while a settled one is the answer to
+                    // "can I still apply?" and earns its place next to the other badges.
+                    if (!job.availability.isUnconfirmed) {
+                        OfferAvailabilityBadge(availability = job.availability)
+                    }
                     if (job.scamRisk != com.aiglobal.jobfinder.data.model.ScamRisk.LOW) {
                         ScamRiskBadge(job.scamRisk)
                     }

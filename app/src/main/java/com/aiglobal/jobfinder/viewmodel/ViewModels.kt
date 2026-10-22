@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.aiglobal.jobfinder.AppContainer
 import com.aiglobal.jobfinder.data.expat.ExpatBenefitsEngine
 import com.aiglobal.jobfinder.data.jobs.engine.InternationalFitEngine
+import com.aiglobal.jobfinder.data.jobs.freshness.FreshnessWindow
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCheckResult
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaCredentials
 import com.aiglobal.jobfinder.data.model.ApplicationDraft
@@ -241,6 +242,11 @@ class AppViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { container.preferencesRepository.setNvidiaConsent(granted) }
     }
 
+    /** Sets the language every AI draft is written in (French by default). */
+    fun saveNvidiaLanguage(language: com.aiglobal.jobfinder.data.model.AiLanguage) {
+        viewModelScope.launch { container.preferencesRepository.setNvidiaLanguage(language) }
+    }
+
     /**
      * Validates a candidate key against NVIDIA without touching the saved one, so the user
      * can confirm it works before committing. Returns the classified result to the caller.
@@ -382,11 +388,30 @@ data class JobsUiState(
      */
     val savedJobIds: Set<String> = emptySet(),
     /**
+     * The instant the date window is measured against. Kept on the state so the derived
+     * counts and the list agree, and so a test can pin it. Defaults to the wall clock; the
+     * view model refreshes it whenever the feed changes.
+     */
+    val nowMillis: Long = System.currentTimeMillis(),
+    /**
      * When true, only postings first seen since the user last reviewed the new opportunities
      * are shown. Reads the same ledger the Home card and Profile summary use, so "new" means
      * the same thing everywhere and a posting already known never appears as new.
      */
     val newOnly: Boolean = false,
+    /**
+     * The publication-date window the list is narrowed to. Defaults to the last 30 days: the
+     * product favours recent postings, so an undated or older-than-a-month listing is not shown
+     * here. A posting with no stated date has no place on this axis and is reported separately
+     * rather than counted as recent (see [undatedCount]).
+     */
+    val freshnessWindow: FreshnessWindow = FreshnessWindow.DEFAULT,
+    /**
+     * When true, the date window is not applied at all and every posting is shown, including
+     * ones with no stated publication date or one older than the window. Off by default, so the
+     * list opens on recent opportunities; the user can opt into the wider view explicitly.
+     */
+    val includeUndatedAndStale: Boolean = false,
     /** Ids of the postings the incremental search discovered since the last review. */
     val newJobIds: Set<String> = emptySet(),
     /**
@@ -414,10 +439,34 @@ data class JobsUiState(
             source != null || minMatch > 0 || minExpatScore > 0 || visaDocumentedOnly ||
             strongInternationalFitOnly || tradeOnly || query.isNotBlank() ||
             verifiedVisaOnly || verifiedAccommodationOnly || verifiedFlightsOnly ||
-            openVacancyOnly || recentlyVerifiedOnly || newOnly
+            openVacancyOnly || recentlyVerifiedOnly || newOnly ||
+            includeUndatedAndStale || freshnessWindow != FreshnessWindow.DEFAULT
 
     /** How many of the loaded postings were first seen since the last review. */
     val newCount: Int get() = jobs.count { newJobIds.contains(it.id) }
+
+    /**
+     * Postings that carry a real publication date inside the selected window. These are the
+     * ones the list shows by default; the two counts below are what the UI uses to offer the
+     * rest separately rather than silently dropping them.
+     */
+    val withinWindowCount: Int get() = jobs.count { freshnessWindow.includes(it.postedAtEpochMillis, nowMillis) }
+
+    /**
+     * Postings the source gave no usable date for (missing, zero or a future date). They are
+     * never presented as recent; the UI offers to reveal them in a clearly-signalled group.
+     */
+    val undatedCount: Int get() = jobs.count { it.postedAtEpochMillis == null || it.postedAtEpochMillis !in 1..nowMillis }
+
+    /** Postings whose stated date is older than the selected window. */
+    val staleCount: Int
+        get() = jobs.count {
+            val posted = it.postedAtEpochMillis
+            posted != null && posted in 1..nowMillis && !freshnessWindow.includes(posted, nowMillis)
+        }
+
+    /** True when a posting has a stated publication date inside the selected window. */
+    fun isWithinWindow(job: Job): Boolean = freshnessWindow.includes(job.postedAtEpochMillis, nowMillis)
 
     /** True when a posting was discovered since the user last reviewed the new opportunities. */
     fun isNew(job: Job): Boolean = newJobIds.contains(job.id)
@@ -441,6 +490,12 @@ data class JobsUiState(
     val visibleJobs: List<Job>
         get() {
             var result = jobs
+            // Recent-and-dated first: unless the user opts into the wider view, a posting must
+            // carry a real publication date inside the selected window. An undated or stale
+            // posting is never counted as recent and is offered separately by the UI.
+            if (!includeUndatedAndStale) {
+                result = result.filter { freshnessWindow.includes(it.postedAtEpochMillis, nowMillis) }
+            }
             if (newOnly) result = result.filter { newJobIds.contains(it.id) }
             if (savedOnly) result = result.filter { isSaved(it) }
             if (eligibleOnly) result = result.filter { it.applyableFromMadagascar }
@@ -636,6 +691,9 @@ class JobsViewModel(
                     uiStateInternal.update {
                         it.copy(
                             jobs = jobs,
+                            // Re-measure the date window against the current instant whenever
+                            // the feed changes, so "last 30 days" stays accurate over time.
+                            nowMillis = System.currentTimeMillis(),
                             expatPreferences = prefs,
                             expatAssessments = assessments,
                             internationalFit = jobs.associate { job ->
@@ -699,8 +757,22 @@ class JobsViewModel(
             openVacancyOnly = false,
             recentlyVerifiedOnly = false,
             newOnly = false,
+            freshnessWindow = FreshnessWindow.DEFAULT,
+            includeUndatedAndStale = false,
         )
     }
+
+    /** Narrows (or widens) the list to postings published within the chosen window. */
+    fun onFreshnessWindowChange(window: FreshnessWindow) =
+        uiStateInternal.update { it.copy(freshnessWindow = window, nowMillis = System.currentTimeMillis()) }
+
+    /**
+     * Reveals postings with no stated date, or a date older than the window, in one opt-in
+     * step. Off by default so the list opens on recent opportunities, and never a claim that
+     * the revealed postings are current.
+     */
+    fun toggleIncludeUndatedAndStale() =
+        uiStateInternal.update { it.copy(includeUndatedAndStale = !it.includeUndatedAndStale) }
 
     /** Shows only postings first seen since the user last reviewed the new opportunities. */
     fun toggleNewFilter() = uiStateInternal.update { it.copy(newOnly = !it.newOnly) }
@@ -1062,8 +1134,16 @@ data class AiUiState(
     val assistantConsent: Boolean = false,
     /** The human-readable model name, for the panel subtitle. */
     val modelLabel: String = "",
+    /** The language drafts are written in, shown next to the model name. */
+    val languageLabel: String = "",
+    /** The posting the assistant acts on, so the user knows exactly what it will read. */
+    val bestJobTitle: String = "",
+    val bestJobCompany: String = "",
+    val bestJobCountry: String = "",
     /** True while a request is in flight. */
     val assistantRunning: Boolean = false,
+    /** The label of the task currently running, so the panel marks exactly that row. */
+    val assistantRunningTask: String = "",
     /** The last successful output, already labelled as remote or on-device. */
     val assistantOutput: String = "",
     val assistantOutputTitle: String = "",
@@ -1095,10 +1175,14 @@ class AiViewModel(
         viewModelScope.launch {
             repository.jobs.collect { jobs ->
                 bestJob = jobs.maxByOrNull { it.matchScore }
+                val best = bestJob
                 _uiState.update {
                     it.copy(
                         strongMatchCount = jobs.count { job -> job.matchScore >= 80 },
-                        assistantReady = it.assistantConfigured && it.assistantConsent && bestJob != null,
+                        assistantReady = it.assistantConfigured && it.assistantConsent && best != null,
+                        bestJobTitle = best?.title.orEmpty(),
+                        bestJobCompany = best?.company.orEmpty(),
+                        bestJobCountry = best?.country.orEmpty(),
                     )
                 }
             }
@@ -1123,6 +1207,7 @@ class AiViewModel(
                         assistantConfigured = config.isConfigured,
                         assistantConsent = config.consentGranted,
                         modelLabel = com.aiglobal.jobfinder.data.model.NvidiaModels.labelFor(config.modelId),
+                        languageLabel = config.language.label,
                         assistantReady = config.isConfigured && config.consentGranted && bestJob != null,
                     )
                 }
@@ -1132,8 +1217,8 @@ class AiViewModel(
 
     /**
      * Runs one assistant task on the best-matching posting. When the remote model is not
-     * available it degrades to the on-device explanation for [AssistTask.EXPLAIN_MATCH],
-     * so the panel always shows something useful and never implies remote output it lacks.
+     * available, it degrades to the on-device draft for the same task, so the panel always
+     * shows something useful and never implies remote output it lacks.
      */
     fun runAssistant(task: com.aiglobal.jobfinder.data.ai.AssistTask) {
         val job = bestJob
@@ -1141,7 +1226,14 @@ class AiViewModel(
             _uiState.update { it.copy(assistantError = "No matching posting yet. Pull to refresh the feed.") }
             return
         }
-        _uiState.update { it.copy(assistantRunning = true, assistantError = "", assistantOutput = "") }
+        _uiState.update {
+            it.copy(
+                assistantRunning = true,
+                assistantRunningTask = task.label,
+                assistantError = "",
+                assistantOutput = "",
+            )
+        }
         viewModelScope.launch {
             val config = currentConfig()
             val result = aiAssistant.run(config, task, profile, job)
@@ -1149,20 +1241,18 @@ class AiViewModel(
                 _uiState.update {
                     it.copy(
                         assistantRunning = false,
+                        assistantRunningTask = "",
                         assistantOutput = result.text,
                         assistantOutputTitle = "${task.label} — ${job.title}",
                         assistantOutputIsRemote = true,
                     )
                 }
             } else {
-                val fallback = if (task == com.aiglobal.jobfinder.data.ai.AssistTask.EXPLAIN_MATCH) {
-                    aiAssistant.localExplanation(job, profile)
-                } else {
-                    ""
-                }
+                val fallback = aiAssistant.localFallback(task, job, profile)
                 _uiState.update {
                     it.copy(
                         assistantRunning = false,
+                        assistantRunningTask = "",
                         assistantError = result.message,
                         assistantOutput = fallback,
                         assistantOutputTitle = if (fallback.isBlank()) "" else "${task.label} — on-device",

@@ -49,6 +49,7 @@ import com.aiglobal.jobfinder.ui.screens.home.HomeScreen
 import com.aiglobal.jobfinder.ui.screens.interview.InterviewScreen
 import com.aiglobal.jobfinder.ui.screens.jobs.JobsScreen
 import com.aiglobal.jobfinder.ui.screens.profile.ProfileScreen
+import com.aiglobal.jobfinder.ui.screens.bestoffers.BestOffersScreen
 import com.aiglobal.jobfinder.ui.screens.ranking.ExpatRankingScreen
 import com.aiglobal.jobfinder.ui.screens.scam.ScamShieldScreen
 import com.aiglobal.jobfinder.ui.screens.shortlist.ShortlistScreen
@@ -75,6 +76,8 @@ import com.aiglobal.jobfinder.viewmodel.CvViewModel
 import com.aiglobal.jobfinder.viewmodel.CvViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceViewModel
 import com.aiglobal.jobfinder.viewmodel.ExpatIntelligenceViewModelFactory
+import com.aiglobal.jobfinder.viewmodel.BestOffersViewModel
+import com.aiglobal.jobfinder.viewmodel.BestOffersViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ExpatRankingViewModel
 import com.aiglobal.jobfinder.viewmodel.ExpatRankingViewModelFactory
 import com.aiglobal.jobfinder.viewmodel.ExpatGuideViewModel
@@ -113,6 +116,7 @@ object SecondaryRoutes {
     const val CV_ADAPTATION = "cvadaptation"
     const val EXPAT_INTELLIGENCE = "expatintelligence"
     const val EXPAT_RANKING = "expatranking"
+    const val BEST_OFFERS = "bestoffers"
     const val APPLICATION_ASSISTANT = "assistant/{jobId}"
     const val SUBMISSIONS = "submissions"
     const val REFRESH_HISTORY = "refreshhistory"
@@ -220,6 +224,7 @@ fun AiJobFinderRoot(
                     onOpenLink = { url -> context.openExternally(url) },
                     onOpenShortlist = { navController.navigate(SecondaryRoutes.SHORTLIST) },
                     onOpenRanking = { navController.navigate(SecondaryRoutes.EXPAT_RANKING) },
+                    onOpenBestOffers = { navController.navigate(SecondaryRoutes.BEST_OFFERS) },
                     onToggleSaveJob = { jobId -> vm.toggleSave(jobId) },
                     onOpenAlerts = { navController.navigate(SecondaryRoutes.ALERTS) },
                     onOpenNewPostings = { ids ->
@@ -301,7 +306,12 @@ fun AiJobFinderRoot(
                         consent = state.assistantConsent,
                         ready = state.assistantReady,
                         modelLabel = state.modelLabel,
+                        languageLabel = state.languageLabel,
+                        bestJobTitle = state.bestJobTitle,
+                        bestJobCompany = state.bestJobCompany,
+                        bestJobCountry = state.bestJobCountry,
                         running = state.assistantRunning,
+                        runningTask = state.assistantRunningTask,
                         output = state.assistantOutput,
                         outputTitle = state.assistantOutputTitle,
                         outputIsRemote = state.assistantOutputIsRemote,
@@ -516,6 +526,22 @@ fun AiJobFinderRoot(
                     onBack = { navController.popBackStack() },
                     onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.applicationAssistant(jobId)) },
                     onOpenJobs = { navController.navigateToTab(Destination.Jobs) },
+                )
+            }
+            composable(SecondaryRoutes.BEST_OFFERS) {
+                val vm: BestOffersViewModel = viewModel(
+                    factory = BestOffersViewModelFactory(
+                        repository = container.jobRepository,
+                        cvRepository = container.cvRepository,
+                    ),
+                )
+                BestOffersScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onOpenJob = { jobId -> navController.navigate(SecondaryRoutes.coverLetter(jobId)) },
+                    onOpenCv = { navController.navigate(SecondaryRoutes.CV) },
+                    onOpenAi = { navController.navigateToTab(Destination.Ai) },
+                    onOpenLink = { url -> context.openExternally(url) },
                 )
             }
             composable(

@@ -55,6 +55,11 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class Stage42OfferVerificationTest {
 
+    private companion object {
+        const val DAY = 86_400_000L
+        const val NOW = 1_760_000_000_000L
+    }
+
     private val engine = OfferVerificationEngine()
     private val now = 1_700_000_000_000L
     private val dayMs = 86_400_000L
@@ -96,7 +101,7 @@ class Stage42OfferVerificationTest {
         eligibility = eligibility,
         visaSupport = visaSupport,
         scamRisk = ScamRisk.LOW,
-        postedAtEpochMillis = 1_000L,
+        postedAtEpochMillis = NOW - 5 * DAY,
         retrievedAtEpochMillis = retrievedAtEpochMillis,
         source = source,
         sourceUrl = sourceUrl,
@@ -309,7 +314,7 @@ class Stage42OfferVerificationTest {
     fun deadEndsAreDemotedBelowLivePostingsInTheFitSort() {
         val live = job(id = "live", openToApplicants = true).copy(matchScore = 50)
         val dead = job(id = "dead", openToApplicants = false).copy(matchScore = 99)
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(dead, live),
             sort = JobSort.INTERNATIONAL_FIT,
             internationalFit = mapOf("dead" to fit(95), "live" to fit(40)),
@@ -324,7 +329,7 @@ class Stage42OfferVerificationTest {
         val open = job(id = "open", openToApplicants = true)
         val closed = job(id = "closed", openToApplicants = false)
         val unstated = job(id = "unstated", openToApplicants = null)
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(open, closed, unstated),
             openVacancyOnly = true,
         )
@@ -340,7 +345,7 @@ class Stage42OfferVerificationTest {
             benefitEvidence = listOf(visaEvidence(BenefitStatus.CONFIRMED)),
         )
         val silent = job(id = "silent", benefitEvidence = emptyList())
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(documented, silent),
             verifiedVisaOnly = true,
         )

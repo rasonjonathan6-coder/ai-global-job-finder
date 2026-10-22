@@ -142,6 +142,14 @@ data class Job(
      * candidate can see exactly what was verified and what was merely not stated.
      */
     val verification: OfferVerification = OfferVerification.UNKNOWN,
+    /**
+     * The single-question availability read: can this posting still be applied to? Kept
+     * separate from [verification] because it is the first thing a candidate needs and must
+     * have one unambiguous answer: "Open", "Expired", or "Unconfirmed" — never a guess, and
+     * never "expired" merely because a network check failed. It also records when the check
+     * last ran, so an old verdict is never shown as a fresh one.
+     */
+    val availability: AvailabilityResult = AvailabilityResult.UNKNOWN,
     val isSaved: Boolean = false,
     val isNew: Boolean = false,
 ) {

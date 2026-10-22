@@ -126,10 +126,10 @@ class Stage35TargetedDiscoveryTest {
         val feed = RecordingFeed(buriedTradesBoard(), board)
         GreenhouseProvider(feed = feed, boards = listOf(board)).fetch(limit = 10)
 
-        // The same bounded number of detail calls as before: the fix reorders, it does not
-        // widen the read, so a mobile refresh is not made heavier.
-        assertEquals(6, feed.detailIds.size)
-        assertEquals(6, feed.detailIds.toSet().size)
+        // The budget is fixed and small: the fix reorders the read, it does not widen it, so a
+        // mobile refresh is not made heavier. (8 = the trade-first detail budget.)
+        assertEquals(8, feed.detailIds.size)
+        assertEquals(8, feed.detailIds.toSet().size)
     }
 
     // ------------------------------------------------- behaviour is unchanged without trades
@@ -143,7 +143,7 @@ class Stage35TargetedDiscoveryTest {
         GreenhouseProvider(feed = feed, boards = listOf(board)).fetch(limit = 10)
 
         // No trade title exists, so the plain newest-first rows are read — unchanged behaviour.
-        assertEquals(listOf("0", "1", "2", "3", "4", "5"), feed.detailIds)
+        assertEquals(listOf("0", "1", "2", "3", "4", "5", "6", "7"), feed.detailIds)
     }
 
     // ------------------------------------------------- the curated boards are well formed

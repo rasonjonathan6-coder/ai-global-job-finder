@@ -164,9 +164,10 @@ class Stage43SmartRecruitersTest {
         provider(feed).fetch(listOf("maintenance"), 10)
 
         val requestedIds = feed.detailUrls().map { it.substringAfterLast('/') }
-        // Budget is 4: the three trade titles first, then the newest remaining row.
-        assertEquals(4, requestedIds.size)
-        assertEquals(listOf("4", "5", "6", "1"), requestedIds)
+        // Trade titles first, then the newest remaining rows. The whole six-row board fits inside
+        // the eight-row budget, so the order is exactly the trades followed by the rest.
+        assertEquals(6, requestedIds.size)
+        assertEquals(listOf("4", "5", "6", "1", "2", "3"), requestedIds)
     }
 
     @Test

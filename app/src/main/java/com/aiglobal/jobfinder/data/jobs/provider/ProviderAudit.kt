@@ -40,6 +40,14 @@ data class ProviderAudit(
      * usable location, in which case eligibility stays unknown rather than guessed.
      */
     val locationIsMeaningful: Boolean = true,
+    /**
+     * The curated employer portals this source actually reads, by their published names
+     * (e.g. "Rio Tinto", "SGS"). Empty for a source that is a single feed rather than a
+     * family of employer boards. Taken straight from the same curated lists the providers
+     * walk, so the status screen can name the employers instead of showing only the
+     * aggregating source — and can never list a portal the feed does not read.
+     */
+    val portals: List<String> = emptyList(),
 ) {
     /** True when this source's postings are fetched from the real API rather than a fixture. */
     val isLive: Boolean get() = dataSource == DataSourceKind.LIVE
@@ -79,7 +87,29 @@ object ProviderAuditRegistry {
             capabilities = provider.capabilities,
             requiresCredentials = provider.requiresCredentials,
             botGated = provider.id in BOT_GATED_IDS,
+            portals = CuratedPortals.namesFor(provider.id),
         )
+    }
+
+    /**
+     * The employer portals each multi-employer source reads, by the names the employers
+     * publish. Read from the very lists the providers walk ([WorkdayBoards], [GreenhouseBoards],
+     * [AshbyBoards], [LeverBoards], [SmartRecruitersBoards]), so the status screen can name the
+     * curated employers and can never show a portal the feed does not actually query.
+     *
+     * A source that is a single feed (Arbeitnow, Remotive, Jobicy, Himalayas, EURES, Adzuna,
+     * Jooble) maps to an empty list: it is one source, not a family of employer boards.
+     */
+    private object CuratedPortals {
+        private val byProviderId: Map<String, List<String>> = mapOf(
+            "workday" to WorkdayBoards.SITES.map { it.label },
+            "greenhouse" to GreenhouseBoards.BOARDS.map { it.label },
+            "ashby" to AshbyBoards.BOARDS.map { it.label },
+            "lever" to LeverBoards.BOARDS.map { it.label },
+            "smartrecruiters" to SmartRecruitersBoards.BOARDS.map { it.label },
+        )
+
+        fun namesFor(providerId: String): List<String> = byProviderId[providerId].orEmpty()
     }
 
     /**

@@ -4,6 +4,7 @@ import {
   MatchSignal,
   SalaryPeriod,
   ScamRisk,
+  UNKNOWN_AVAILABILITY,
   VerificationState,
   WorkMode,
   type CandidateProfile,
@@ -19,6 +20,7 @@ import { MatchingEngine } from "./engine/matching-engine";
 import { assessEligibility } from "./engine/eligibility-engine";
 import { buildEvidence } from "./engine/job-evidence-engine";
 import { OfferVerificationEngine } from "./engine/offer-verification-engine";
+import { OfferAvailabilityEngine } from "./availability/offer-availability-engine";
 import { classifyRole } from "./search/role-relevance";
 import { analyzeRequirements } from "./search/requirement-analyzer";
 import { qualificationGaps } from "./search/qualification-matcher";
@@ -54,15 +56,18 @@ function hashString(value: string): number {
 export class JobMapper {
   private readonly matchingEngine: MatchingEngine;
   private readonly verificationEngine: OfferVerificationEngine;
+  private readonly availabilityEngine: OfferAvailabilityEngine;
   private readonly clock: () => number;
 
   constructor(options?: {
     matchingEngine?: MatchingEngine;
     verificationEngine?: OfferVerificationEngine;
+    availabilityEngine?: OfferAvailabilityEngine;
     clock?: () => number;
   }) {
     this.matchingEngine = options?.matchingEngine ?? new MatchingEngine();
     this.verificationEngine = options?.verificationEngine ?? new OfferVerificationEngine();
+    this.availabilityEngine = options?.availabilityEngine ?? new OfferAvailabilityEngine();
     this.clock = options?.clock ?? Date.now;
   }
 
@@ -166,6 +171,7 @@ export class JobMapper {
       openToApplicants: raw.openToApplicants,
       isSaved: false,
       isNew: postedDaysAgo != null && postedDaysAgo <= 3,
+      availability: UNKNOWN_AVAILABILITY,
       verification: {
         activity: VerificationState.UNKNOWN,
         deadline: VerificationState.UNKNOWN,
@@ -182,7 +188,12 @@ export class JobMapper {
 
     // The verification read depends on fields the Job now carries (link, eligibility,
     // documented benefits, retrieval time), so it is built from the assembled Job.
-    return { ...job, verification: this.verificationEngine.assess(job, now) };
+    const verified = { ...job, verification: this.verificationEngine.assess(job, now) };
+
+    // Availability needs no network for its two reliable indicators (the source's own flag and
+    // the employer's deadline), so the fast read is applied here. Reaching the application link
+    // is a separate, cached, opt-in step; until it runs, the honest default is "unconfirmed".
+    return { ...verified, availability: this.availabilityEngine.assess(verified, now) };
   }
 
   /** Adds the normalised salary signal without changing the raw display values. */

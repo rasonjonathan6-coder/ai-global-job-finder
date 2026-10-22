@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -57,6 +58,7 @@ class GreenhouseProvider(
             val rows = try {
                 list(board)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 lastError = t
                 continue
             }
@@ -115,7 +117,7 @@ class GreenhouseProvider(
     private suspend fun detailsFor(board: GreenhouseBoard, ids: List<String>): List<RawJob> = coroutineScope {
         ids.map { id ->
             async {
-                runCatching { feed.objectAt(board.detailUrl(id), HEADERS) }
+                runCatchingCancellable { feed.objectAt(board.detailUrl(id), HEADERS) }
                     .getOrNull()
                     ?.let { info -> info.toRawJob(board) }
             }
@@ -152,17 +154,37 @@ class GreenhouseProvider(
     }
 
     private companion object {
-        const val DETAILS_PER_BOARD = 6
+        /**
+         * Detail rows read per board. Raised from 6 to 8 now that the curated board list is
+         * wider: the trade titles are read first, and eight rows give a board whose trades sit
+         * deeper a little more room without making a single refresh materially heavier.
+         */
+        const val DETAILS_PER_BOARD = 8
 
         val HEADERS = mapOf("Accept" to "application/json")
     }
 }
 
-/** Curated Greenhouse boards of industrial and energy employers, verified to answer. */
+/**
+ * Curated Greenhouse boards verified to answer the public board API and to publish the
+ * candidate's trades. The set spans the target sectors — EV/battery manufacturing, critical
+ * minerals, industrial environmental services, geotechnical/earthwork and advanced nuclear —
+ * because those are where maintenance, mechanical and rotating-equipment roles for an expat
+ * applicant sit. Only employers whose live board carried at least one trade title at curation
+ * time are listed; a board with no relevant opening adds requests, not offers.
+ */
 internal object GreenhouseBoards {
     val BOARDS: List<GreenhouseBoard> = listOf(
         GreenhouseBoard("redwoodmaterials", "Redwood Materials"),
+        // Frac-sand producer whose board publishes conveyor, dredge and plant-maintenance
+        // trades (industrial maintenance mechanic, diesel mechanic, field mechanic).
+        GreenhouseBoard("atlassand", "Atlas Energy Solutions"),
         GreenhouseBoard("lucidmotors", "Lucid Motors"),
         GreenhouseBoard("koboldmetals", "KoBold Metals"),
+        GreenhouseBoard("oklo", "Oklo"),
+        GreenhouseBoard("spacex", "SpaceX"),
+        GreenhouseBoard("triumvirateenvironmental", "Triumvirate Environmental"),
+        GreenhouseBoard("geostabilizationinternational", "GeoStabilization International"),
+        GreenhouseBoard("forgen", "Forgen"),
     )
 }

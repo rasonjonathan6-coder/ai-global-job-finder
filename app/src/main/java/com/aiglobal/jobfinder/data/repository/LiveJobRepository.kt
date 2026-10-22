@@ -10,6 +10,7 @@ import com.aiglobal.jobfinder.data.jobs.provider.JobProviderException
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorCategory
 import com.aiglobal.jobfinder.data.jobs.provider.ProviderErrorClassifier
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
+import com.aiglobal.jobfinder.data.jobs.provider.runCatchingCancellable
 import com.aiglobal.jobfinder.data.jobs.search.RelevanceFeed
 import com.aiglobal.jobfinder.data.jobs.search.RoleClassifier
 import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
@@ -25,6 +26,9 @@ import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.model.ProviderSettings
 import com.aiglobal.jobfinder.data.model.ProviderStatus
 import com.aiglobal.jobfinder.data.model.SourceState
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -91,20 +95,71 @@ class LiveJobRepository(
      * repository still works but reports no incremental delta.
      */
     private val seenLedger: com.aiglobal.jobfinder.data.discovery.JobSeenLedger? = null,
+    /**
+     * Verifies whether each posting is still open. Defaults to the source-flag and deadline
+     * read with no link probing and no network; the app injects a verifier with a cautious,
+     * 24 h-cached link probe so availability can also be settled by reaching the posting.
+     */
+    private val availabilityVerifier: com.aiglobal.jobfinder.data.jobs.availability.AvailabilityVerifier =
+        com.aiglobal.jobfinder.data.jobs.availability.AvailabilityVerifier(),
+    /** Caps how many links are reached per refresh, to respect source quotas and terms. */
+    private val availabilityProbeBudget: Int =
+        com.aiglobal.jobfinder.data.jobs.availability.AvailabilityRefresh.DEFAULT_PROBE_BUDGET,
+    /**
+     * The window [availabilityProbeBudget] applies to. Held across refreshes rather than reset
+     * by each one, so a background refresh every few hours cannot multiply the daily request
+     * cap. Defaults to one day, aligned with the availability cache's own window.
+     */
+    private val availabilityBudgetWindowMillis: Long =
+        com.aiglobal.jobfinder.data.jobs.availability.AvailabilityRefresh.DEFAULT_BUDGET_WINDOW_MILLIS,
+    /**
+     * Persists the probe-budget window so the daily cap survives a restart. Null keeps the
+     * budget in memory, which is enough for tests and for a build with no filesystem access.
+     */
+    private val availabilityBudgetStore: com.aiglobal.jobfinder.data.jobs.availability.AvailabilityBudgetStore? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val perProviderLimit: Int = 60,
     /**
-     * Hard ceiling on a single source, so one slow feed cannot hold up the whole refresh. It is
-     * generous enough for a provider that pages through a broad sample to widen the local
-     * relevance filter (Arbeitnow reads several pages), which costs more than a single request.
+     * Hard ceiling on one keyword fetch, so a single request walk cannot hang. A keyword-capable
+     * source is fetched once per target role, so this bound is paid per keyword set, not once for
+     * the whole provider — [perProviderTotalTimeoutMillis] is the provider-wide ceiling. It must
+     * cover a page walk plus the per-posting detail reads even on a slow mobile link. The curated
+     * employer sources were measured: a Workday site fetch is a few seconds per keyword set, the
+     * SmartRecruiters country sweep is around ten seconds and a large Lever board — which returns
+     * every description inline — can take longer still in a datacenter, so a mobile link is two
+     * to three times that. 45 s keeps a normally slow source inside the bound while still cutting
+     * off a feed that has genuinely hung. It is generous enough for a provider that pages through
+     * a broad sample (Arbeitnow reads several pages), which costs more than a single request.
      */
-    private val perProviderTimeoutMillis: Long = 30_000,
+    private val perKeywordTimeoutMillis: Long = 45_000,
+    /**
+     * Hard ceiling on a source across *all* of its keyword fetches in one refresh. The
+     * per-keyword bound alone lets a keyword-capable source pay its budget once per target
+     * role, so a six-role plan could hold the whole refresh for minutes even though every
+     * provider runs concurrently. This bound is the whole provider, however many keyword sets
+     * the plan contains, and is deliberately larger than [perKeywordTimeoutMillis] so a single
+     * normal sweep is never clipped. A provider that exceeds it is reported as a timeout and
+     * keeps whatever rows it had already returned.
+     */
+    private val perProviderTotalTimeoutMillis: Long = 60_000,
 ) : JobRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val syncMutex = Mutex()
     /** Serialises the read-modify-write of the persisted user state, so two quick toggles cannot race. */
     private val userStateMutex = Mutex()
+    /**
+     * One long-lived availability pass, so its probe budget is held *across* refreshes rather
+     * than reset by each one. Reusing the same verifier (and therefore the same 24 h cache) also
+     * means a repeat refresh of an unchanged feed spends no link requests at all.
+     */
+    private val availabilityRefresh = com.aiglobal.jobfinder.data.jobs.availability.AvailabilityRefresh(
+        verifier = availabilityVerifier,
+        probeBudget = availabilityProbeBudget,
+        budgetWindowMillis = availabilityBudgetWindowMillis,
+        store = availabilityBudgetStore,
+        clock = clock,
+    )
 
     private val rawJobs = MutableStateFlow<List<RawJob>>(emptyList())
     private val savedIds = MutableStateFlow<Set<String>>(emptySet())
@@ -179,6 +234,13 @@ class LiveJobRepository(
     private var searchKeywordPlan: List<String> = emptyList()
 
     /**
+     * The most recent candidate profile, kept so the availability overlay can score the
+     * refreshed postings the same way the feed does. Seeded from the flow's first value.
+     */
+    @Volatile
+    private var latestProfile: CandidateProfile = CandidateProfile()
+
+    /**
      * Flips to true once each startup restore has applied its first persisted value. The
      * public read flows ([jobs], [profile]) await this so a caller that reads immediately
      * after construction — a relaunch — sees the restored bookmarks and auto-apply choice
@@ -194,8 +256,16 @@ class LiveJobRepository(
      */
     private val restoredGate: Flow<Unit> = userStateReady.filter { it }.map { }
 
+    /**
+     * Verified availability per posting id, refreshed after each successful attempt. It is a
+     * separate overlay (rather than a field written onto the raw record) because availability
+     * is a time-sensitive observation, not part of the posting: the same posting can be
+     * "open" today and "unconfirmed" tomorrow without its content changing.
+     */
+    private val availabilityById = MutableStateFlow<Map<String, com.aiglobal.jobfinder.data.model.AvailabilityResult>>(emptyMap())
+
     override val jobs: Flow<List<Job>> =
-        combine(scoredJobs, savedIds, demoMode, restoredGate) { jobList, saved, demo, _ ->
+        combine(scoredJobs, savedIds, demoMode, availabilityById, restoredGate) { jobList, saved, demo, availability, _ ->
             // Stage 70: the key-free remote boards return a broad, newest-first global sample,
             // so the ranked feed is narrowed to the postings whose role is actually the
             // candidate's trade before it reaches any screen. The coverage report still counts
@@ -203,7 +273,13 @@ class LiveJobRepository(
             // rather than hiding the breadth of what the sources returned. Demo mode keeps its
             // curated sample, which is already on-trade.
             val base = if (demo) sampleJobs else RelevanceFeed.relevant(jobList)
-            base.map { if (saved.contains(it.id)) it.copy(isSaved = true) else it }
+            base.map { job ->
+                // Attach the last verified availability, or the honest "not confirmed" default.
+                // A job the verifier has not reached yet keeps AvailabilityResult.UNKNOWN, so
+                // the UI never shows "open" for something it has not actually checked.
+                val withAvailability = availability[job.id]?.let { job.copy(availability = it) } ?: job
+                if (saved.contains(job.id)) withAvailability.copy(isSaved = true) else withAvailability
+            }
         }
 
     private val seedNow = clock()
@@ -263,6 +339,7 @@ class LiveJobRepository(
         }
         scope.launch {
             candidateProfile.collect { profile ->
+                latestProfile = profile
                 searchKeywordPlan = TargetSearch.keywordPlan(
                     profileTitles = (listOf(profile.currentTitle) + profile.previousTitles + profile.preferredRoles)
                         .filter { it.isNotBlank() },
@@ -343,21 +420,34 @@ class LiveJobRepository(
                     async {
                         val startedAt = clock()
                         val plan = SearchStrategy.planFor(provider, searchKeywordPlan)
+                        // A provider whose feed reads only the first keyword and re-walks its
+                        // whole site list on every call declares a small sweep budget, so the
+                        // keyword plan cannot multiply its request volume. A provider that reads
+                        // every keyword keeps the default and receives the whole plan.
+                        val keywordSets = plan.keywordSets.take(provider.capabilities.keywordSweepBudget)
                         val fetched = mutableListOf<RawJob>()
                         var failure: Throwable? = null
-                        // A keyword-capable source is asked for each target role in turn and
-                        // the results are pooled; a source without keyword search is fetched
-                        // once with no keywords and filtered locally afterwards.
-                        for (keywords in plan.keywordSets) {
-                            val outcome = runCatching {
-                                withTimeoutOrNull(perProviderTimeoutMillis) {
+                        // The provider-wide deadline is monotonic, so a wall-clock change cannot
+                        // extend or truncate the budget mid-refresh. Each keyword fetch gets the
+                        // smaller of its own bound and the budget that remains.
+                        val budget = perProviderTotalTimeoutMillis.milliseconds
+                        val startedProviderAt = TimeSource.Monotonic.markNow()
+                        for (keywords in keywordSets) {
+                            val remaining = budget - startedProviderAt.elapsedNow()
+                            if (remaining <= Duration.ZERO) {
+                                if (failure == null) failure = ProviderTimeoutException()
+                                break
+                            }
+                            val fetchBudget = minOf(perKeywordTimeoutMillis.milliseconds, remaining)
+                            val outcome = runCatchingCancellable {
+                                withTimeoutOrNull(fetchBudget) {
                                     provider.fetch(keywords = keywords, limit = perProviderLimit)
                                 } ?: throw ProviderTimeoutException()
                             }
                             outcome.getOrNull()?.let { fetched += it }
                             if (outcome.isFailure && failure == null) failure = outcome.exceptionOrNull()
                             // Stop early once we have enough from this source.
-                            if (fetched.size >= perProviderLimit * plan.keywordSets.size) break
+                            if (fetched.size >= perProviderLimit * keywordSets.size) break
                         }
                         val success = fetched.isNotEmpty() || failure == null
                         ProviderOutcome(
@@ -377,6 +467,20 @@ class LiveJobRepository(
             _syncState.update { it.copy(isRefreshing = false) }
             syncMutex.unlock()
         }
+    }
+
+    /**
+     * Settles availability for the refreshed feed. The sources' own flags and deadlines are
+     * read for every posting (no request), then at most [availabilityProbeBudget] links are
+     * reached within the [availabilityBudgetWindowMillis] window — cached verdicts cost nothing,
+     * so a posting checked today is never re-requested, and the window is held across refreshes
+     * so a background refresh every few hours cannot multiply the daily cap. The result is
+     * published as the [availabilityById] overlay; a probe that fails leaves the posting
+     * "unconfirmed", never "expired".
+     */
+    private suspend fun refreshAvailability(raw: List<RawJob>) {
+        val scored = raw.map { mapper.toJob(it, latestProfile) }
+        availabilityById.value = availabilityRefresh.overlay(scored)
     }
 
     /** Validates, de-duplicates and stores the outcome of one full attempt. */
@@ -458,6 +562,11 @@ class LiveJobRepository(
                 _discovery.value = ledger.observe(stamped)
                 _newPostings.value = ledger.newPostings()
             }
+            // Availability is a separate, time-sensitive observation: settle what the sources'
+            // own flags and deadlines already answer, then reach the remaining links within a
+            // strict, 24 h-cached budget. This is the only network call the app makes beyond
+            // the feeds, and it never turns a failure into an "expired" verdict.
+            refreshAvailability(stamped)
         }
 
         val lastSuccess = if (anySuccess) attemptAt else _diagnostics.value.lastSuccessAtEpochMillis

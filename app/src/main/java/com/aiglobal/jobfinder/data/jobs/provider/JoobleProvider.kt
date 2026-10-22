@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
+import kotlin.coroutines.cancellation.CancellationException
 import org.json.JSONObject
 
 /**
@@ -53,6 +54,7 @@ class JoobleProvider(
         val json = try {
             feed.objectPost("$BASE_URL/$key", body.toString())
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             throw JobProviderException(
                 providerId = id,
                 message = "Jooble did not respond",

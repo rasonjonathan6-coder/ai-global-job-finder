@@ -17,6 +17,7 @@ import {
   type ShortlistEntry,
 } from "../../core/models";
 import { formatSalaryRange } from "../lib/format";
+import { AvailabilityDetail } from "../components/AvailabilityBadge";
 import { Badge, type BadgeTone } from "../components/Badge";
 import { Button } from "../components/Button";
 import { EmptyState } from "../components/EmptyState";
@@ -668,6 +669,12 @@ function ReadinessExplanationSheet({
           <div className="mt-3">
             <NextStepRow step={shortlistNextStep(entry)} />
           </div>
+
+          <SheetHeading>Availability</SheetHeading>
+          <p className="mb-2 text-[12px] text-ink-secondary">
+            Whether this posting is still open, and when the app last checked.
+          </p>
+          <AvailabilityDetail availability={job.availability} />
 
           <SheetHeading>Why this rank</SheetHeading>
           {entry.highlights.length === 0 ? (

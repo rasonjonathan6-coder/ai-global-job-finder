@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.CheckCircle
@@ -68,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aiglobal.jobfinder.data.jobs.search.SearchCoverage
+import com.aiglobal.jobfinder.data.jobs.freshness.FreshnessWindow
 import com.aiglobal.jobfinder.data.model.BenefitScoreComponent
 import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.EligibilityReason
@@ -90,6 +93,8 @@ import com.aiglobal.jobfinder.ui.components.InternationalFitBadge
 import com.aiglobal.jobfinder.ui.components.JobCard
 import com.aiglobal.jobfinder.ui.components.JobListSkeleton
 import com.aiglobal.jobfinder.ui.components.MatchChip
+import com.aiglobal.jobfinder.ui.components.OfferAvailabilityBadge
+import com.aiglobal.jobfinder.ui.components.OfferAvailabilityDetail
 import com.aiglobal.jobfinder.ui.components.OfferVerificationBadge
 import com.aiglobal.jobfinder.ui.components.Pill
 import com.aiglobal.jobfinder.ui.components.PrimaryButton
@@ -131,6 +136,8 @@ fun JobsScreen(
         onToggleOpenVacancy = viewModel::toggleOpenVacancyFilter,
         onToggleRecentlyVerified = viewModel::toggleRecentlyVerifiedFilter,
         onToggleNew = viewModel::toggleNewFilter,
+        onFreshnessWindowChange = viewModel::onFreshnessWindowChange,
+        onToggleIncludeUndatedAndStale = viewModel::toggleIncludeUndatedAndStale,
         onCountryChange = viewModel::onCountryChange,
         onSourceChange = viewModel::onSourceChange,
         onSortChange = viewModel::onSortChange,
@@ -161,6 +168,8 @@ internal fun JobsContent(
     onToggleOpenVacancy: () -> Unit = {},
     onToggleRecentlyVerified: () -> Unit = {},
     onToggleNew: () -> Unit = {},
+    onFreshnessWindowChange: (FreshnessWindow) -> Unit = {},
+    onToggleIncludeUndatedAndStale: () -> Unit = {},
     onCountryChange: (String?) -> Unit,
     onSourceChange: (String?) -> Unit,
     onSortChange: (JobSort) -> Unit,
@@ -205,6 +214,8 @@ internal fun JobsContent(
             onToggleVerifiedFlights = onToggleVerifiedFlights,
             onToggleOpenVacancy = onToggleOpenVacancy,
             onToggleRecentlyVerified = onToggleRecentlyVerified,
+            onFreshnessWindowChange = onFreshnessWindowChange,
+            onToggleIncludeUndatedAndStale = onToggleIncludeUndatedAndStale,
             onMinExpatScoreChange = onMinExpatScoreChange,
         )
 
@@ -225,23 +236,48 @@ internal fun JobsContent(
                 )
             }
             state.visibleJobs.isEmpty() -> {
+                val hiddenByWindow = !state.includeUndatedAndStale &&
+                    state.undatedCount + state.staleCount > 0 &&
+                    state.withinWindowCount == 0
                 EmptyState(
                     emoji = if (state.hasActiveFilters) "🔍" else "📭",
-                    title = if (state.savedOnly) "No saved jobs yet" else "No jobs match your filters",
-                    message = if (state.savedOnly) {
-                        "Tap the bookmark on any job card to keep it here for later."
-                    } else {
-                        "Try a different keyword, or clear the filters to see all ${state.jobs.size} opportunities."
+                    title = when {
+                        state.savedOnly -> "No saved jobs yet"
+                        hiddenByWindow -> "No recently published jobs"
+                        else -> "No jobs match your filters"
                     },
-                    action = if (state.hasActiveFilters) {
-                        {
-                            SecondaryButton(
-                                text = "Clear filters",
-                                onClick = onClearFilters,
-                                leadingIcon = Icons.Filled.FilterAltOff,
-                            )
+                    message = when {
+                        state.savedOnly ->
+                            "Tap the bookmark on any job card to keep it here for later."
+                        hiddenByWindow ->
+                            "None of the loaded postings state a publication date inside the " +
+                                "${state.freshnessWindow.days}-day window. The app never invents a date, " +
+                                "so undated or older postings are hidden until you ask for them."
+                        else ->
+                            "Try a different keyword, or clear the filters to see all ${state.jobs.size} opportunities."
+                    },
+                    action = when {
+                        state.savedOnly -> null
+                        hiddenByWindow -> {
+                            {
+                                SecondaryButton(
+                                    text = "Show undated/older (${state.undatedCount + state.staleCount})",
+                                    onClick = onToggleIncludeUndatedAndStale,
+                                    leadingIcon = Icons.Filled.HelpCenter,
+                                )
+                            }
                         }
-                    } else null,
+                        state.hasActiveFilters -> {
+                            {
+                                SecondaryButton(
+                                    text = "Clear filters",
+                                    onClick = onClearFilters,
+                                    leadingIcon = Icons.Filled.FilterAltOff,
+                                )
+                            }
+                        }
+                        else -> null
+                    },
                 )
             }
             else -> {
@@ -472,6 +508,8 @@ private fun JobsFilterRow(
     onToggleVerifiedFlights: () -> Unit,
     onToggleOpenVacancy: () -> Unit,
     onToggleRecentlyVerified: () -> Unit,
+    onFreshnessWindowChange: (FreshnessWindow) -> Unit,
+    onToggleIncludeUndatedAndStale: () -> Unit,
     onMinExpatScoreChange: (Int) -> Unit,
 ) {
     val spacing = LocalSpacing.current
@@ -481,6 +519,24 @@ private fun JobsFilterRow(
         horizontalArrangement = Arrangement.spacedBy(spacing.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        items(FreshnessWindow.entries.toList(), key = { it.name }) { window ->
+            FilterChip(
+                label = window.label,
+                selected = state.freshnessWindow == window,
+                onClick = { onFreshnessWindowChange(window) },
+                leadingIcon = Icons.Filled.CalendarMonth,
+            )
+        }
+        if (state.undatedCount + state.staleCount > 0) {
+            item {
+                FilterChip(
+                    label = "Undated/older (${state.undatedCount + state.staleCount})",
+                    selected = state.includeUndatedAndStale,
+                    onClick = onToggleIncludeUndatedAndStale,
+                    leadingIcon = Icons.Filled.HelpCenter,
+                )
+            }
+        }
         if (state.newCount > 0) {
             item {
                 FilterChip(
@@ -750,6 +806,8 @@ private fun JobExplanationSheet(
 
             InternationalFitSection(fit)
 
+            OfferAvailabilitySection(job = job)
+
             OfferVerificationSection(job = job)
 
             if (discoveredAtEpochMillis != null) {
@@ -870,6 +928,26 @@ private fun DiscoveryFactRow(
             )
         }
     }
+}
+
+/**
+ * The availability read as its own section, placed before the wider verification panel
+ * because "can I still apply?" is the first question a candidate asks. It states the verdict,
+ * when the app last checked, and the reliable indicators behind it — and, when the app could
+ * not settle it, says so plainly rather than implying the posting is closed.
+ */
+@Composable
+private fun OfferAvailabilitySection(job: Job) {
+    val spacing = LocalSpacing.current
+
+    SectionHeader(
+        title = "Availability",
+        subtitle = "Whether this posting is still open, and when the app last checked",
+    )
+
+    OfferAvailabilityDetail(availability = job.availability)
+
+    Spacer(Modifier.height(spacing.xs))
 }
 
 /**

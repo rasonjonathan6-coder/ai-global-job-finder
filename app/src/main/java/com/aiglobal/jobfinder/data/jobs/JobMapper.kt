@@ -8,6 +8,7 @@ import com.aiglobal.jobfinder.data.jobs.engine.EligibilityInput
 import com.aiglobal.jobfinder.data.jobs.engine.JobEvidenceEngine
 import com.aiglobal.jobfinder.data.jobs.engine.MatchInput
 import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
+import com.aiglobal.jobfinder.data.jobs.availability.OfferAvailabilityEngine
 import com.aiglobal.jobfinder.data.jobs.engine.OfferVerificationEngine
 import com.aiglobal.jobfinder.data.jobs.provider.HtmlText
 import com.aiglobal.jobfinder.data.jobs.provider.RawJob
@@ -38,6 +39,7 @@ class JobMapper(
     private val benefitExtractor: ExpatBenefitExtractor = ExpatBenefitExtractor(),
     private val evidenceEngine: JobEvidenceEngine = JobEvidenceEngine(),
     private val verificationEngine: OfferVerificationEngine = OfferVerificationEngine(),
+    private val availabilityEngine: OfferAvailabilityEngine = OfferAvailabilityEngine(),
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
@@ -151,7 +153,13 @@ class JobMapper(
 
         // The verification read depends on fields the Job now carries (link, eligibility,
         // documented benefits, retrieval time), so it is built from the assembled Job.
-        return job.copy(verification = verificationEngine.assess(job, now))
+        val verified = job.copy(verification = verificationEngine.assess(job, now))
+
+        // Availability needs no network for its two reliable indicators (the source's own
+        // flag and the employer's deadline), so the fast read is applied here. Reaching the
+        // application link is a separate, cached, opt-in step run by the repository; until it
+        // runs, the honest default is "unconfirmed", never "open".
+        return verified.copy(availability = availabilityEngine.assess(verified, now))
     }
 
     /** Adds the normalised salary signal without changing the raw display values. */

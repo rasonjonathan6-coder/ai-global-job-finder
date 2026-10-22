@@ -22,6 +22,13 @@ import org.junit.Test
  */
 class JobsFilterTest {
 
+    private companion object {
+        const val DAY = 86_400_000L
+        // A fixed "now" pinned by the state under test, so the default 30-day window keeps
+        // every posting below visible regardless of when the suite runs.
+        const val NOW = 1_760_000_000_000L
+    }
+
     private fun job(
         id: String,
         title: String = "Maintenance Technician",
@@ -33,7 +40,7 @@ class JobsFilterTest {
         eligibility: MadagascarEligibility = MadagascarEligibility.ELIGIBLE,
         visaSupport: VisaSupport = VisaSupport.NOT_MENTIONED,
         isSaved: Boolean = false,
-        postedAt: Long = 1_000L,
+        postedAt: Long = NOW - 5 * DAY,
         salaryMin: Int = 50_000,
         currency: String = "CAD",
         period: SalaryPeriod = SalaryPeriod.YEAR,
@@ -73,52 +80,52 @@ class JobsFilterTest {
     )
 
     private val jobs = listOf(
-        job(id = "1", country = "Canada", matchScore = 90, eligibility = MadagascarEligibility.VISA_SPONSORED, visaSupport = VisaSupport.SPONSORSHIP_AVAILABLE, salaryMin = 80_000, postedAt = 500L),
-        job(id = "2", company = "Siemens", country = "Germany", matchScore = 60, eligibility = MadagascarEligibility.ELIGIBLE, salaryMin = 60_000, currency = "EUR", postedAt = 900L, providerId = "arbeitnow", source = "Arbeitnow"),
-        job(id = "3", country = "Australia", matchScore = 40, eligibility = MadagascarEligibility.RESTRICTED, visaSupport = VisaSupport.LOCAL_ONLY, salaryMin = 40_000, currency = "AUD", postedAt = 700L, isSaved = true),
-        job(id = "4", country = "Worldwide", matchScore = 75, eligibility = MadagascarEligibility.UNCLEAR, postedAt = 300L, providerId = "remotive", source = "Remotive"),
+        job(id = "1", country = "Canada", matchScore = 90, eligibility = MadagascarEligibility.VISA_SPONSORED, visaSupport = VisaSupport.SPONSORSHIP_AVAILABLE, salaryMin = 80_000, postedAt = NOW - 10 * DAY),
+        job(id = "2", company = "Siemens", country = "Germany", matchScore = 60, eligibility = MadagascarEligibility.ELIGIBLE, salaryMin = 60_000, currency = "EUR", postedAt = NOW - 1 * DAY, providerId = "arbeitnow", source = "Arbeitnow"),
+        job(id = "3", country = "Australia", matchScore = 40, eligibility = MadagascarEligibility.RESTRICTED, visaSupport = VisaSupport.LOCAL_ONLY, salaryMin = 40_000, currency = "AUD", postedAt = NOW - 3 * DAY, isSaved = true),
+        job(id = "4", country = "Worldwide", matchScore = 75, eligibility = MadagascarEligibility.UNCLEAR, postedAt = NOW - 20 * DAY, providerId = "remotive", source = "Remotive"),
     )
 
     @Test
     fun eligibleFilterKeepsOnlyApplyableJobs() {
-        val visible = JobsUiState(jobs = jobs, eligibleOnly = true).visibleJobs
+        val visible = JobsUiState(nowMillis = NOW, jobs = jobs, eligibleOnly = true).visibleJobs
         assertEquals(listOf("1", "2"), visible.map { it.id })
     }
 
     @Test
     fun sponsoredFilterKeepsOnlySponsorshipPostings() {
-        val visible = JobsUiState(jobs = jobs, sponsoredOnly = true).visibleJobs
+        val visible = JobsUiState(nowMillis = NOW, jobs = jobs, sponsoredOnly = true).visibleJobs
         assertEquals(listOf("1"), visible.map { it.id })
     }
 
     @Test
     fun countryFilterMatchesCanonicalName() {
-        val visible = JobsUiState(jobs = jobs, country = "Germany").visibleJobs
+        val visible = JobsUiState(nowMillis = NOW, jobs = jobs, country = "Germany").visibleJobs
         assertEquals(listOf("2"), visible.map { it.id })
     }
 
     @Test
     fun sourceFilterMatchesProviderId() {
-        val visible = JobsUiState(jobs = jobs, source = "arbeitnow").visibleJobs
+        val visible = JobsUiState(nowMillis = NOW, jobs = jobs, source = "arbeitnow").visibleJobs
         assertEquals(listOf("2"), visible.map { it.id })
     }
 
     @Test
     fun savedFilterKeepsBookmarkedJobs() {
-        val visible = JobsUiState(jobs = jobs, savedOnly = true).visibleJobs
+        val visible = JobsUiState(nowMillis = NOW, jobs = jobs, savedOnly = true).visibleJobs
         assertEquals(listOf("3"), visible.map { it.id })
     }
 
     @Test
     fun queryMatchesTitleCompanyCountryAndSummary() {
-        assertEquals(listOf("1"), JobsUiState(jobs = jobs, query = "canada").visibleJobs.map { it.id })
+        assertEquals(listOf("1"), JobsUiState(nowMillis = NOW, jobs = jobs, query = "canada").visibleJobs.map { it.id })
         // Every sample title is "Maintenance Technician"; assert as a set since the
         // default best-match sort reorders them.
         assertEquals(
             setOf("1", "2", "3", "4"),
-            JobsUiState(jobs = jobs, query = "technician").visibleJobs.map { it.id }.toSet(),
+            JobsUiState(nowMillis = NOW, jobs = jobs, query = "technician").visibleJobs.map { it.id }.toSet(),
         )
-        assertEquals(listOf("2"), JobsUiState(jobs = jobs, query = "siemens").visibleJobs.map { it.id })
+        assertEquals(listOf("2"), JobsUiState(nowMillis = NOW, jobs = jobs, query = "siemens").visibleJobs.map { it.id })
     }
 
     @Test
@@ -129,32 +136,32 @@ class JobsFilterTest {
         val euro = job(id = "eur", country = "Germany", salaryMin = 60_000, currency = "EUR")
         val usd = job(id = "usd", country = "United States", salaryMin = 60_000, currency = "USD")
         val unknown = job(id = "none", country = "Worldwide", salaryMin = 0, currency = "")
-        val state = JobsUiState(jobs = listOf(usd, euro, unknown), sort = JobSort.SALARY_HIGH)
+        val state = JobsUiState(nowMillis = NOW, jobs = listOf(usd, euro, unknown), sort = JobSort.SALARY_HIGH)
 
         assertEquals(listOf("eur", "usd", "none"), state.visibleJobs.map { it.id })
     }
 
     @Test
     fun sortNewestUsesPostingTimestamp() {
-        val visible = JobsUiState(jobs = jobs, sort = JobSort.NEWEST).visibleJobs
+        val visible = JobsUiState(nowMillis = NOW, jobs = jobs, sort = JobSort.NEWEST).visibleJobs
         assertEquals(listOf("2", "3", "1", "4"), visible.map { it.id })
     }
 
     @Test
     fun bestMatchIsTheDefaultOrder() {
-        val visible = JobsUiState(jobs = jobs).visibleJobs
+        val visible = JobsUiState(nowMillis = NOW, jobs = jobs).visibleJobs
         assertEquals(listOf("1", "4", "2", "3"), visible.map { it.id })
     }
 
     @Test
     fun filtersComposeRatherThanReplaceEachOther() {
-        val state = JobsUiState(jobs = jobs, eligibleOnly = true, country = "Canada", query = "technician")
+        val state = JobsUiState(nowMillis = NOW, jobs = jobs, eligibleOnly = true, country = "Canada", query = "technician")
         assertEquals(listOf("1"), state.visibleJobs.map { it.id })
     }
 
     @Test
     fun clearingFiltersRestoresEveryJob() {
-        val filtered = JobsUiState(jobs = jobs, savedOnly = true, eligibleOnly = true, country = "Canada", query = "zzz")
+        val filtered = JobsUiState(nowMillis = NOW, jobs = jobs, savedOnly = true, eligibleOnly = true, country = "Canada", query = "zzz")
         assertTrue(filtered.visibleJobs.isEmpty())
         val cleared = filtered.copy(
             savedOnly = false,
@@ -180,14 +187,14 @@ class JobsFilterTest {
             title = "Diesel Mechanic",
             roleFamily = RoleFamily.MAINTENANCE_FAMILY,
         )
-        val visible = JobsUiState(jobs = mixed, tradeOnly = true).visibleJobs.map { it.id }.toSet()
+        val visible = JobsUiState(nowMillis = NOW, jobs = mixed, tradeOnly = true).visibleJobs.map { it.id }.toSet()
         assertEquals(setOf("1", "2", "3", "4", "6"), visible)
         assertTrue("an unrelated profession must be filtered out", "5" !in visible)
     }
 
     @Test
     fun filterFacetsAreDerivedFromLoadedJobs() {
-        val state = JobsUiState(jobs = jobs)
+        val state = JobsUiState(nowMillis = NOW, jobs = jobs)
         assertEquals(listOf("Australia", "Canada", "Germany", "Worldwide"), state.countries)
         assertEquals(listOf("arbeitnow" to "Arbeitnow", "remotive" to "Remotive"), state.sources)
         assertEquals(2, state.eligibleCount)
@@ -196,7 +203,7 @@ class JobsFilterTest {
 
     @Test
     fun newOnlyKeepsJustThePostingsDiscoveredSinceTheLastReview() {
-        val state = JobsUiState(jobs = jobs, newJobIds = setOf("2", "4"))
+        val state = JobsUiState(nowMillis = NOW, jobs = jobs, newJobIds = setOf("2", "4"))
         assertEquals(2, state.newCount)
         assertTrue(state.isNew(jobs.first { it.id == "2" }))
         assertFalse(state.isNew(jobs.first { it.id == "1" }))
@@ -206,7 +213,7 @@ class JobsFilterTest {
 
     @Test
     fun firstSeenIsReportedOnlyWhenTheLedgerRecordedIt() {
-        val state = JobsUiState(jobs = jobs, firstSeenAtByJobId = mapOf("2" to 1_700_000_000_000L))
+        val state = JobsUiState(nowMillis = NOW, jobs = jobs, firstSeenAtByJobId = mapOf("2" to 1_700_000_000_000L))
         assertEquals(1_700_000_000_000L, state.firstSeenAt(jobs.first { it.id == "2" }))
         assertTrue("an unrecorded posting has no first sighting", state.firstSeenAt(jobs.first { it.id == "1" }) == null)
     }

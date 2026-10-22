@@ -20,6 +20,14 @@ export interface ProviderCapabilities {
   applicationLinks: boolean;
   submissionEndpoint: boolean;
   realSubmissionSupported: boolean;
+  /**
+   * How many keyword sets this provider should be handed in one refresh. A provider whose feed
+   * reads only the first keyword (and therefore re-runs its whole multi-site sweep for every set
+   * it is given) declares a small budget so the keyword plan cannot multiply its request volume.
+   * A provider that reads every keyword keeps the default and receives the whole plan. Mirrors
+   * the Kotlin `ProviderCapabilities.keywordSweepBudget`.
+   */
+  keywordSweepBudget: number;
 }
 
 /** The default capabilities for a source that can only return a broad sample. */
@@ -32,6 +40,7 @@ export function defaultProviderCapabilities(overrides?: Partial<ProviderCapabili
     applicationLinks: true,
     submissionEndpoint: false,
     realSubmissionSupported: false,
+    keywordSweepBudget: Number.MAX_SAFE_INTEGER,
     ...overrides,
   };
 }

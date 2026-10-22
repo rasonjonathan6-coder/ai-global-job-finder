@@ -88,6 +88,7 @@ fun HomeScreen(
     onOpenLink: (String) -> Unit = {},
     onOpenShortlist: () -> Unit = {},
     onOpenRanking: () -> Unit = {},
+    onOpenBestOffers: () -> Unit = {},
     onToggleSaveJob: (String) -> Unit = {},
     onOpenAlerts: () -> Unit = {},
     /** Opens the Jobs tab focused on the postings first seen since the last review. */
@@ -133,6 +134,7 @@ fun HomeScreen(
                 onOpenLink = onOpenLink,
                 onOpenShortlist = onOpenShortlist,
                 onOpenRanking = onOpenRanking,
+                onOpenBestOffers = onOpenBestOffers,
                 onToggleSaveJob = onToggleSaveJob,
                 onOpenAlerts = onOpenAlerts,
                 onOpenNewPostings = onOpenNewPostings,
@@ -150,6 +152,7 @@ internal fun HomeContent(
     onOpenLink: (String) -> Unit = {},
     onOpenShortlist: () -> Unit = {},
     onOpenRanking: () -> Unit = {},
+    onOpenBestOffers: () -> Unit = {},
     onToggleSaveJob: (String) -> Unit = {},
     onOpenAlerts: () -> Unit = {},
     /** Opens the Jobs tab focused on the postings first seen since the last review. */
@@ -217,6 +220,13 @@ internal fun HomeContent(
                 modifier = Modifier.padding(horizontal = spacing.gutter),
                 verticalArrangement = Arrangement.spacedBy(spacing.sm),
             ) {
+                EntryBannerCard(
+                    icon = Icons.Filled.AutoAwesome,
+                    tint = MaterialTheme.colorScheme.primary,
+                    title = "Mes meilleures offres",
+                    body = "The recent postings that fit your CV best, scored and explained.",
+                    onClick = onOpenBestOffers,
+                )
                 EntryBannerCard(
                     icon = Icons.Filled.Public,
                     tint = extendedColors.success,

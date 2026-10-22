@@ -2,9 +2,11 @@ import {
   MadagascarEligibility,
   ScamRisk,
   VisaSupport,
+  availabilityIsUnconfirmed,
   type Job,
 } from "../../core/models";
 import { countryLine, formatSalaryRange, relativeTimeFrom } from "../lib/format";
+import { AvailabilityBadge } from "./AvailabilityBadge";
 import { Badge, type BadgeTone } from "./Badge";
 import { Button } from "./Button";
 import { MatchRing } from "./MatchRing";
@@ -139,6 +141,9 @@ export function JobCard({ job, index = 0, onView, onApply, onOpenTool }: JobCard
           {eligibility.label}
         </Badge>
         {visa && <Badge tone={visa.tone}>{visa.label}</Badge>}
+        {!availabilityIsUnconfirmed(job.availability) && (
+          <AvailabilityBadge availability={job.availability} />
+        )}
         {job.scamRisk === ScamRisk.HIGH && (
           <Badge tone="danger" icon={<ShieldIcon width={12} height={12} />}>
             Scam risk flagged

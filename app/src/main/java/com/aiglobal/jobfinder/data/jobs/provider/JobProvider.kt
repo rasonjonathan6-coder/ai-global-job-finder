@@ -125,6 +125,16 @@ data class ProviderCapabilities(
      * implying a capability the app does not have.
      */
     val realSubmissionSupported: Boolean = false,
+    /**
+     * How many keyword sets this provider should be handed in one refresh. A provider whose
+     * feed reads only the first keyword (and therefore re-runs its whole multi-site sweep for
+     * every set it is given) declares a small budget so the keyword plan cannot multiply its
+     * request volume — a six-role plan would otherwise make six full sweeps for six largely
+     * overlapping terms. A provider that reads every keyword keeps the default and receives
+     * the whole plan. The default is "no cap" so nothing changes for a provider that does not
+     * opt in.
+     */
+    val keywordSweepBudget: Int = Int.MAX_VALUE,
 ) {
     /**
      * True when a keyword sent to this source genuinely narrows the feed. When false, the

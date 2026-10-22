@@ -18,7 +18,10 @@ object CountryCatalog {
     )
 
     private val entries: List<Entry> = listOf(
-        Entry("United States", "🇺🇸", listOf("united states of america", "united states", "usa", "u.s.a", "u.s.", "america")),
+        // "america" alone is deliberately not an alias: it is a substring of "South America",
+        // "Central America", "Latin America" and "North America", so mapping it here labelled
+        // whole regions — and North America, a continent — as the United States.
+        Entry("United States", "🇺🇸", listOf("united states of america", "united states", "usa", "u.s.a", "u.s.")),
         Entry("Canada", "🇨🇦", listOf("canada")),
         Entry("United Kingdom", "🇬🇧", listOf("united kingdom", "uk", "great britain", "britain", "england", "scotland", "wales", "northern ireland")),
         Entry("Germany", "🇩🇪", listOf("germany", "deutschland")),
@@ -57,7 +60,11 @@ object CountryCatalog {
         Entry("Australia", "🇦🇺", listOf("australia")),
         Entry("New Zealand", "🇳🇿", listOf("new zealand")),
         Entry("Japan", "🇯🇵", listOf("japan")),
-        Entry("South Korea", "🇰🇷", listOf("south korea", "korea")),
+        // "korea" alone is deliberately not an alias: it is a substring of "North Korea" too,
+        // so it would label a North Korean posting as South Korea. "Korea" with no qualifier
+        // resolves to no country (see the resolve() note), and a qualifier is required.
+        Entry("South Korea", "🇰🇷", listOf("south korea")),
+        Entry("North Korea", "🇰🇵", listOf("north korea")),
         Entry("Singapore", "🇸🇬", listOf("singapore")),
         Entry("Malaysia", "🇲🇾", listOf("malaysia")),
         Entry("India", "🇮🇳", listOf("india")),
@@ -71,7 +78,11 @@ object CountryCatalog {
         Entry("Egypt", "🇪🇬", listOf("egypt")),
         Entry("Mauritius", "🇲🇺", listOf("mauritius")),
         Entry("Madagascar", "🇲🇬", listOf("madagascar", "antananarivo")),
+        // The three Guineas must stay distinct. Their specific names are longer than the bare
+        // "guinea", so longest-alias wins for them, while a lone "Guinea" still resolves here.
         Entry("Guinea", "🇬🇳", listOf("guinea")),
+        Entry("Guinea-Bissau", "🇬🇼", listOf("guinea-bissau", "guinea bissau")),
+        Entry("Equatorial Guinea", "🇬🇶", listOf("equatorial guinea")),
         Entry("Mali", "🇲🇱", listOf("mali")),
         Entry("Burkina Faso", "🇧🇫", listOf("burkina faso")),
         Entry("Tanzania", "🇹🇿", listOf("tanzania")),
@@ -80,7 +91,12 @@ object CountryCatalog {
         Entry("Côte d'Ivoire", "🇨🇮", listOf("côte d'ivoire", "cote d'ivoire", "ivory coast", "abidjan")),
         Entry("Botswana", "🇧🇼", listOf("botswana")),
         Entry("Namibia", "🇳🇦", listOf("namibia")),
-        Entry("Democratic Republic of the Congo", "🇨🇩", listOf("democratic republic of the congo", "dr congo", "drc", "congo")),
+        // The two Congos must stay distinct: "Republic of the Congo" / "Congo-Brazzaville" is
+        // Brazzaville, not Kinshasa. The bare "congo" alias is kept for the DRC only because it
+        // is the shorter name it is commonly shortened to, but every longer, unambiguous name of
+        // either country (above and here) outranks it, so a specific spelling never falls to it.
+        Entry("Democratic Republic of the Congo", "🇨🇩", listOf("democratic republic of the congo", "democratic republic of congo", "dr congo", "drc", "congo", "kinshasa")),
+        Entry("Republic of the Congo", "🇨🇬", listOf("republic of the congo", "republic of congo", "congo-brazzaville", "congo brazzaville", "brazzaville")),
         Entry("Mongolia", "🇲🇳", listOf("mongolia")),
         Entry("Kazakhstan", "🇰🇿", listOf("kazakhstan")),
         Entry("Chile", "🇨🇱", listOf("chile")),
@@ -137,6 +153,17 @@ object CountryCatalog {
      * Resolves a published location to a country. Location strings arrive as
      * "Berlin", "France (Remote)" or "Anywhere in the World", so the longest alias
      * found as a whole word in the text wins.
+     *
+     * Longest-alias-wins is what keeps compound names apart: the specific spelling of a
+     * country ("equatorial guinea", "guinea-bissau", "republic of the congo", "north korea")
+     * is longer than the generic word it contains ("guinea", "congo", "korea"), so it wins
+     * and the generic alias never captures it. A generic alias is therefore only reached by a
+     * genuinely generic string.
+     *
+     * A bare "Korea" carries no qualifier and is deliberately left unresolved: the catalog
+     * will not guess between North and South Korea, so it returns the raw label with
+     * [UNRESOLVED_FLAG] rather than mislabelling a posting. "North Korea" and "South Korea"
+     * both resolve correctly.
      */
     fun resolve(rawLocation: String?): Country {
         val raw = rawLocation?.trim().orEmpty()

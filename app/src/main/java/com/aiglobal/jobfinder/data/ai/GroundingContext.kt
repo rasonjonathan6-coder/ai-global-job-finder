@@ -4,6 +4,7 @@ import com.aiglobal.jobfinder.data.model.CandidateProfile
 import com.aiglobal.jobfinder.data.model.Job
 import com.aiglobal.jobfinder.data.model.JobRequirements
 import com.aiglobal.jobfinder.data.model.LanguageSkill
+import com.aiglobal.jobfinder.data.model.ScamRisk
 
 /**
  * The facts the assistant is allowed to use, assembled from the CV and the posting.
@@ -32,6 +33,12 @@ data class GroundingContext(
     val matchedSkills: List<String>,
     val missingSkills: List<String>,
     val requirements: JobRequirements,
+    /** The app's own scam verdict for the posting, so the review can build on it. */
+    val scamRisk: String = "",
+    /** Whether the app could confirm the posting is still open. */
+    val availability: String = "",
+    /** The employer's stated application deadline, already worded, or empty. */
+    val deadline: String = "",
 ) {
     /** A short, plain rendering of the candidate for a prompt. Empty fields are omitted. */
     fun candidateBlock(): String = buildString {
@@ -63,6 +70,9 @@ data class GroundingContext(
         }
         if (matchedSkills.isNotEmpty()) appendLine("- Skills the CV already shows: ${matchedSkills.joinToString(", ")}")
         if (missingSkills.isNotEmpty()) appendLine("- Requirements the CV does not show: ${missingSkills.joinToString(", ")}")
+        if (scamRisk.isNotBlank()) appendLine("- The app's own scam screening: $scamRisk")
+        if (availability.isNotBlank()) appendLine("- The app's availability check: $availability")
+        if (deadline.isNotBlank()) appendLine("- Employer's stated deadline: $deadline")
     }
 
     companion object {
@@ -85,7 +95,33 @@ data class GroundingContext(
             matchedSkills = job.matchedSkills.take(20),
             missingSkills = job.missingSkills.take(20),
             requirements = job.requirements,
+            scamRisk = scamRiskLabel(job),
+            availability = availabilityLabel(job),
+            deadline = deadlineLabel(job),
         )
+
+        /** The app's own scam verdict, worded for the prompt. Empty when not screened. */
+        private fun scamRiskLabel(job: Job): String = when (job.scamRisk) {
+            ScamRisk.HIGH -> "HIGH — the posting shows several warning signs."
+            ScamRisk.MEDIUM -> "MEDIUM — some details are worth verifying before applying."
+            ScamRisk.LOW -> "LOW — nothing suspicious was found."
+        }
+
+        /** The app's availability verdict, worded for the prompt. */
+        private fun availabilityLabel(job: Job): String = when {
+            job.availability.isOpen -> "confirmed open by the source."
+            job.availability.isExpired -> "confirmed closed by the source."
+            else -> "not confirmed either way."
+        }
+
+        /** The employer's stated deadline as a plain date, or empty when none was published. */
+        private fun deadlineLabel(job: Job): String {
+            val deadline = job.expiresAtEpochMillis ?: return ""
+            val date = java.time.Instant.ofEpochMilli(deadline)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDate()
+            return date.toString()
+        }
     }
 }
 

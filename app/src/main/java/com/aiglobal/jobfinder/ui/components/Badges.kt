@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Schedule
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +51,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aiglobal.jobfinder.data.model.ApplicationReadiness
+import com.aiglobal.jobfinder.data.model.AvailabilityResult
+import com.aiglobal.jobfinder.data.model.AvailabilitySignalType
+import com.aiglobal.jobfinder.data.model.AvailabilityStatus
 import com.aiglobal.jobfinder.data.model.BenefitStatus
 import com.aiglobal.jobfinder.data.model.InternationalFitAssessment
 import com.aiglobal.jobfinder.data.model.InternationalFitBand
@@ -459,6 +465,154 @@ fun OfferVerificationBadge(
         leadingIcon = icon,
         modifier = modifier,
     )
+}
+
+/**
+ * Colour for an availability verdict, on the shared success/info/warning/danger scale.
+ * "Open" is success, "Expired" is danger, and "Unconfirmed" is deliberately neutral — the
+ * absence of proof is never shown in the warning or danger colours, so a posting the app
+ * could not reach is never visually accused of being closed.
+ */
+@Composable
+fun availabilityStatusColor(status: AvailabilityStatus): Color = when (status) {
+    AvailabilityStatus.OPEN -> extendedColors.success
+    AvailabilityStatus.EXPIRED -> extendedColors.danger
+    AvailabilityStatus.UNCONFIRMED -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+/**
+ * The availability verdict as one chip: "Open · verified", "Expired", or "Availability
+ * unconfirmed". It is the single, unambiguous answer to "can I still apply?", kept separate
+ * from the multi-axis [OfferVerificationBadge] so the two are never blended.
+ *
+ * Only a settled verdict gets a coloured chip. An unconfirmed read — the honest default
+ * before any check, or after a network error — is rendered neutral, so it reads as "we do
+ * not know yet" rather than as a rejection.
+ */
+@Composable
+fun OfferAvailabilityBadge(
+    availability: AvailabilityResult,
+    modifier: Modifier = Modifier,
+) {
+    val content = availabilityStatusColor(availability.status)
+    val icon = when (availability.status) {
+        AvailabilityStatus.OPEN -> Icons.Filled.Verified
+        AvailabilityStatus.EXPIRED -> Icons.Filled.EventBusy
+        AvailabilityStatus.UNCONFIRMED -> Icons.AutoMirrored.Filled.HelpOutline
+    }
+    val label = when (availability.status) {
+        AvailabilityStatus.OPEN -> when (availability.decisiveSignal) {
+            AvailabilitySignalType.SOURCE_FLAG -> "Open · verified by source"
+            AvailabilitySignalType.LINK_PROBE -> "Open · verified at source"
+            else -> "Open · verified"
+        }
+        AvailabilityStatus.EXPIRED -> when (availability.decisiveSignal) {
+            AvailabilitySignalType.EMPLOYER_DEADLINE -> "Expired · deadline passed"
+            AvailabilitySignalType.SOURCE_FLAG -> "Expired · source reports closed"
+            AvailabilitySignalType.LINK_PROBE -> "Expired · page confirms closed"
+            else -> "Expired"
+        }
+        AvailabilityStatus.UNCONFIRMED -> "Availability unconfirmed"
+    }
+    Pill(
+        text = label,
+        containerColor = content.copy(alpha = if (availability.isUnconfirmed) 0.10f else 0.14f),
+        contentColor = content,
+        leadingIcon = icon,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The availability read as a detail section: the verdict, when it was checked, and each
+ * reason behind it with its own source link. This is where the app shows its work, so a
+ * candidate can see *why* a posting is called open, expired or unconfirmed — and can open
+ * the source to check for themselves.
+ */
+@Composable
+fun OfferAvailabilityDetail(
+    availability: AvailabilityResult,
+    modifier: Modifier = Modifier,
+) {
+    val content = availabilityStatusColor(availability.status)
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = when (availability.status) {
+                    AvailabilityStatus.OPEN -> Icons.Filled.Verified
+                    AvailabilityStatus.EXPIRED -> Icons.Filled.EventBusy
+                    AvailabilityStatus.UNCONFIRMED -> Icons.AutoMirrored.Filled.HelpOutline
+                },
+                contentDescription = null,
+                tint = content,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                text = when (availability.status) {
+                    AvailabilityStatus.OPEN -> "Open — verified"
+                    AvailabilityStatus.EXPIRED -> "Expired — confirmed closed"
+                    AvailabilityStatus.UNCONFIRMED -> "Availability not confirmed"
+                },
+                style = MaterialTheme.typography.titleSmall,
+                color = content,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            availability.lastCheckedAtEpochMillis?.let { checkedAt ->
+                Text(
+                    text = "Checked ${relativeCheckedLabel(checkedAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (availability.evidence.isEmpty()) {
+            Text(
+                text = "This app has not confirmed whether the vacancy is still open. Open the posting to check.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            availability.evidence.forEach { fact ->
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(
+                        imageVector = when (fact.type) {
+                            AvailabilitySignalType.SOURCE_FLAG -> Icons.Filled.Verified
+                            AvailabilitySignalType.EMPLOYER_DEADLINE -> Icons.Filled.Schedule
+                            AvailabilitySignalType.LINK_PROBE -> Icons.Filled.Link
+                            AvailabilitySignalType.NONE -> Icons.AutoMirrored.Filled.HelpOutline
+                        },
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        text = fact.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** "just now", "3 h ago" or a date, for the last-checked stamp on the availability section. */
+@Composable
+private fun relativeCheckedLabel(epochMillis: Long): String {
+    val now = remember(epochMillis) { System.currentTimeMillis() }
+    val minutes = ((now - epochMillis).coerceAtLeast(0)) / 60_000
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "$minutes min ago"
+        minutes < 60 * 24 -> "${minutes / 60} h ago"
+        else -> "${minutes / (60 * 24)} d ago"
+    }
 }
 
 /** Compact per-axis chip, e.g. "Visa · Verified", for the detail panel. */

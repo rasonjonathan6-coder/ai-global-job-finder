@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Himalayas — a remote-jobs board with a public, key-free JSON feed and structured
@@ -37,6 +38,7 @@ class HimalayasProvider(
         val json = try {
             feed.objectAt(url)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             throw JobProviderException(
                 providerId = id,
                 message = "Himalayas did not respond",

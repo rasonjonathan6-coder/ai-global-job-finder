@@ -147,6 +147,14 @@ Notes that cost time to rediscover:
   when unconfigured, so the Jobs sync banner shows the source as unavailable rather than
   silently returning nothing. Credentials live in `UserPreferencesRepository` (DataStore)
   and are read into the container through `@Volatile` caches the provider lambdas close over.
+  Five further key-free public boards were added in Stage 97 (`TheMuseProvider`,
+  `RemoteOkProvider`, `WorkingNomadsProvider`, `LandingJobsProvider`, `JobTechDevProvider`)
+  to widen coverage beyond the aggregators. `JobTechDevProvider` is the Swedish Public
+  Employment Service (a government feed) and the only new source with a real server-side
+  keyword search. Each provider's `capabilities` must state honestly what its API actually
+  honours: The Muse's documented `location`/`category` filters were measured as ineffective
+  (Canada/Germany/France return the same list), so both are recorded `false`. RemoteOK's feed
+  opens with a legal-notice row (no `position`) that is skipped, not shown as a job.
 - `data/jobs/engine/` — `MatchingEngine` (six weighted signals → score + one `MatchReason`
   per signal) and `EligibilityEngine` (priority rules → verdict + reasons tagged
   `official = true` only when the posting actually states the fact). `SkillLexicon` is the
@@ -3284,3 +3292,402 @@ choisi. Il résout maintenant un id vide vers la meilleure correspondance couran
 **Honnêteté.** Rien n'est envoyé : l'assistant prépare et s'arrête à l'approbation. Une lettre ne
 peut pas être rédigée depuis un CV vide, et un signal d'arnaque est toujours cité du poste, jamais
 deviné.
+
+## Stage 85 — récupération de la clé de signature release d'origine (lecture seule) + conservation permanente
+
+**Objet.** Retrouver la clé de signature release d'origine de l'APK publié, ou prouver son
+absence ; puis établir une conservation des clés **permanente, sûre et documentée**.
+
+**Résultat de la recherche (exhaustive, en lecture seule).** La clé d'origine **n'est pas
+récupérable**. Aucun fichier `*.jks`/`*.keystore` n'existe (recherche par magie Java KeyStore
+`FE ED FE ED` sur `/home`, `/workspace`, `/var`, `/opt`, `/srv`, `/mnt`, `/media`, `/root` : aucun
+résultat ; `/mnt`, `/media`, `/srv`, `/opt` vides, aucun montage externe). Rien dans l'historique
+git (aucun `*.jks` jamais ajouté, 2 465 objets scannés, aucun blob keystore) ni dans les sauvegardes
+(`project-backup-20261019-063643.tgz`, `conversation-4ba2e8ff-backup-20261019-090313.tgz`,
+`backups_20261015/stage25-history.bundle`). Histories shell absentes. Le registre de secrets ne
+contient que des **noms** (`KEYSTORE_PASSWORD`, `TANGO_KEYSTORE_PASSWORD`, `TANGO_KEY_PASSWORD`) ;
+aucun keystore enregistré.
+
+**Deux keystores historiques, un seul correspond à l'APK publié.** `/home/openhands/aigjf-signing/aigjf-release.jks`
+(alias `aigjf`, dname `O=Personal`) et `/home/openhands/keys/aiglobal-release.jks` (alias
+`aiglobal`, dname `O=AI Global Job Finder`) ; les deux fichiers ont disparu. L'APK publié
+(`web/public/download/AI-Global-Job-Finder-release.apk`, sha256
+`8440b7c374b90a086754ab46cbb5f2a30d2e98294bc7e828636a7fa4f0deb6df`) porte exactement le dname
+`CN=AI Global Job Finder, OU=Personal, O=AI Global Job Finder, L=Antananarivo, C=MG`, cert SHA-256
+`6f6cc6d01648920b1287f0719b78ff627965a0bac618bfb54081103eca59a932` — donc signé par
+`aiglobal-release.jks` alias `aiglobal`, perdu. **Une clé privée ne se reconstruit pas depuis un mot
+de passe ni depuis l'APK** : l'APK publié ne peut plus être mis à jour sous la même identité sans
+que le fichier original soit fourni depuis une sauvegarde externe.
+
+**Conservation permanente (livrables).** `.gitignore` ignore désormais `*.jks`, `*.keystore`,
+`*.p12`, `*.pfx`, `keystore.properties`, `signing.properties`. Nouveau `docs/RELEASE_SIGNING.md` :
+identité exacte de l'artefact publié, résultat de la recherche, politique de stockage (clé hors
+dépôt, mots de passe en variables d'environnement `RELEASE_KEYSTORE_PATH`/`RELEASE_KEYSTORE_PASSWORD`/
+`RELEASE_KEY_ALIAS`/`RELEASE_KEY_PASSWORD`, sauvegarde externe obligatoire), commandes de création
+et de signature. Aucun APK construit, aucun fichier `web/` ni configuration modifié, aucune commande
+git destructive.
+
+**Décision requise.** Soit fournir le keystore d'origine depuis une sauvegarde externe (continuité
+de mise à jour de l'APK publié), soit **tourner vers une nouvelle clé** (créer, stocker, sauvegarder).
+Le câblage d'un `signingConfig` release (proposition Stage 84) attend ce choix.
+
+## Stage 89 — inventaire exhaustif des sources (lecture seule)
+
+**Objet.** Établir la liste **complète** des fournisseurs/API/agrégateurs/portails employeurs/ATS
+intégrés depuis le début, car la liste connue (13 « fournisseurs » d'`ARCHITECTURE.md`) était
+incomplète : elle ne comptait que les fournisseurs agrégateurs et passait sous silence les
+**employeurs** lus par chacun.
+
+**Méthode.** Lecture seule du code, des tests, de la documentation et de tout l'historique
+(`AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/web-parity.md`, `git log --all`). Aucun fichier modifié.
+
+**Inventaire (état réel du code).**
+
+1. **12 fournisseurs enregistrés** (`AiJobFinderApp.buildJobProviders()`), un par classe
+   `*Provider.kt` portant un `id` : `arbeitnow`, `remotive`, `jobicy`, `himalayas`, `eures`,
+   `workday`, `greenhouse`, `ashby`, `lever`, `smartrecruiters`, `adzuna`, `jooble`.
+   `ARCHITECTURE.md` en annonce **13** mais n'en nomme que 12 : le chiffre de la doc est
+   faux d'une unité ; le code en compte bien 12.
+2. **53 portails employeurs** lus par 5 de ces fournisseurs (listes internes) :
+   **Workday 25** (Rio Tinto, Alcoa, GE Vernova, SSR Mining, Weir Group, Sulzer, KSB, FLSmidth,
+   Alfa Laval, ONEOK, EPSA, First Quantum Minerals, Baker Hughes, ABB, ChampionX, Air Products,
+   Marmon, Shell, TC Energy, Williams, Ameresco, Duke Energy, Micron, Siemens Healthineers, JLL),
+   **Greenhouse 9** (Redwood Materials, Atlas Energy Solutions, Lucid Motors, KoBold Metals, Oklo,
+   SpaceX, Triumvirate Environmental, GeoStabilization International, Forgen),
+   **Ashby 3** (Form Energy, Mariana Minerals, Twelve),
+   **Lever 6** (Shield AI, Elk Valley Resources, Sila, Hermeus, Zoox, Hive),
+   **SmartRecruiters 10** (SGS, Wabtec, Konecranes, Bosch, Egis, Valterra Platinum, ProSidian,
+   IOTA, Continental ContiTech, Plants & Goodwin).
+3. **Recherchées mais non intégrées** (motif mesuré) : Bayt.com, Naukrigulf, GulfTalent (pas
+   d'API gratuite — pages web seules ; ne figurent que comme noms d'exemple dans `SampleData`),
+   Careerjet (403 « Undeclared referrer »), The Muse / ReliefWeb v2 (403 appname/Referer),
+   Findwork (401 clé requise). **UN Careers, Canada Job Bank, Make it in Germany** n'existent
+   que comme *docstring* ou comme hôtes de confiance (anti-arnaque / inspecteur de lien), jamais
+   comme fournisseur.
+
+**Preuve d'intégration dans l'APK.** Les classes fournisseurs et leurs chaînes sont bien
+**compilées dans le `classes.dex`** de l'APK release signé (vérifié par `strings` : `adzuna`,
+`arbeitnow`, `ashbyhq`, `eures`, `greenhouse`, `himalayas`, `jobicy`, `jooble`, `lever.co`,
+`myworkdayjobs`, `smartrecruiters`). L'APK contient donc bien les sources ; le manque était
+d'affichage, pas de compilation.
+
+## Stage 90 — visibilité complète des sources dans l'app
+
+**Objet.** Les 12 fournisseurs et leurs 53 employeurs étaient compilés mais **l'utilisateur ne
+voyait que 12 lignes** (« Employer career sites », « Industrial career sites »…) : les noms des
+employeurs vivaient uniquement dans les listes internes des fournisseurs et n'atteignaient jamais
+l'écran de diagnostic. Ce stage rend l'inventaire **visible dans l'app**.
+
+**Correctif (local, sans invention).** Nouveau champ `ProviderAudit.portals` alimenté par
+`CuratedPortals` depuis **les listes mêmes que le fournisseur parcourt** (`WorkdayBoards`,
+`GreenhouseBoards`, `AshbyBoards`, `LeverBoards`, `SmartRecruitersBoards`) : l'écran ne peut donc
+jamais nommer un employeur que la source ne lit pas. Un fournisseur mono-flux (Arbeitnow,
+Remotive, Jobicy, Himalayas, EURES, Adzuna, Jooble) reste sans portail. La carte
+`SourceDiagnosticCard` (écran « Live search validation », atteignable depuis Profil →
+« Open diagnostics ») affiche désormais, par source, le **nombre** de portails et, au tap, la
+**liste des employeurs** (repliée par défaut pour rester lisible). Aucun changement de thème, de
+navigation ni de moteur : le champ est une donnée dérivée du fournisseur.
+
+**Limite honnête.** La carte affiche les 53 portails **curés** ; elle ne prétend pas lister des
+employeurs hors curation (Bayt/Naukrigulf/GulfTalent, sans API) ni les 3 sources documentées mais
+non implémentées. Elle nomme ce qui est réellement lu, rien de plus.
+
+**Vérification.** Suite **892 tests, 0 échec, 0 erreur, 5 ignorés** (+5 : `Stage90ProviderVisibilityTest`
+— portails dérivés des listes, source mono-flux sans portail, noms uniques par source, total 53,
+et rendu écran : compte visible puis employeurs révélés au tap). `lintDebug` **0 erreur,
+54 avertissements** (inchangé, aucun avertissement sur les fichiers modifiés). `assembleDebug`
+réussit. Fichiers modifiés : `ProviderAudit.kt`, `LiveSearchValidationScreen.kt`. Ajouté :
+`Stage90ProviderVisibilityTest.kt`.
+
+## Stage 91 — identité de signature tranchée + APK release correct
+
+**Objet.** Trancher la décision Stage 85 (continuité vs nouvelle clé), déterminer si le nouveau
+keystore peut être ouvert avec les identifiants **déjà disponibles en sécurité**, et ne construire
+un APK release que dans ce cas — sans jamais afficher un mot de passe ni générer de clé.
+
+**Fait vérifié n°1 — le keystore est ouvrable.** Le mot de passe PKCS12 du keystore
+`/workspace/AndroidSigning/AI-Global-Job-Finder/aigjf-release.jks` est fourni par le secret
+d'environnement `STORE_PASS` (jamais imprimé). `keytool -list` l'ouvre : alias `aigjf-release`,
+`PrivateKeyEntry`, empreinte cert **SHA-256 `F2:99:7D:1B:…:EF:E3`**, exactement l'empreinte
+documentée dans `README_RECOVERY.txt`. Les secrets `KEYSTORE_PASSWORD`, `TANGO_KEYSTORE_PASSWORD`
+et `KEY_PASS` sont **rejetés** ; c'est pourquoi Stage 90 avait conclu à tort « mot de passe
+indisponible » (seul `KEYSTORE_PASSWORD` avait été essayé).
+
+**Fait vérifié n°2 — sauvegarde intègre.** Le ZIP de sauvegarde est **chiffré en AES** (méthode 99) ;
+`ZIP_PASS` l'ouvre (`pyzipper`), l'extraction du `.jks` donne le **même SHA-256**
+`06d2087a…7285` que le fichier sur disque. Aucune extraction conservée sur disque.
+
+**Fait vérifié n°3 — deux identités distinctes.** L'APK publié
+(`web/public/download/…`, sha256 `8440b7c3…b6df`) est signé par l'**ancienne** clé
+`6F:6C:C6:D0:…:A9:32` (perdue, Stage 85). Le nouveau keystore produit l'empreinte
+`F2:99:7D:1B:…:EF:E3`. **Les certificats diffèrent : une mise à jour en place est impossible.**
+
+**Conséquences (expliquées sans exécution).**
+- **Publier avec la nouvelle identité** : un utilisateur ayant l'ancienne signature **ne peut pas
+  installer par-dessus** ; il doit **désinstaller puis réinstaller** (perte des données internes à
+  l'app). Toute future mise à jour devra être signée avec **cette** clé.
+- **Récupérer l'ancienne clé** : impossible aujourd'hui (recherche exhaustive Stage 85) ; sans
+  elle, aucune mise à jour en place de l'app installée n'est possible. La clé privée ne se
+  reconstruit ni depuis l'APK ni depuis un mot de passe.
+
+**Décision retenue : option (b)** — adopter la **nouvelle** identité pour les futures releases
+(l'ancienne clé reste perdue), en documentant la réinstallation fraîche requise.
+
+**APK release construit (fait).** Signé avec le keystore déverrouillé via variables d'environnement
+(alias `aigjf-release`, mot de passe = secret `STORE_PASS`, jamais imprimé) :
+`app/build/outputs/apk/release/app-release.apk` (8 580 273 o).
+- **Paquet** `com.aiglobal.jobfinder`, versionCode **1**, versionName **1.0.0**.
+- **Signature** vérifiée : schémas v2 + v3, DN `CN=AI Global Job Finder, OU=Personal, O=AI Global
+  Job Finder, L=Antananarivo, C=MG`, empreinte cert **SHA-256 `F2:99:7D:1B:…:EF:E3`**.
+- **SHA-256 de l'APK** : `c259fd9f1899a2df8c2abd9965a29a0a2d16bc4ff0a03841607f9ac3de081b5f`.
+- **Stage 90 inclus** : le dex diffère de l'APK pré-Stage-90 (CRC `ea93a0c8`/4 712 652 o contre
+  `30df68c5`/4 710 908 o) et le diff des chaînes du dex isole précisément les ajouts Stage 90
+  (`portals`, `portal`, ` employer`, `, portals=`) absents de l'APK précédent.
+
+**Non publié (fait).** Aucune copie vers `web/public/download/` ni vers `/workspace/download/` ;
+l'APK publié (`web/public/download/…`) et l'artefact de test `/workspace/download/…-release-signed.apk`
+(sha256 `e76dfbb3…eadc`, aussi nouvelle clé) **restent inchangés**. Aucun commit, push ni déploiement.
+
+**Vérification.** Suite **892 tests, 0 échec, 0 erreur, 5 ignorés** (dont `Stage90ProviderVisibilityTest`,
+5/5). Aucun fichier source modifié ce stage (contrôle mtime). `assembleRelease` réussit avec
+signature ; `app/build/` est ignoré par Git.
+
+**Limite honnête.** L'APK release est **apte au test et à une distribution en réinstallation
+fraîche** ; il **ne peut pas** mettre à jour une installation de l'ancienne clé. La continuité pour
+l'ancien APK publié exige la clé d'origine, non fournie.
+
+## Stage 92 — APK Stage 91 vérifié et mis à disposition pour test téléphone
+
+**Objet.** Vérifier l'APK `app/build/outputs/apk/release/app-release.apk` et en produire une copie
+téléchargeable **sans publier ni déployer**, sans toucher à l'identité de signature ni au
+`versionCode`.
+
+**Confirmation demandée (section Stage 90 intégrée ?).** Oui. `dexdump` sur le `classes.dex` de
+l'APK montre la chaîne de champ `", portals="` (nouveau champ `ProviderAudit.portals`) et les
+littéraux d'UI `"portal"` / `"portals"` (le libellé étant construit par concaténation :
+`"${audit.portals.size} employer " + if (size==1) "portal" else "portals"`). Ces symboles sont
+absents de l'APK pré-Stage-90 (`/workspace/download/AI-Global-Job-Finder-release-signed.apk`) et le
+CRC du dex diffère (`ea93a0c8`/4 712 652 o contre `30df68c5`/4 710 908 o). **La section portails est
+bien compilée dans l'APK.**
+
+**Fait vérifié — identité de l'APK.**
+- Paquet `com.aiglobal.jobfinder`, versionCode **1**, versionName **1.0.0**, minSdk 26, targetSdk 34.
+- Signature `apksigner verify` : **OK**, schémas **v2 + v3**, DN `CN=AI Global Job Finder,
+  OU=Personal, O=AI Global Job Finder, L=Antananarivo, C=MG`, empreinte cert **SHA-256
+  `f2997d1b…4efe3`** (nouvelle clé).
+- **SHA-256 de l'APK** : `c259fd9f1899a2df8c2abd9965a29a0a2d16bc4ff0a03841607f9ac3de081b5f` (8 580 273 o).
+
+**Copie téléchargeable (créée, non publiée).** Répertoire **dédié APK seul** :
+`/workspace/apk-download/AI-Global-Job-Finder-release.apk` (octet-pour-octet identique, même
+SHA-256). Servi en lecture sur le port public **work-1** :
+`https://work-1-fxikkagwuedqnwdg.prod-runtime.all-hands.dev/AI-Global-Job-Finder-release.apk`
+(téléchargement revérifié : 8 580 273 o, même SHA-256). Le répertoire ne contient **que** l'APK :
+ni keystore, ni mot de passe, ni ZIP de sauvegarde (vérifié : 404 sur work-1).
+
+**Alerte sécurité (pré-existante, hors périmètre).** Le serveur public **work-2**
+(`/workspace/download/serve-apk.sh`) sert `/workspace/download/`, qui contient le **ZIP de
+sauvegarde du keystore** et le plan de sauvegarde : ils y répondent **HTTP 200** (publiquement
+téléchargeables). Le ZIP est chiffré en AES, mais c'est une exposition inutile. **Non corrigé ici**
+(le serveur work-2 est l'artefact de publication hors périmètre). Recommandation : déplacer le
+keystore, le ZIP et le plan **hors** de `/workspace/download/`, ou restreindre ce serveur aux
+`*.apk`.
+
+**Non publié (fait).** Aucune copie vers `web/public/download/` (empreinte toujours
+`8440b7c3…b6df`), aucun commit/push/déploiement, `versionCode` inchangé, HEAD toujours `dfad6ae`,
+83 fichiers modifiés préservés.
+
+**Limite honnête.** L'URL work-1 est éphémère (liée à la durée de vie du workspace). Pour un test
+téléphone immédiat, elle suffit ; pour une distribution durable, il faut une autorisation séparée
+(copie vers `web/public/download/` + redéploiement).
+
+## Stage 93 — sécurisation des artefacts de signature + audit « Meilleures offres »
+
+**Priorité 1 — exposition publique (corrigée).** Deux serveurs publics servaient des dossiers :
+work-1 (port 12000) → `/workspace/apk-download/`, work-2 (port 12001) → `/workspace/download/`.
+Sondages HTTP avant correction : work-2 exposait **HTTP 200** le **ZIP de sauvegarde du keystore**
+(`AI_Global_Job_Finder_Keystore_backup.zip`) et le **plan de sauvegarde**
+(`AI_Global_Job_Finder_Signing_Key_Backup_Plan.txt`) ; work-1 les renvoyait en 404. Aucun `.jks`
+n'était servi (404 partout). Les fichiers sensibles ont été **déplacés** (jamais supprimés) vers
+`/workspace/secure-signing/` (perms 700, fichiers 600), empreintes inchangées
+(ZIP `aced8df1…9e35`, plan `daa70d2b…5192`). Après correction : work-2 renvoie **404** sur le ZIP
+et le plan, et **200** sur les trois APK ; work-1 renvoie **200** sur l'APK release et 404 sur les
+secrets. Un **garde** a été ajouté à `/workspace/download/serve-apk.sh` : il **refuse de démarrer**
+si un `*.jks`/`*.keystore`/`*keystore*`/`*signing*`/`*password*` traîne dans le dossier servi.
+Le keystore lui-même n'a jamais été dans un dossier servi.
+
+**Priorité 2 — audit « Best Offers » (lecture seule).** La section **existe déjà** et est complète :
+`ui/screens/bestoffers/BestOffersScreen.kt` (774 l.), `data/jobs/offer/OfferMatchEngine.kt`,
+`OfferMatchRanking.kt`, `data/model/OfferMatch.kt`, `viewmodel/BestOffersViewModel.kt`, route
+`SecondaryRoutes.BEST_OFFERS`, entrée depuis l'accueil (« Mes meilleures offres »). Couverture des
+exigences : score CV pondéré 6 dimensions (CV 35, éligibilité Madagascar 25, expérience 15, secteur
+10, fraîcheur 10, avantages expat 5) ; explications par dimension + `matchedSkills`/`missingSkills`/
+`qualificationGaps` ; `hardStops` (local-only, expiré, date dépassée) qui plafonnent le score ;
+filtres « Open from Madagascar » et « Confirmed benefits » ; tri « Best match » / « Most recent » ;
+lien de candidature d'origine (`ApplyLinkSheet`, `OpenInNew`) ; incertitude explicite (date inconnue,
+éligibilité `UNCLEAR`, « cannot tell ») ; dédoublonnage par URL canonique. Lexique CV
+(`CvLexicon.kt`) couvre déjà **Mechanical seals** et **Rotating equipment** (pompes, pompes,
+compresseurs, roulement, accouplement). **Présent dans l'APK release** (littéraux `Best match`,
+`Most recent`, `Open from Madagascar`, `Confirmed benefits`, `Eligibility from Madagascar` trouvés
+dans le dex). Tests : `Stage80BestOffersTest`, `Stage80ScreenTest`, `Stage82BestOffersCorrectionsTest`.
+
+**Conclusion P2.** Pas de fonctionnalité en double à créer : la section demandée est **déjà
+implémentée et intégrée**. Seule amélioration recommandée (non réalisée) : étendre `SkillLexicon`
+(celui de `data/jobs/engine/`) avec `mechanical seal`/`pump`/`rotating equipment` comme synonymes
+de « Mechanical repair », pour aligner l'analyse des offres sur celle des CV.
+
+**Non modifié.** Aucun fichier du dépôt modifié ce stage (HEAD `dfad6ae`, 83 fichiers préservés) ;
+`web/`/parité intacts ; aucun APK construit, publié ou déployé ; identité de signature inchangée.
+
+## Stage 94 — correspondance mécanique dans « Mes meilleures offres »
+
+**Objectif.** Améliorer la détection des offres compatibles avec le CV (maintenance, pompes, joints
+mécaniques) sans créer de seconde section. Modification limitée au lexique des annonces.
+
+**Audit (lecture seule) du pipeline.** `SkillLexicon` (côté annonce) alimente `MatchingEngine.assess`
+(`matchedSkills = detect(offre) ∩ canonicalize(profil.skills)`) et `OfferMatchEngine` (dimension
+CV 35 pts). `canonicalize` n'acceptait aucune variante « pump/seal/rotating » : une offre « pump »
+ne pouvait donc jamais rejoindre la compétence CV « Rotating equipment » (nom canonique émis par
+`CvLexicon`), ce qui créait de faux « missingSkills » et **baissait** le score. Le changement était
+donc nécessaire et justifié.
+
+**Changement (`data/jobs/engine/SkillLexicon.kt`, +33/−5).** Ajout de variantes EN/FR, appariées
+aux noms canoniques **déjà émis par `CvLexicon`** pour que l'offre et le CV se rencontrent :
+
+- `Preventive maintenance` ← `maintenance preventive`, `maintenance préventive`
+- `Hydraulics` ← `hydraulique`, `pneumatique`
+- `Electrical diagnostics` ← `diagnostic electrique`, `diagnostic électrique`
+- `Mechanical repair` ← `component repair`, `component overhaul`, `equipment repair`,
+  `maintenance mecanique/mécanique`, `reparation/réparation mecanique/mécanique`
+- `Mechanical seals` (nouveau) ← `mechanical seal(s)`, `gland packing`, `seal replacement`,
+  `joint/joints mecanique(s)` / `mécanique(s)`
+- `Rotating equipment` ← `rotating equipment`, `rotating machinery`, `rotating machines`, `rotor`,
+  `pump(s)`, `industrial pump(s)`, `centrifugal pump(s)`, `pompe(s)`, `pompe centrifuge`,
+  `pompe industrielle`, `equipement(s) rotatif(s)` / `équipement(s)`
+- `Welding` ← `soudure`, `soudeur`
+
+**Choix d'alignement.** Les pompes sont volontairement fondues dans `Rotating equipment` (et non
+un « Pumps » séparé) : `CvLexicon` n'émet pas de compétence « Pumps » (les pompes y sont des alias de
+`Rotating equipment`), donc un « Pumps » côté offre n'aurait jamais intersecté le CV.
+
+**Faux positifs.** Appariement mot-entier conservé (`containsPhrase`) : « pumpkin » ne déclenche pas
+« pump », « seal the envelope » ne déclenche pas « Mechanical seals », une annonce marketing ne
+déclenche aucune compétence mécanique.
+
+**Classement / éligibilité / explications / liens / avantages : inchangés.** Aucun moteur de
+classement, d'éligibilité Madagascar, d'explications, de liens ou de preuves d'avantages expat n'a
+été touché — seul le vocabulaire de détection l'a été.
+
+**Vérifications réelles exécutées.**
+- `:app:testDebugUnitTest` → **901 tests, 0 échec, 0 erreur, 5 ignorés** (892 avant + 9 nouveaux).
+- Nouveau `Stage94MechanicalMatchTest` (9 tests) : détection EN/FR, absence de faux positifs,
+  rencontre offre↔CV sans faux « missing », `canonicalize`.
+- Ciblés : `Stage50OfferQualityTest` 21, `Stage3PipelineTest` 18, `Stage70RelevanceTest` 7,
+  `Stage80BestOffersTest` 26 — 0 échec.
+- `:app:lintDebug` → **0 erreur, 54 avertissements** (inchangé).
+- `:app:assembleDebug` → **OK**. APK : `app/build/outputs/apk/debug/app-debug.apk`
+  (30 830 206 o, sha256 `8934ff28…3978`), paquet `com.aiglobal.jobfinder.debug`, v1.0.0-debug,
+  signé **clé debug Android** (`CN=Android Debug`, empreinte `7c80cce2…61c5`) — **identité de
+  signature release non touchée**.
+- Contenu APK : littéraux « Best match », « Most recent », « Open from Madagascar »,
+  « Confirmed benefits », « Mes meilleures offres », « Eligibility from Madagascar » présents ;
+  termes Stage 94 présents, y compris accentués (`équipement rotatif`, `maintenance préventive`,
+  `réparation mécanique`, `joints mécaniques`).
+- Section : **une seule** `BestOffersScreen` + un seul `composable(SecondaryRoutes.BEST_OFFERS)`
+  (pas de doublon), accessible depuis l'accueil via « Mes meilleures offres ».
+
+**Préservation.** `web/src/core/parity/kotlin-parity.json` est réécrit par
+`Stage58GoldenParityExportTest` pendant la suite complète ; il a été **restauré octet pour octet**
+(`cmp` identique, sha256 `b90f7591…421b`) après le run, donc toujours ` M` comme avant le stage.
+Aucun autre fichier `web/` modifié ce stage. HEAD `dfad6ae` inchangé ; fichiers préexistants
+préservés ; clé de signature inchangée ; aucun commit/push/déploiement.
+
+## Stage 95 — APK Release signé intégrant Stage 94
+
+**Signature.** Configuration Gradle inchangée (lit `RELEASE_KEYSTORE_PATH`,
+`RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` depuis l'environnement).
+Clé Release existante `aigjf-release` (`/workspace/AndroidSigning/AI-Global-Job-Finder/aigjf-release.jks`,
+sha256 `06d2087a…7285`, inchangée). Certificat vérifié **avant** build :
+`F2:99:7D:1B:61:7D:59:90:26:FF:4E:48:CA:5D:71:E4:2C:3A:4D:24:66:89:09:0F:75:D0:18:B0:8A:C4:EF:E3`
+= attendu. Aucune clé créée/régénérée.
+
+**Tests (exécution réelle, `--no-build-cache`).** `:app:testDebugUnitTest` → **901 tests, 0 échec,
+0 erreur, 5 ignorés** ; `Stage94MechanicalMatchTest` → 9/9. Fichier de parité
+`web/src/core/parity/kotlin-parity.json` réécrit par `Stage58GoldenParityExportTest` puis **restauré
+octet pour octet** (`cmp` identique, sha256 `b90f7591…421b`).
+
+**Build.** `:app:assembleRelease` → **BUILD SUCCESSFUL** (2 min 1 s). APK :
+`app/build/outputs/apk/release/app-release.apk`.
+
+**Vérifications APK (réelles).**
+- Paquet `com.aiglobal.jobfinder`, versionName `1.0.0`, versionCode `1`, minSdk 26, targetSdk 34.
+- Signature v2+v3 vraies (v1 désactivée par config) ; certificat SHA-256
+  `f2997d1b617d599026ff4e48ca5d71e42c3a4d246689090f75d018b08ac4efe3` = empreinte attendue.
+- Taille exacte **8 580 273 octets** ; SHA-256 fichier
+  `a5d2dd317560446d0b60c8d09fcf9d13fd7ebcff7efdd3e44e80a982e7d57ac2`.
+- DEX : `Mes meilleures offres` 1, `Mechanical seals` 1, `équipement rotatif` 1,
+  `maintenance préventive` 1 (plus `Best match`, `Most recent`, `Open from Madagascar`,
+  `Confirmed benefits`, `centrifugal pump`, `gland packing`, `pompe centrifuge`).
+
+**Publication.** Aucune : APK laissé à l'emplacement Gradle, **non copié** dans un dossier public
+(`/workspace/apk-download/` inchangé, APK du Stage 92 toujours en place), aucun déploiement, aucun
+commit/push. HEAD `dfad6ae` inchangé ; 85 fichiers préservés ; clé de signature inchangée.
+
+## Stage 96 — APK Release vérifié rendu téléchargeable
+
+**Fichier servi.** `/workspace/project/app/build/outputs/apk/release/app-release.apk`
+(sha256 `a5d2dd31…7ac2`, 8 580 273 o) copié vers le répertoire déjà servi par work-1 (port 12000) :
+`/workspace/apk-download/AI-Global-Job-Finder-release.apk` (chmod 644). Ancien fichier sauvegardé
+dans `/workspace/served-backups/apk-download-20261022-181143/`. Aucun fichier web/PWA/parité/Netlify
+touché ; aucun commit/push/déploiement.
+
+**Lien (temporaire, session en cours).**
+`https://work-1-fxikkagwuedqnwdg.prod-runtime.all-hands.dev/AI-Global-Job-Finder-release.apk`
+
+**Vérifications HTTP réelles.** `HEAD` public → **200**, `Content-Type: application/octet-stream`,
+`Content-Length: 8580273`. `GET` public complet → **200**, `size_download=8580273`, sha256
+`a5d2dd31…7ac2` = attendu, **octet pour octet identique** à l'APK vérifié (`cmp`).
+
+**Confidentialité.** `aigjf-release.jks`, `AI_Global_Job_Finder_Keystore_backup.zip`,
+`signing-passwords.txt`, `../AndroidSigning/…/aigjf-release.jks` → tous **404**. Aucun keystore, ZIP
+de sauvegarde ou fichier de mots de passe servi (le seul autre 200 est `serve.log`, un journal
+d'accès HTTP sans identifiants, présent avant ce stage). Aucun secret affiché.
+
+**Temporalité.** Lien valable uniquement pendant la session/serveur en cours ; il cesse de répondre
+après arrêt du serveur ou nettoyage d'inactivité du runtime.
+
+
+
+
+
+
+## Stage 98 — AI output language (French default) + assistant panel
+
+- `data/model/NvidiaAi.kt` — `AiLanguage` enum (`FRENCH`, `ENGLISH`) carries both a UI `label`
+  and an `instruction` sentence folded into the system prompt. `fromKey` resolves a stored
+  string and **falls back to `FRENCH`** for a missing or unknown key, because the target user
+  is a Madagascar candidate who reads French. `NvidiaConfig.language` defaults to `FRENCH`.
+- `UserPreferencesRepository` — `nvidia_language` key, `nvidiaLanguage: Flow<AiLanguage>` and
+  `setNvidiaLanguage`; `nvidiaConfig` maps it in. `AppViewModel.saveNvidiaLanguage` is the setter.
+- `NvidiaJobAssistant.promptFor(task, context, language)` puts `language.instruction` in the
+  system prompt, so the language never changes what facts are sent — only how the answer is
+  written. `GroundingContext` also gained `scamRisk`/`availability`/`deadline` so the scam-review
+  and availability prompts build on the app's own verdicts instead of guessing.
+- `NvidiaJobAssistant.localFallback(task, job, profile)` is the on-device answer for **every**
+  task, so a failed or unconfigured remote call never leaves a blank panel. `runAssistant`
+  in `AiViewModel` now uses it (it previously only fell back for `EXPLAIN_MATCH`).
+- `AiViewModel`/`AiUiState` expose `languageLabel` and the best posting (`bestJobTitle/Company/
+  Country`) so the panel can name exactly what will be read.
+- `AiScreen.AssistantPanel` — shows the target posting, the draft language, and **every**
+  `AssistTask` as a tappable row with its own icon and blurb (`taskIcon`). Tasks stay listed
+  while one runs. `AiScreen` imports the icons it now needs (`WorkOutline`, `Star`, `Edit`,
+  `Security`, `TrendingUp`, `RecordVoiceOver`, `HelpOutline`, `ArrowForward`) plus
+  `CircularProgressIndicator` and `TextOverflow`.
+- `ProfileScreen.AiAssistantCard` gained `onSelectLanguage` and a `Draft language` chip row.
+- `BestOffersScreen` shows `OfferAvailabilityBadge` next to eligibility/freshness in a `FlowRow`
+  (wraps instead of clipping on a narrow screen) — but only when the availability read is
+  settled, since "unconfirmed" adds no signal to the card.
+- Tests: `Stage98AiLanguageTest` (French default/fallback, language reaches the prompt, grounding
+  and no-PII survive a language switch, every task has a label/blurb and a fallback);
+  `Stage98AiAssistantScreenTest` (panel names the posting + language, every task reachable and
+  tappable on `w411dp-h891dp`). `ScreenshotTest.aiAssistantReady` captures the full task list.
+

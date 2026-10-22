@@ -44,6 +44,11 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class Stage41InternationalFitTest {
 
+    private companion object {
+        const val DAY = 86_400_000L
+        const val NOW = 1_760_000_000_000L
+    }
+
     private val engine = InternationalFitEngine()
 
     private fun profile(
@@ -86,7 +91,7 @@ class Stage41InternationalFitTest {
         eligibility = eligibility,
         visaSupport = visaSupport,
         scamRisk = scamRisk,
-        postedAtEpochMillis = 1_000L,
+        postedAtEpochMillis = NOW - 5 * DAY,
         source = "Workday",
         sourceUrl = "https://example.com/j1",
         workMode = WorkMode.ONSITE,
@@ -299,7 +304,7 @@ class Stage41InternationalFitTest {
     fun strongFitFilterKeepsOnlyActionableBands() {
         val strong = job(eligibility = MadagascarEligibility.ELIGIBLE).copy(id = "strong")
         val weak = job(eligibility = MadagascarEligibility.RESTRICTED).copy(id = "weak")
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(strong, weak),
             strongInternationalFitOnly = true,
             internationalFit = mapOf("strong" to fit(78), "weak" to fit(30)),
@@ -313,7 +318,7 @@ class Stage41InternationalFitTest {
     fun internationalFitSortOrdersByScoreThenEligibility() {
         val high = job(eligibility = MadagascarEligibility.RESTRICTED).copy(id = "high")
         val low = job(eligibility = MadagascarEligibility.ELIGIBLE).copy(id = "low")
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(low, high),
             sort = JobSort.INTERNATIONAL_FIT,
             internationalFit = mapOf("high" to fit(90), "low" to fit(50)),
@@ -325,7 +330,7 @@ class Stage41InternationalFitTest {
     @Test
     fun savingIsUnaffectedByTheNewFitState() {
         val saved = job().copy(id = "saved")
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(saved),
             internationalFit = mapOf("saved" to fit(60)),
             savedJobIds = setOf("saved"),

@@ -28,25 +28,34 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.AssignmentTurnedIn
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.AssignmentTurnedIn
-import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.WorkOutline
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -64,6 +73,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.aiglobal.jobfinder.data.ai.AssistTask
 import com.aiglobal.jobfinder.data.model.AiCapability
@@ -90,7 +100,15 @@ data class AssistantState(
     val consent: Boolean = false,
     val ready: Boolean = false,
     val modelLabel: String = "",
+    /** The language drafts are written in, shown next to the model name. */
+    val languageLabel: String = "",
+    /** The posting the assistant acts on, so the user knows what it will read. */
+    val bestJobTitle: String = "",
+    val bestJobCompany: String = "",
+    val bestJobCountry: String = "",
     val running: Boolean = false,
+    /** The label of the task currently running, so exactly that row is marked. */
+    val runningTask: String = "",
     val output: String = "",
     val outputTitle: String = "",
     val outputIsRemote: Boolean = false,
@@ -499,7 +517,8 @@ private fun AssistantPanel(
                     text = when {
                         !state.configured -> "Optional — add your NVIDIA API key to switch it on"
                         !state.consent -> "Key saved — turn it on to allow sending your CV facts"
-                        else -> "Ready · ${state.modelLabel.ifBlank { "model selected" }}"
+                        else -> "Ready · ${state.modelLabel.ifBlank { "model selected" }}" +
+                            if (state.languageLabel.isNotBlank()) " · ${state.languageLabel}" else ""
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -511,6 +530,47 @@ private fun AssistantPanel(
                     .copy(alpha = 0.14f),
                 contentColor = if (state.ready) extendedColors.success else MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        // Show exactly which posting the assistant will read, so "Explain my match" is never a
+        // mystery about what gets sent.
+        if (state.ready && state.bestJobTitle.isNotBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, extendedColors.cardStroke, RoundedCornerShape(14.dp))
+                    .padding(spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.WorkOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = state.bestJobTitle,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = listOf(state.bestJobCompany, state.bestJobCountry)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
 
         Text(
@@ -529,20 +589,19 @@ private fun AssistantPanel(
                 leadingIcon = Icons.Filled.Settings,
             )
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(spacing.sm)) {
-                AssistantTaskButton(
-                    label = "Explain match",
-                    task = AssistTask.EXPLAIN_MATCH,
+            Text(
+                text = "What should I write?",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // All tasks stay visible and tappable even while one runs; the running one is
+            // marked, and the rest stay usable so the user is never locked out mid-draft.
+            AssistTask.entries.forEach { task ->
+                AssistantTaskRow(
+                    task = task,
                     enabled = !state.running,
+                    running = state.running && state.runningTask == task.label,
                     onRun = onRun,
-                    modifier = Modifier.weight(1f),
-                )
-                AssistantTaskButton(
-                    label = "Cover letter",
-                    task = AssistTask.COVER_LETTER,
-                    enabled = !state.running,
-                    onRun = onRun,
-                    modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -623,16 +682,17 @@ private fun AssistantPanel(
 }
 
 @Composable
-private fun AssistantTaskButton(
-    label: String,
+private fun AssistantTaskRow(
     task: AssistTask,
     enabled: Boolean,
+    running: Boolean,
     onRun: (AssistTask) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    Box(
-        modifier = modifier
+    val accent = MaterialTheme.colorScheme.secondary
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(
@@ -641,16 +701,66 @@ private fun AssistantTaskButton(
                 enabled = enabled,
                 onClick = { onRun(task) },
             )
-            .padding(vertical = 12.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accent.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = taskIcon(task),
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(17.dp),
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = task.label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = task.blurb,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        if (running) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = accent,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
     }
+}
+
+/** One icon per task, so the list reads at a glance rather than as a wall of text. */
+private fun taskIcon(task: AssistTask): ImageVector = when (task) {
+    AssistTask.BEST_OFFER -> Icons.Filled.Star
+    AssistTask.EXPLAIN_MATCH -> Icons.AutoMirrored.Filled.HelpOutline
+    AssistTask.COVER_LETTER -> Icons.Filled.Description
+    AssistTask.CV_SUMMARY -> Icons.Filled.Edit
+    AssistTask.INTERVIEW_PREP -> Icons.Filled.RecordVoiceOver
+    AssistTask.SCAM_REVIEW -> Icons.Filled.Security
+    AssistTask.GAP_PLAN -> Icons.Filled.TrendingUp
 }
 
 @Composable

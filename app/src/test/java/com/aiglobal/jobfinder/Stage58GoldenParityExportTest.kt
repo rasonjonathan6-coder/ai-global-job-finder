@@ -21,6 +21,7 @@ import com.aiglobal.jobfinder.data.jobs.engine.MatchingEngine
 import com.aiglobal.jobfinder.data.jobs.engine.OfferVerificationEngine
 import com.aiglobal.jobfinder.data.jobs.engine.RecordValidationEngine
 import com.aiglobal.jobfinder.data.jobs.engine.SkillLexicon
+import com.aiglobal.jobfinder.data.jobs.freshness.FreshnessWindow
 import com.aiglobal.jobfinder.data.jobs.freshness.JobFreshnessEngine
 import com.aiglobal.jobfinder.data.jobs.provider.AdzunaProvider
 import com.aiglobal.jobfinder.data.jobs.provider.ArbeitnowProvider
@@ -337,6 +338,8 @@ class Stage58GoldenParityExportTest {
             "interview" to scenarios.map { interviewJson(it, profile) },
             "aiCapabilities" to aiCapabilitiesJson(),
             "freshness" to freshnessJson(),
+            "freshnessWindow" to freshnessWindowJson(),
+            "availabilityFixture" to availabilityFixtureJson(),
             "expatOpportunity" to scenarios.map { expatOpportunityJson(it, profile, preferences) },
             "queryExpansion" to queryExpansionJson(),
             "searchStrategy" to searchStrategyJson(),
@@ -546,6 +549,14 @@ class Stage58GoldenParityExportTest {
                 "job" to jobJson(job),
                 "verification" to verificationJson(
                     OfferVerificationEngine().assess(job, fixedNow),
+                ),
+                // Étape B: the single-question availability read, pinned to the same fixed
+                // clock as the verification panel so the web mirror can be checked against it.
+                // Only the network-free indicators are used here (source flag, deadline), so
+                // the golden output is deterministic and needs no request.
+                "availability" to availabilityJson(
+                    com.aiglobal.jobfinder.data.jobs.availability.OfferAvailabilityEngine()
+                        .assess(job, fixedNow),
                 ),
             ),
         )
@@ -965,6 +976,37 @@ class Stage58GoldenParityExportTest {
                     "detail" to assessment.detail,
                 ),
                 "custom30" to custom.assess(jobForCase, fixedNow).freshness.name,
+            )
+        }
+    }
+
+    /**
+     * Stage A — the "recent and still open" date window. Pins the Kotlin [FreshnessWindow]
+     * predicate against a fixed clock so the TypeScript mirror must agree, and proves the rule
+     * that matters most: an undated, zero or future date is never counted as recent by any
+     * window, while a real date is included up to and including the window's last day.
+     */
+    private fun freshnessWindowJson(): List<Map<String, Any?>> {
+        fun at(daysAgo: Long): Long = fixedNow - daysAgo * 86_400_000L
+        val cases = listOf(
+            "null" to null,
+            "zero" to 0L,
+            "future" to (fixedNow + 3 * 86_400_000L),
+            "today" to at(0),
+            "day-7" to at(7),
+            "day-8" to at(8),
+            "day-14" to at(14),
+            "day-15" to at(15),
+            "day-30" to at(30),
+            "day-31" to at(31),
+        )
+        return cases.map { (id, posted) ->
+            linkedMapOf(
+                "id" to id,
+                "postedAtEpochMillis" to posted,
+                "sevenDays" to FreshnessWindow.SEVEN_DAYS.includes(posted, fixedNow),
+                "fourteenDays" to FreshnessWindow.FOURTEEN_DAYS.includes(posted, fixedNow),
+                "thirtyDays" to FreshnessWindow.THIRTY_DAYS.includes(posted, fixedNow),
             )
         }
     }
@@ -2139,6 +2181,86 @@ class Stage58GoldenParityExportTest {
         "openToApplicants" to job.openToApplicants,
         "isSaved" to job.isSaved,
         "isNew" to job.isNew,
+    )
+
+    /**
+     * Étape B: golden fixtures for the network-free availability read, one row per rule the
+     * engine must obey. The web mirror replays the same inputs and must reach the same verdict,
+     * decisive signal and evidence, so the two platforms can never drift on what "open",
+     * "expired" and "unconfirmed" mean.
+     */
+    private fun availabilityFixtureJson(): List<Map<String, Any?>> {
+        fun baseJob(open: Boolean?, expires: Long?): Job = Job(
+            id = "availability-fixture",
+            title = "Maintenance Technician",
+            company = "Northline Industrial",
+            companyAccent = 0xFF1E4FD8,
+            country = "Canada",
+            countryFlag = "🌍",
+            city = "Calgary",
+            salaryMin = 0,
+            salaryMax = 0,
+            currencyCode = "CAD",
+            salaryPeriod = com.aiglobal.jobfinder.data.model.SalaryPeriod.YEAR,
+            matchScore = 80,
+            eligibility = MadagascarEligibility.VISA_SPONSORED,
+            visaSupport = com.aiglobal.jobfinder.data.model.VisaSupport.FULL_SPONSORSHIP,
+            scamRisk = ScamRisk.LOW,
+            postedAtEpochMillis = fixedNow - 86_400_000L,
+            expiresAtEpochMillis = expires,
+            retrievedAtEpochMillis = fixedNow,
+            source = "Canada Job Bank",
+            sourceUrl = "https://www.jobbank.gc.ca/job/1",
+            workMode = WorkMode.ONSITE,
+            employmentType = EmploymentType.FULL_TIME,
+            experienceYears = 3,
+            matchedSkills = emptyList(),
+            missingSkills = emptyList(),
+            languages = emptyList(),
+            summary = "",
+            responsibilities = emptyList(),
+            benefits = emptyList(),
+            aiInsight = "",
+            openToApplicants = open,
+        )
+        val engine = com.aiglobal.jobfinder.data.jobs.availability.OfferAvailabilityEngine()
+        val cases = listOf(
+            "flag-open" to (true to null),
+            "flag-closed" to (false to null),
+            "deadline-passed" to (null to (fixedNow - 2 * 86_400_000L)),
+            "deadline-future" to (null to (fixedNow + 5 * 86_400_000L)),
+            "silent" to (null to null),
+            "flag-open-deadline-passed" to (true to (fixedNow - 2 * 86_400_000L)),
+        )
+        return cases.map { (id, spec) ->
+            val (open, expires) = spec
+            linkedMapOf(
+                "id" to id,
+                "openToApplicants" to open,
+                "expiresAtEpochMillis" to expires,
+                "output" to availabilityJson(engine.assess(baseJob(open, expires), fixedNow)),
+            )
+        }
+    }
+
+    /**
+     * Étape B: the availability read, serialised so the web mirror can be pinned to the
+     * Kotlin output. Every field the UI could show is included, so a divergence in the
+     * verdict, the decisive signal, the checked-at stamp or any reason is caught by parity.
+     */
+    private fun availabilityJson(
+        availability: com.aiglobal.jobfinder.data.model.AvailabilityResult,
+    ): Map<String, Any?> = linkedMapOf(
+        "status" to availability.status.name,
+        "decisiveSignal" to availability.decisiveSignal.name,
+        "lastCheckedAtEpochMillis" to availability.lastCheckedAtEpochMillis,
+        "evidence" to availability.evidence.map {
+            linkedMapOf(
+                "type" to it.type.name,
+                "detail" to it.detail,
+                "sourceUrl" to it.sourceUrl,
+            )
+        },
     )
 
     private fun verificationJson(verification: OfferVerification): Map<String, Any?> = linkedMapOf(

@@ -68,6 +68,29 @@ object NvidiaModels {
 }
 
 /**
+ * The language the assistant writes its drafts in. The candidate is applying from
+ * Madagascar and reads French natively, so the default is French; English is one tap away
+ * for a posting written in English or a model that drafts better in English.
+ */
+enum class AiLanguage(val label: String, val instruction: String) {
+    FRENCH(
+        label = "Français",
+        instruction = "Write your answer entirely in French, in natural professional French. " +
+            "Keep the employer's own job title and proper nouns unchanged.",
+    ),
+    ENGLISH(
+        label = "English",
+        instruction = "Write your answer entirely in English, in clear professional English.",
+    );
+
+    companion object {
+        /** Resolves a stored key, defaulting to French when it is missing or unknown. */
+        fun fromKey(key: String?): AiLanguage =
+            entries.firstOrNull { it.name == key } ?: FRENCH
+    }
+}
+
+/**
  * The user's NVIDIA API configuration. The key is stored encrypted; this value only ever
  * carries it in memory for the moment a request is made.
  */
@@ -77,6 +100,8 @@ data class NvidiaConfig(
     val modelId: String = NvidiaModels.defaultModelId,
     /** Explicit, revocable consent to send CV/profile text to NVIDIA. Defaults to off. */
     val consentGranted: Boolean = false,
+    /** The language every draft is written in. Defaults to French for a Madagascar user. */
+    val language: AiLanguage = AiLanguage.FRENCH,
 ) {
     val isConfigured: Boolean get() = apiKey.isNotBlank()
 

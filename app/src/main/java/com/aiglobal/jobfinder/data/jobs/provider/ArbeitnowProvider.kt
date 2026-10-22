@@ -1,5 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
+import kotlin.coroutines.cancellation.CancellationException
+
 /**
  * Arbeitnow — a free, public European job board API. Its terms ask for attribution,
  * which the app provides through the source badge and the "official posting" link.
@@ -41,6 +43,7 @@ class ArbeitnowProvider(
                 // A page that fails after an earlier one succeeded is not a source failure: the
                 // postings already read are real, so stop widening and return them rather than
                 // discarding a good sample because a later page was slow or rate-limited.
+                if (t is CancellationException) throw t
                 lastError = t
                 break
             }

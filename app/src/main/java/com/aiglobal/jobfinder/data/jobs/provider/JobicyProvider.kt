@@ -1,6 +1,7 @@
 package com.aiglobal.jobfinder.data.jobs.provider
 
 import com.aiglobal.jobfinder.data.model.SalaryPeriod
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Jobicy — a remote-jobs API with structured salary fields and an explicit geo field,
@@ -32,6 +33,7 @@ class JobicyProvider(
         val json = try {
             feed.objectAt(url)
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             throw JobProviderException(
                 providerId = id,
                 message = "Jobicy did not respond",

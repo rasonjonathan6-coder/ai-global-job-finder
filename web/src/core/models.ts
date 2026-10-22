@@ -633,6 +633,123 @@ export function verificationIsActionable(v: OfferVerification): boolean {
   return !verificationIsNegative(v.activity) && !verificationIsNegative(v.link);
 }
 
+// --------------------------------------------------------------------------- availability
+
+/**
+ * Whether a posting can still be applied to, stated only as strongly as the evidence allows.
+ * Mirrors the Kotlin `AvailabilityStatus`. The three outcomes are deliberately few, because
+ * the whole point of this axis is that it can be trusted at a glance:
+ *  - `OPEN` — a reliable indicator positively says the vacancy is still taking applicants.
+ *  - `EXPIRED` — a reliable indicator positively says it is closed.
+ *  - `UNCONFIRMED` — the app could not settle it: a network error, a timeout, a CORS block, a
+ *    missing field, or a source that simply does not say. This is the honest default and is
+ *    never shown as a rejection.
+ *
+ * Two rules the rest of the code must never break:
+ *  1. A plain HTTP 200 is not proof of openness; only a positive marker may promote `OPEN`.
+ *  2. A network error or timeout never means `EXPIRED`.
+ */
+export enum AvailabilityStatus {
+  OPEN = "OPEN",
+  EXPIRED = "EXPIRED",
+  UNCONFIRMED = "UNCONFIRMED",
+}
+
+/** Which reliable indicator produced a verdict. Mirrors the Kotlin `AvailabilitySignalType`. */
+export enum AvailabilitySignalType {
+  SOURCE_FLAG = "SOURCE_FLAG",
+  EMPLOYER_DEADLINE = "EMPLOYER_DEADLINE",
+  LINK_PROBE = "LINK_PROBE",
+  NONE = "NONE",
+}
+
+/** One reason behind an availability result, with the URL it can be checked against. */
+export interface AvailabilityEvidence {
+  type: AvailabilitySignalType;
+  detail: string;
+  sourceUrl: string;
+}
+
+/** The availability read for one posting: the verdict, its reasons, and when it was checked. */
+export interface AvailabilityResult {
+  status: AvailabilityStatus;
+  evidence: AvailabilityEvidence[];
+  lastCheckedAtEpochMillis: number | null;
+}
+
+/** True when a verdict is a settled, positive confirmation that the offer is closed. */
+export function availabilityIsExpired(a: AvailabilityResult): boolean {
+  return a.status === AvailabilityStatus.EXPIRED;
+}
+
+/** True when a verdict is a settled, positive confirmation that the offer is open. */
+export function availabilityIsOpen(a: AvailabilityResult): boolean {
+  return a.status === AvailabilityStatus.OPEN;
+}
+
+/** True when the app could not settle it; shown as neutral, never as a rejection. */
+export function availabilityIsUnconfirmed(a: AvailabilityResult): boolean {
+  return a.status === AvailabilityStatus.UNCONFIRMED;
+}
+
+/** The first signal that decided the verdict, or `NONE` when there is none. */
+export function availabilityDecisiveSignal(a: AvailabilityResult): AvailabilitySignalType {
+  return a.evidence[0]?.type ?? AvailabilitySignalType.NONE;
+}
+
+/** The honest empty read: nothing was checked, so nothing is claimed. */
+export const UNKNOWN_AVAILABILITY: AvailabilityResult = {
+  status: AvailabilityStatus.UNCONFIRMED,
+  evidence: [],
+  lastCheckedAtEpochMillis: null,
+};
+
+/** A 24-hour store of settled availability verdicts, mirroring the Kotlin `AvailabilityCache`. */
+export class AvailabilityCache {
+  private readonly entries = new Map<string, AvailabilityResult>();
+  private readonly ttlMillis: number;
+  private readonly clock: () => number;
+
+  constructor(options?: { ttlMillis?: number; clock?: () => number }) {
+    this.ttlMillis = options?.ttlMillis ?? AvailabilityCache.DEFAULT_TTL_MILLIS;
+    this.clock = options?.clock ?? Date.now;
+  }
+
+  /** The cached result for `jobId` when it is a settled verdict younger than the TTL, else null. */
+  get(jobId: string): AvailabilityResult | null {
+    const entry = this.entries.get(jobId);
+    if (!entry) return null;
+    if (availabilityIsUnconfirmed(entry)) {
+      this.entries.delete(jobId);
+      return null;
+    }
+    const checkedAt = entry.lastCheckedAtEpochMillis;
+    if (checkedAt == null) return null;
+    if (this.clock() - checkedAt >= this.ttlMillis) {
+      this.entries.delete(jobId);
+      return null;
+    }
+    return entry;
+  }
+
+  /** Stores a settled verdict. An unconfirmed result is deliberately never stored. */
+  put(jobId: string, result: AvailabilityResult): void {
+    if (availabilityIsUnconfirmed(result)) return;
+    if (result.lastCheckedAtEpochMillis == null) return;
+    this.entries.set(jobId, result);
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+
+  size(): number {
+    return this.entries.size;
+  }
+
+  static readonly DEFAULT_TTL_MILLIS = 24 * 60 * 60 * 1000;
+}
+
 export interface Job {
   id: string;
   title: string;
@@ -678,6 +795,7 @@ export interface Job {
   evidence: Evidence[];
   openToApplicants: boolean | null;
   verification: OfferVerification;
+  availability: AvailabilityResult;
   isSaved: boolean;
   isNew: boolean;
 }

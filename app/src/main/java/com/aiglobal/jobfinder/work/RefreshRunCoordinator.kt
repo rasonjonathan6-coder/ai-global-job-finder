@@ -6,6 +6,7 @@ import com.aiglobal.jobfinder.data.discovery.RefreshOutcomeClassifier
 import com.aiglobal.jobfinder.data.discovery.RefreshProviderResult
 import com.aiglobal.jobfinder.data.discovery.RefreshRunRecord
 import com.aiglobal.jobfinder.data.discovery.RefreshTrigger
+import com.aiglobal.jobfinder.data.jobs.provider.runCatchingCancellable
 import com.aiglobal.jobfinder.data.model.ProviderDiagnostics
 import com.aiglobal.jobfinder.data.repository.JobRepository
 import kotlinx.coroutines.Dispatchers
@@ -69,14 +70,14 @@ class RefreshRunCoordinator(
             return withContext(Dispatchers.IO) {
                 val before = attemptStamp()
                 val work: suspend () -> Unit = {
-                    runCatching { repository.runLiveValidation() }
+                    runCatchingCancellable { repository.runLiveValidation() }
                 }
                 if (retries) {
                     RefreshRetryPolicy.runWithBoundedRetry(
                         delayMillis = retryDelayMillis,
                         shouldRetry = {
                             // Read fresh each time: a later attempt may have cleared the failure.
-                            runCatching { RefreshRetryPolicy.shouldRetry(repository.diagnostics.first()) }
+                            runCatchingCancellable { RefreshRetryPolicy.shouldRetry(repository.diagnostics.first()) }
                                 .getOrDefault(false)
                         },
                         attempt = work,
@@ -87,9 +88,9 @@ class RefreshRunCoordinator(
 
                 val after = attemptStamp()
                 val attempted = after != null && after != before
-                val diagnostics = runCatching { repository.diagnostics.first() }
+                val diagnostics = runCatchingCancellable { repository.diagnostics.first() }
                     .getOrDefault(ProviderDiagnostics())
-                val delta = runCatching { repository.discovery.first() }.getOrDefault(DiscoveryDelta())
+                val delta = runCatchingCancellable { repository.discovery.first() }.getOrDefault(DiscoveryDelta())
 
                 val record = refreshRunRecord(
                     trigger = trigger,
@@ -110,7 +111,7 @@ class RefreshRunCoordinator(
 
     /** The repository's last-attempt timestamp, or null when it has none yet. */
     private suspend fun attemptStamp(): Long? =
-        runCatching { repository.diagnostics.first().lastAttemptAtEpochMillis }.getOrNull()
+        runCatchingCancellable { repository.diagnostics.first().lastAttemptAtEpochMillis }.getOrNull()
 }
 
 /**

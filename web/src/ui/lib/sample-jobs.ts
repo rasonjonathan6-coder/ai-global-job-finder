@@ -7,6 +7,7 @@ import {
   RoleFamily,
   SalaryPeriod,
   ScamRisk,
+  UNKNOWN_AVAILABILITY,
   UNKNOWN_VERIFICATION,
   VisaSupport,
   WorkMode,
@@ -46,6 +47,7 @@ type JobSeed = Omit<
   | "qualificationGaps"
   | "evidence"
   | "verification"
+  | "availability"
   | "isSaved"
   | "isNew"
   | "providerId"
@@ -78,6 +80,7 @@ function makeJob(seed: JobSeed): Job {
     qualificationGaps: [],
     evidence: [],
     verification: UNKNOWN_VERIFICATION,
+    availability: UNKNOWN_AVAILABILITY,
     isSaved: false,
     isNew: seed.isNew ?? daysAgo <= 2,
     openToApplicants: true,

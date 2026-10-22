@@ -10,6 +10,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.aiglobal.jobfinder.data.jobs.provider.runCatchingCancellable
 import com.aiglobal.jobfinder.data.refresh.RefreshPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -92,7 +93,7 @@ class JobRefreshScheduler(private val context: Context) {
      */
     suspend fun nextScheduledRunAt(): Long? = withContext(Dispatchers.IO) {
         val manager = workManager ?: return@withContext null
-        runCatching {
+        runCatchingCancellable {
             manager.getWorkInfosForUniqueWork(WORK_NAME).get()
                 .firstOrNull { it.state == WorkInfo.State.ENQUEUED }
                 ?.nextScheduleTimeMillis

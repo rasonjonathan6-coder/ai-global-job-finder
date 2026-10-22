@@ -335,6 +335,10 @@ class ScreenshotTest {
                 consent = true,
                 ready = true,
                 modelLabel = "Llama 3.1 8B Instruct",
+                languageLabel = "Français",
+                bestJobTitle = "Maintenance Technician",
+                bestJobCompany = "Northwind Industrial",
+                bestJobCountry = "Canada",
                 outputTitle = "Explain my match — Maintenance Technician",
                 outputIsRemote = true,
                 output = "Your CV shows industrial maintenance, hydraulics and CMMS work, which " +
@@ -342,6 +346,29 @@ class ScreenshotTest {
                     "fault-finding experience. The gap is the local electrical certification, " +
                     "which the posting lists as preferred rather than required. A concrete next " +
                     "step is to note the equivalent certification you hold under its English name.",
+            ),
+        )
+    }
+
+    /** Ready with no output yet: the full task list is what the user first sees. */
+    @Test
+    fun aiAssistantReady() = renderBothModes("ai-assistant-ready") {
+        AiScreen(
+            onBrowseJobs = {},
+            onOpenCv = {},
+            autoRun = false,
+            hasCv = true,
+            skillCount = 9,
+            strongMatchCount = 4,
+            assistant = AssistantState(
+                configured = true,
+                consent = true,
+                ready = true,
+                modelLabel = "Llama 3.1 8B Instruct",
+                languageLabel = "Français",
+                bestJobTitle = "Maintenance Technician",
+                bestJobCompany = "Northwind Industrial",
+                bestJobCountry = "Canada",
             ),
         )
     }

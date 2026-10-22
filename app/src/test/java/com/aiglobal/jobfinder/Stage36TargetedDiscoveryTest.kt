@@ -58,12 +58,17 @@ class Stage36TargetedDiscoveryTest {
             postResponses[url] ?: throw IllegalStateException("no POST response for $url")
     }
 
+    private companion object {
+        const val DAY = 86_400_000L
+        const val NOW = 1_760_000_000_000L
+    }
+
     private fun job(
         id: String,
         matchScore: Int = 70,
         eligibility: MadagascarEligibility = MadagascarEligibility.UNCLEAR,
         visaDocumented: Boolean = false,
-        postedAt: Long = 1_000L,
+        postedAt: Long = NOW - 5 * DAY,
     ) = Job(
         id = id,
         title = "Maintenance Technician",
@@ -198,7 +203,7 @@ class Stage36TargetedDiscoveryTest {
     fun expatFitPutsTheBestDocumentedBenefitsFirst() {
         val low = job(id = "low", matchScore = 95)
         val high = job(id = "high", matchScore = 40)
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(low, high),
             sort = JobSort.EXPAT_FIT,
             expatAssessments = mapOf("low" to assessment(20), "high" to assessment(85)),
@@ -214,7 +219,7 @@ class Stage36TargetedDiscoveryTest {
         val restricted = job(id = "restricted", eligibility = MadagascarEligibility.RESTRICTED)
         val sponsored = job(id = "sponsored", eligibility = MadagascarEligibility.VISA_SPONSORED)
         val eligible = job(id = "eligible", eligibility = MadagascarEligibility.ELIGIBLE, visaDocumented = true)
-        val state = JobsUiState(
+        val state = JobsUiState(nowMillis = NOW, 
             jobs = listOf(unclear, restricted, sponsored, eligible),
             sort = JobSort.EXPAT_FIT,
         )
@@ -228,7 +233,7 @@ class Stage36TargetedDiscoveryTest {
     fun expatFitFallsBackToCvMatchForEquallyApplicableJobs() {
         val strong = job(id = "strong", matchScore = 88, eligibility = MadagascarEligibility.ELIGIBLE)
         val weak = job(id = "weak", matchScore = 55, eligibility = MadagascarEligibility.ELIGIBLE)
-        val state = JobsUiState(jobs = listOf(weak, strong), sort = JobSort.EXPAT_FIT)
+        val state = JobsUiState(nowMillis = NOW, jobs = listOf(weak, strong), sort = JobSort.EXPAT_FIT)
 
         assertEquals(listOf("strong", "weak"), state.visibleJobs.map { it.id })
     }

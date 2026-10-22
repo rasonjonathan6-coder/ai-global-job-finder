@@ -27,7 +27,12 @@ export interface FreshnessAssessment {
 }
 
 const DAY_MS = 86_400_000;
-export const DEFAULT_STALE_AFTER_DAYS = 120;
+/**
+ * The window beyond which a dated posting is `STALE`. Set to 30 days to match the Kotlin
+ * `JobFreshnessEngine`: the product favours postings published in the last month and treats
+ * anything older as likely filled. The engine still takes an explicit window.
+ */
+export const DEFAULT_STALE_AFTER_DAYS = 30;
 
 /**
  * Classifies postings by age. Pure and clock-injected so it runs anywhere and is testable

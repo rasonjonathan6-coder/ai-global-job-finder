@@ -12,11 +12,39 @@ object SkillLexicon {
     /** Canonical skill name → the phrases that indicate it in a posting. */
     private val skills: Map<String, List<String>> = mapOf(
         // Industrial / maintenance
-        "Preventive maintenance" to listOf("preventive maintenance", "preventative maintenance", "planned maintenance"),
-        "Hydraulics" to listOf("hydraulic", "hydraulics", "pneumatic", "pneumatics"),
-        "Electrical diagnostics" to listOf("electrical fault", "electrical diagnostic", "electrical maintenance", "troubleshoot electrical"),
-        "Mechanical repair" to listOf("mechanical repair", "mechanical maintenance", "mechanical fitting", "mechanical assembly"),
-        "Welding" to listOf("welding", "welder", "mig", "tig"),
+        // English and French variants are listed side by side: the boards the app reads publish
+        // in either language, and the CV analyser already emits these same canonical names, so a
+        // bilingual posting and a bilingual CV meet on one vocabulary. Every phrase is specific
+        // to the trade, so a maintenance/pump posting is recognised without catching unrelated roles.
+        "Preventive maintenance" to listOf(
+            "preventive maintenance", "preventative maintenance", "planned maintenance",
+            "maintenance preventive", "maintenance préventive",
+        ),
+        "Hydraulics" to listOf("hydraulic", "hydraulics", "pneumatic", "pneumatics", "hydraulique", "pneumatique"),
+        "Electrical diagnostics" to listOf(
+            "electrical fault", "electrical diagnostic", "electrical maintenance", "troubleshoot electrical",
+            "diagnostic electrique", "diagnostic électrique",
+        ),
+        "Mechanical repair" to listOf(
+            "mechanical repair", "mechanical maintenance", "mechanical fitting", "mechanical assembly",
+            "component repair", "component overhaul", "equipment repair",
+            "maintenance mecanique", "maintenance mécanique", "reparation mecanique", "réparation mécanique",
+        ),
+        "Mechanical seals" to listOf(
+            "mechanical seal", "mechanical seals", "gland packing", "seal replacement",
+            "joint mecanique", "joint mécanique", "joints mecaniques", "joints mécaniques",
+        ),
+        // Pumps are folded into "Rotating equipment" on purpose: the CV analyser's lexicon emits
+        // that canonical name for pump experience (it has no separate "Pumps" skill), so a job-side
+        // "Pumps" canonical would never intersect the CV and would only add false "missing" skills.
+        // Keeping one shared name is what makes a pump posting and a pump CV actually meet.
+        "Rotating equipment" to listOf(
+            "rotating equipment", "rotating machinery", "rotating machines", "rotor",
+            "pump", "pumps", "industrial pump", "industrial pumps", "centrifugal pump", "centrifugal pumps",
+            "pompe", "pompes", "pompe centrifuge", "pompe industrielle",
+            "equipement rotatif", "équipement rotatif", "equipements rotatifs", "équipements rotatifs",
+        ),
+        "Welding" to listOf("welding", "welder", "mig", "tig", "soudure", "soudeur"),
         "PLC" to listOf("plc", "programmable logic", "siemens s7", "allen-bradley", "allen bradley"),
         "CMMS" to listOf("cmms", "computerized maintenance", "maintenance management system", "work orders"),
         "Automation" to listOf("automation", "automated line", "robotics"),
